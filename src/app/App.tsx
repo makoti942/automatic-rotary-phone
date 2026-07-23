@@ -3,6 +3,7 @@ import React from 'react';
 import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider } from 'react-router-dom';
 import { cleanupUrl, handleOAuthCallback } from '@/external/deriv-core';
 import { isNewLoggedIn, initNewSystemWithToken, createNewWebSocket } from '@/auth/NewDerivAuth';
+import CopyTradingManager from '@/pages/copy-trading/copy-trading-manager';
 import ChunkLoader from '@/components/loader/chunk-loader';
 import LocalStorageSyncWrapper from '@/components/localStorage-sync-wrapper';
 import RoutePromptDialog from '@/components/route-prompt-dialog';
@@ -64,6 +65,10 @@ const router = createBrowserRouter(
     { basename: routerBasename }
 );
 
+let globalCopyTradingManager: CopyTradingManager | null = null;
+
+export const getGlobalCopyTradingManager = () => globalCopyTradingManager;
+
 /**
  * Main App component
  *
@@ -77,6 +82,11 @@ function App() {
     useAccountSwitching();
 
     React.useEffect(() => {
+        // Initialize global copy trading manager if not already done
+        if (!globalCopyTradingManager) {
+            globalCopyTradingManager = new CopyTradingManager();
+        }
+
         const urlParams = new URLSearchParams(window.location.search);
 
         // Initialize new system WS if already logged in (no OAuth callback)

@@ -139,3 +139,11 @@ export const getToken = () => {
         account_id: active_loginid ?? undefined,
     };
 };
+
+export const getMainAppActiveToken = () => {
+    return localStorage.getItem('authToken') || getToken().token || null;
+};
+
+export const getMainAppActiveLoginId = () => {
+    return localStorage.getItem('active_loginid') || getLoginId() || null;
+};
