@@ -67,8 +67,8 @@ class APIBase {
     reconnection_attempts: number = 0;
 
     // Constants for timeouts - extracted magic numbers for better maintainability
-    private readonly ACTIVE_SYMBOLS_TIMEOUT_MS = 10000; // 10 seconds
-    private readonly ENRICHMENT_TIMEOUT_MS = 10000; // 10 seconds
+    private readonly ACTIVE_SYMBOLS_TIMEOUT_MS = 30000; // 30 seconds (increased for API reliability)
+    private readonly ENRICHMENT_TIMEOUT_MS = 15000; // 15 seconds (non-blocking enrichment)
     private readonly MAX_RECONNECTION_ATTEMPTS = 5; // Maximum number of reconnection attempts before session reset
 
     unsubscribeAllSubscriptions = () => {
@@ -397,9 +397,9 @@ class APIBase {
         }
 
         try {
-            // Add timeout to prevent hanging
+            // Add timeout to prevent hanging - increased to 30 seconds for reliability
             const timeout = new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('Active symbols fetch timeout')), this.ACTIVE_SYMBOLS_TIMEOUT_MS)
+                setTimeout(() => reject(new Error('Active symbols fetch timeout')), 30000)
             );
 
             const activeSymbolsPromise = doUntilDone(() => this.api?.send({ active_symbols: 'brief' }), [], this);
@@ -418,31 +418,39 @@ class APIBase {
 
             this.has_active_symbols = true;
 
-            // Process active symbols using the dedicated service with fallback
-            try {
-                const enrichmentTimeout = new Promise<never>((_, reject) =>
-                    setTimeout(() => reject(new Error('Enrichment timeout')), this.ENRICHMENT_TIMEOUT_MS)
-                );
-
-                const enrichmentPromise = activeSymbolsProcessorService.processActiveSymbols(active_symbols);
-                const processedResult = await Promise.race([enrichmentPromise, enrichmentTimeout]);
-
-                this.active_symbols = processedResult.enrichedSymbols;
-                this.pip_sizes = processedResult.pipSizes;
-            } catch (enrichmentError) {
-                console.warn('Symbol enrichment failed, using raw symbols:', enrichmentError);
-                // Fallback to raw symbols if enrichment fails
-                this.active_symbols = active_symbols;
-                this.pip_sizes = {};
-            }
+            // Store raw symbols immediately
+            this.active_symbols = active_symbols;
+            
+            // Process active symbols using the dedicated service with fallback (non-blocking)
+            this.processSymbolsAsync(active_symbols).catch(error => {
+                console.warn('Symbol enrichment failed, keeping raw symbols:', error);
+            });
 
             this.toggleRunButton(false);
             return this.active_symbols;
         } catch (error) {
-            console.error('Failed to fetch and process active symbols:', error);
+            console.error('Failed to fetch active symbols:', error);
             throw error;
         }
     };
+
+    private async processSymbolsAsync(active_symbols: any[]) {
+        try {
+            const enrichmentTimeout = new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error('Enrichment timeout')), 15000)
+            );
+
+            const enrichmentPromise = activeSymbolsProcessorService.processActiveSymbols(active_symbols);
+            const processedResult = await Promise.race([enrichmentPromise, enrichmentTimeout]);
+
+            this.active_symbols = processedResult.enrichedSymbols;
+            this.pip_sizes = processedResult.pipSizes;
+        } catch (enrichmentError) {
+            console.warn('Symbol enrichment failed, keeping raw symbols:', enrichmentError);
+            // Keep raw symbols if enrichment fails
+            this.pip_sizes = {};
+        }
+    }
 
     toggleRunButton = (toggle: boolean) => {
         const run_button = document.querySelector('#db-animation__run-button');
