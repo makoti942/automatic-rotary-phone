@@ -35,17 +35,34 @@ import {
     LabelPairedObjectsColumnCaptionRegularIcon,
     LabelPairedPuzzlePieceTwoCaptionBoldIcon,
 } from '@deriv/quill-icons/LabelPaired';
-import { LegacyGuide1pxIcon } from '@deriv/quill-icons/Legacy';
+import {
+    LabelPairedChartLineCaptionRegularIcon,
+    LabelPairedObjectsColumnCaptionRegularIcon,
+    LabelPairedPuzzlePieceTwoCaptionBoldIcon,
+    LabelPairedPlayCaptionBoldIcon,
+} from '@deriv/quill-icons/LabelPaired';
+import { LegacyChartsIcon, LegacyGuide1pxIcon, LegacyIndicatorsIcon } from '@deriv/quill-icons/Legacy';
 import { Localize, localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
+import OverUnder from '../OverUnder';
+import MakotiMagic from '../MakotiMagic';
 import RunPanel from '../../components/run-panel';
+import SpeedBotFloatingStop from '../../components/speedbot-floating-stop';
 import ChartModal from '../chart/chart-modal';
 import Dashboard from '../dashboard';
 import RunStrategy from '../dashboard/run-strategy';
+import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
+import BlocklyIOSPrompt from '@/components/blockly-ios-prompt/blockly-ios-prompt';
+import TradingBots from '../free-bots/trading-bots';
 import './main.scss';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
 const Tutorial = lazy(() => import('../tutorials'));
+const AnalysisTools = lazy(() => import('../analysis-tool'));
+const CopyTrading = lazy(() => import('../copy-trading'));
+const Strategies = lazy(() => import('../free-bots/strategies'));
+const Dtrader = lazy(() => import('../dtrader'));
+const TradingView = lazy(() => import('../tradingview'));
 
 const AppWrapper = observer(() => {
     const { connectionStatus } = useApiBase();
@@ -78,7 +95,7 @@ const AppWrapper = observer(() => {
     const { clear } = summary_card;
     const { DASHBOARD, BOT_BUILDER } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'over_under', 'makoti_magic', 'analysis_tool', 'strategies', 'copy_trading', 'dtrader', 'tradingview', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -431,6 +448,156 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
+                                        <LabelPairedPuzzlePieceTwoCaptionBoldIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Trading Bots' />
+                                    </>
+                                }
+                                id='id-trading-bots'
+                            >
+                                <TradingBots />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedPlayCaptionBoldIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Over/Under' />
+                                    </>
+                                }
+                                id='over_under'
+                            >
+                                <OverUnder />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedPlayCaptionBoldIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Makoti Magic' />
+                                    </>
+                                }
+                                id='makoti_magic'
+                            >
+                                <MakotiMagic />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LegacyIndicatorsIcon
+                                            height='16px'
+                                            width='16px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Analysis Tool' />
+                                    </>
+                                }
+                                id='id-analysis-tool'
+                            >
+                                <Suspense
+                                    fallback={
+                                        <ChunkLoader message={localize('Please wait, loading Analysis Tool...')} />
+                                    }
+                                >
+                                    <AnalysisTools />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedPuzzlePieceTwoCaptionBoldIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Strategies' />
+                                    </>
+                                }
+                                id='id-strategies'
+                            >
+                                <Suspense
+                                    fallback={
+                                        <ChunkLoader message={localize('Please wait, loading Strategies...')} />
+                                    }
+                                >
+                                    <Strategies />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedObjectsColumnCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Copy Trading' />
+                                    </>
+                                }
+                                id='id-copy-trading'
+                            >
+                                <Suspense
+                                    fallback={
+                                        <ChunkLoader message={localize('Please wait, loading Copy Trading...')} />
+                                    }
+                                >
+                                    <CopyTrading />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedChartLineCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='DTrader' />
+                                    </>
+                                }
+                                id='id-dtrader'
+                            >
+                                <Suspense
+                                    fallback={
+                                        <ChunkLoader message={localize('Please wait, loading DTrader...')} />
+                                    }
+                                >
+                                    <Dtrader />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LegacyChartsIcon
+                                            height='16px'
+                                            width='16px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='TradingView' />
+                                    </>
+                                }
+                                id='id-tradingview'
+                            >
+                                <Suspense
+                                    fallback={
+                                        <ChunkLoader message={localize('Please wait, loading TradingView...')} />
+                                    }
+                                >
+                                    <TradingView />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
                                         <LegacyGuide1pxIcon
                                             height='16px'
                                             width='16px'
@@ -458,14 +625,16 @@ const AppWrapper = observer(() => {
                 </div>
             </div>
             <DesktopWrapper>
-                <div className='main__run-strategy-wrapper'>
-                    <RunStrategy />
-                    <RunPanel />
-                </div>
+                {hash[active_tab] !== 'strategies' && hash[active_tab] !== 'makoti_magic' && hash[active_tab] !== 'trading_bots' && hash[active_tab] !== 'dtrader' && hash[active_tab] !== 'copy_trading' && hash[active_tab] !== 'tradingview' && (
+                    <div className='main__run-strategy-wrapper'>
+                        {hash[active_tab] !== 'over_under' && <RunStrategy />}
+                        <RunPanel />
+                    </div>
+                )}
                 <ChartModal />
                 <TradingViewModal />
             </DesktopWrapper>
-            <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>
+            <MobileWrapper>{!is_open && hash[active_tab] !== 'strategies' && hash[active_tab] !== 'makoti_magic' && hash[active_tab] !== 'trading_bots' && hash[active_tab] !== 'dtrader' && hash[active_tab] !== 'copy_trading' && hash[active_tab] !== 'tradingview' && <RunPanel />}</MobileWrapper>
             <Dialog
                 cancel_button_text={cancel_button_text || localize('Cancel')}
                 className='dc-dialog__wrapper--fixed'
@@ -484,6 +653,10 @@ const AppWrapper = observer(() => {
             >
                 {message}
             </Dialog>
+
+            <SpeedBotFloatingStop />
+            {hash[active_tab] === 'bot_builder' && <MakotiWidget />}
+            <BlocklyIOSPrompt />
 
             {/* Trade Type Confirmation Modal */}
             {(() => {

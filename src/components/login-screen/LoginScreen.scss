@@ -1,0 +1,534 @@
+.login-screen {
+    position: fixed;
+    inset: 0;
+    z-index: 100001;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    overflow: hidden;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    background: #060b1a;
+
+    // ── Animated background orbs ──────────────────────────────────────
+    &__bg {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+    }
+
+    &__video {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        pointer-events: none;
+        opacity: 0.5;
+    }
+
+    &__bg-orbs {
+        position: absolute;
+        inset: -50%;
+    }
+
+    &__orb {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(100px);
+        opacity: 0.45;
+        animation: orbDrift 22s ease-in-out infinite alternate;
+
+        &--1 {
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, #6366f1 0%, #8b5cf6 50%, transparent 70%);
+            top: 5%;
+            left: 10%;
+            animation-duration: 24s;
+        }
+
+        &--2 {
+            width: 500px;
+            height: 500px;
+            background: radial-gradient(circle, #06b6d4 0%, #3b82f6 50%, transparent 70%);
+            bottom: 10%;
+            right: 5%;
+            animation-duration: 28s;
+            animation-delay: -6s;
+        }
+
+        &--3 {
+            width: 400px;
+            height: 400px;
+            background: radial-gradient(circle, #f59e0b 0%, #ef4444 50%, transparent 70%);
+            top: 40%;
+            left: 50%;
+            opacity: 0.25;
+            animation-duration: 20s;
+            animation-delay: -12s;
+        }
+
+        &--4 {
+            width: 300px;
+            height: 300px;
+            background: radial-gradient(circle, #10b981 0%, #14b8a6 50%, transparent 70%);
+            top: 60%;
+            left: 15%;
+            opacity: 0.2;
+            animation-duration: 26s;
+            animation-delay: -4s;
+        }
+    }
+
+    // ── Subtle grid overlay ───────────────────────────────────────────
+    &__grid {
+        position: absolute;
+        inset: 0;
+        background-image:
+            linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+        background-size: 60px 60px;
+        z-index: 0;
+        pointer-events: none;
+        animation: gridPulse 8s ease-in-out infinite;
+    }
+
+    // ── Top ambient glow ─────────────────────────────────────────────
+    &__top-glow {
+        position: absolute;
+        top: -80px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 500px;
+        height: 200px;
+        background: radial-gradient(ellipse, rgba(99, 102, 241, 0.12) 0%, transparent 70%);
+        border-radius: 50%;
+        pointer-events: none;
+        z-index: 0;
+    }
+
+    // ── Floating icons ────────────────────────────────────────────────
+    &__floating-icons {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+        overflow: hidden;
+        z-index: 0;
+    }
+
+    &__float-icon {
+        position: absolute;
+        color: rgba(255, 255, 255, 0.06);
+        animation: floatUp linear infinite;
+        user-select: none;
+    }
+
+    // ── Sparkles ──────────────────────────────────────────────────────
+    &__sparkle {
+        position: absolute;
+        border-radius: 50%;
+        background: #ffffff;
+        animation: sparkleAnim ease-in-out infinite;
+        pointer-events: none;
+        z-index: 0;
+
+        &::before {
+            content: '';
+            position: absolute;
+            inset: -8px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255,255,255,0.3) 0%, transparent 70%);
+        }
+    }
+
+    // ── Header (logo + brand) ─────────────────────────────────────────
+    &__header {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding-top: max(5vh, 2rem);
+        opacity: 0;
+        transform: translateY(-30px);
+        transition: opacity 0.9s 0.1s cubic-bezier(0.22, 1, 0.36, 1),
+                    transform 0.9s 0.1s cubic-bezier(0.22, 1, 0.36, 1);
+
+        .login-screen--visible & {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    &__logo-wrap {
+        position: relative;
+        margin-bottom: 1.2rem;
+    }
+
+    &__logo-ring {
+        position: absolute;
+        top: -7px;
+        left: -7px;
+        right: -7px;
+        bottom: -7px;
+        border-radius: 50%;
+        background: conic-gradient(
+            from 0deg,
+            transparent,
+            rgba(99, 102, 241, 0.5),
+            rgba(6, 182, 212, 0.4),
+            rgba(245, 158, 11, 0.25),
+            transparent
+        );
+        animation: ringSpin 4s linear infinite;
+        mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+        -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2px));
+    }
+
+    &__logo {
+        position: relative;
+        width: 90px;
+        height: 90px;
+        border-radius: 50%;
+        object-fit: cover;
+        box-shadow:
+            0 4px 32px rgba(0, 0, 0, 0.5),
+            0 0 0 2px rgba(255, 255, 255, 0.1);
+    }
+
+    &__brand {
+        text-align: center;
+    }
+
+    &__title {
+        font-size: clamp(1.6rem, 4.5vw, 2.6rem);
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        margin: 0 0 0.1rem;
+        background: linear-gradient(135deg, #ffffff 0%, #93c5fd 40%, #a5b4fc 70%, #ffffff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        background-size: 200% auto;
+        animation: shimmerText 6s ease-in-out infinite;
+        filter: drop-shadow(0 2px 24px rgba(99, 102, 241, 0.2));
+    }
+
+    &__sub {
+        font-size: 0.72rem;
+        font-weight: 600;
+        letter-spacing: 0.28em;
+        color: rgba(148, 163, 184, 0.6);
+        margin: 0;
+        text-transform: uppercase;
+    }
+
+    // ── Center section (tagline + buttons) ────────────────────────────
+    &__center {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100%;
+        max-width: 420px;
+        padding: 0 1.5rem;
+        flex: 1;
+        justify-content: center;
+    }
+
+    &__tagline {
+        font-size: clamp(0.85rem, 2vw, 1rem);
+        color: rgba(255, 255, 255, 0.45);
+        line-height: 1.7;
+        margin: 0 0 2.4rem;
+        text-align: center;
+        opacity: 0;
+        transition: opacity 0.8s 0.35s ease;
+
+        .login-screen--visible & {
+            opacity: 1;
+        }
+    }
+
+    // ── Button base ──────────────────────────────────────────────────
+    &__btn {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.65rem;
+        width: 100%;
+        padding: 1.1rem 2rem;
+        border-radius: 1.2rem;
+        font-size: 1.05rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        cursor: pointer;
+        border: none;
+        outline: none;
+        overflow: hidden;
+        white-space: nowrap;
+        transition:
+            transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+            box-shadow 0.25s ease,
+            background 0.25s ease,
+            opacity 0.25s ease;
+
+        &:active:not(:disabled) {
+            transform: scale(0.95) !important;
+        }
+
+        &:disabled {
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+    }
+
+    &__btn-icon {
+        font-size: 1.15rem;
+        line-height: 1;
+        flex-shrink: 0;
+        transition: transform 0.3s ease;
+
+        .login-screen__btn:hover:not(:disabled) & {
+            transform: scale(1.25) rotate(-8deg);
+        }
+    }
+
+    &__btn-text {
+        position: relative;
+        z-index: 1;
+    }
+
+    // ── Login button ─────────────────────────────────────────────────
+    &__btn--login {
+        background: linear-gradient(135deg, #4f46e5 0%, #6366f1 40%, #8b5cf6 100%);
+        color: #fff;
+        box-shadow:
+            0 4px 28px rgba(99, 102, 241, 0.35),
+            inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        margin-bottom: 0.6rem;
+
+        &::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: inherit;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #a78bfa 100%);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        &:hover:not(:disabled) {
+            transform: translateY(-3px);
+            box-shadow:
+                0 10px 44px rgba(99, 102, 241, 0.5),
+                inset 0 1px 0 rgba(255, 255, 255, 0.25);
+
+            &::before { opacity: 1; }
+        }
+
+        &:active:not(:disabled) {
+            box-shadow:
+                0 2px 12px rgba(99, 102, 241, 0.35),
+                inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        }
+
+        .login-screen__btn-icon,
+        .login-screen__btn-text { position: relative; z-index: 1; }
+    }
+
+    &__btn-shimmer {
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 60%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+        transform: skewX(-20deg);
+        animation: shimmerSweep 3.5s ease-in-out infinite;
+        pointer-events: none;
+
+        .login-screen__btn:hover:not(:disabled) & {
+            animation-duration: 1.8s;
+        }
+    }
+
+    // ── Divider ──────────────────────────────────────────────────────
+    &__divider {
+        display: flex;
+        align-items: center;
+        width: 100%;
+        margin: 1.2rem 0 1rem;
+        opacity: 0;
+        transition: opacity 0.8s 0.55s ease;
+
+        .login-screen--visible & { opacity: 1; }
+
+        &::before, &::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+        }
+
+        span {
+            padding: 0 1rem;
+            font-size: 0.75rem;
+            color: rgba(255, 255, 255, 0.3);
+            font-weight: 500;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+        }
+    }
+
+    // ── Create Account button ────────────────────────────────────────
+    &__btn--create {
+        background: rgba(255, 255, 255, 0.04);
+        color: rgba(255, 255, 255, 0.65);
+        border: 1.5px solid rgba(255, 255, 255, 0.08) !important;
+        padding: 0.95rem 2rem;
+        font-weight: 600;
+        transition:
+            transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1),
+            background 0.25s ease,
+            border-color 0.25s ease,
+            box-shadow 0.25s ease;
+
+        &:hover:not(:disabled) {
+            transform: translateY(-2px);
+            background: rgba(255, 255, 255, 0.07);
+            border-color: rgba(255, 255, 255, 0.18) !important;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2);
+            color: rgba(255, 255, 255, 0.85);
+        }
+
+        &:active:not(:disabled) { transform: scale(0.96) !important; }
+
+        .login-screen__btn-icon { font-size: 1.15rem; }
+    }
+
+    // ── Loading state ────────────────────────────────────────────────
+    &__btn--loading {
+        pointer-events: none;
+        animation: loadingPulse 1.6s ease-in-out infinite;
+    }
+
+    // ── Error ────────────────────────────────────────────────────────
+    &__error {
+        color: #fca5a5;
+        font-size: 0.82rem;
+        margin: 0.2rem 0 0.2rem;
+        text-align: center;
+        opacity: 0.9;
+    }
+
+    // ── Footer ───────────────────────────────────────────────────────
+    &__footer {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: center;
+        gap: 1.8rem;
+        padding: 1.2rem 1.5rem max(2vh, 1.2rem);
+        opacity: 0;
+        transform: translateY(20px);
+        transition: opacity 0.8s 0.65s cubic-bezier(0.22, 1, 0.36, 1),
+                    transform 0.8s 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+
+        .login-screen--visible & {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        &::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 10%;
+            right: 10%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent);
+        }
+    }
+
+    &__footer-info {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.15rem;
+    }
+
+    &__footer-label {
+        font-size: 0.6rem;
+        font-weight: 500;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: rgba(255, 255, 255, 0.2);
+    }
+
+    &__footer-value {
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: rgba(255, 255, 255, 0.45);
+        letter-spacing: 0.02em;
+    }
+
+    &__footer-note {
+        width: 100%;
+        text-align: center;
+        font-size: 0.65rem;
+        color: rgba(255, 255, 255, 0.15);
+        margin: 0.6rem 0 0;
+        letter-spacing: 0.04em;
+    }
+}
+
+// ── Keyframes ────────────────────────────────────────────────────────
+@keyframes orbDrift {
+    0%   { transform: translate(0, 0) scale(1); }
+    33%  { transform: translate(3%, -4%) scale(1.08); }
+    66%  { transform: translate(-2%, 3%) scale(0.95); }
+    100% { transform: translate(4%, 2%) scale(1.05); }
+}
+
+@keyframes floatUp {
+    0%   { transform: translateY(100vh) rotate(0deg); opacity: 0; }
+    10%  { opacity: 0.5; }
+    85%  { opacity: 0.5; }
+    100% { transform: translateY(-10vh) rotate(360deg); opacity: 0; }
+}
+
+@keyframes sparkleAnim {
+    0%, 100% { opacity: 0; transform: scale(0); }
+    50%      { opacity: 1; transform: scale(1); }
+}
+
+@keyframes gridPulse {
+    0%, 100% { opacity: 0.6; }
+    50%      { opacity: 1; }
+}
+
+@keyframes ringSpin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+@keyframes shimmerText {
+    0%, 100% { background-position: 0% center; }
+    50%      { background-position: 100% center; }
+}
+
+@keyframes shimmerSweep {
+    0%   { left: -100%; }
+    50%  { left: 200%; }
+    100% { left: 200%; }
+}
+
+@keyframes loadingPulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.5; }
+}

@@ -1,0 +1,135 @@
+// ── iOS-style Blockly prompt bottom sheet ─────────────────────────────────────
+
+.bip-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.48);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 999999;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    animation: bip-fade-in 0.18s ease both;
+}
+
+@keyframes bip-fade-in {
+    from { opacity: 0; }
+    to   { opacity: 1; }
+}
+
+.bip-sheet {
+    width: 100%;
+    max-width: 480px;
+    background: rgba(28, 28, 32, 0.97);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    border-radius: 22px 22px 0 0;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-bottom: none;
+    padding: 8px 20px max(env(safe-area-inset-bottom, 0px), 24px);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    box-shadow: 0 -12px 48px rgba(0, 0, 0, 0.5);
+    animation: bip-slide-up 0.28s cubic-bezier(0.34, 1.26, 0.64, 1) both;
+}
+
+@keyframes bip-slide-up {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+}
+
+.bip-handle {
+    width: 36px;
+    height: 4px;
+    border-radius: 2px;
+    background: rgba(255, 255, 255, 0.2);
+    margin: 0 auto 4px;
+    flex-shrink: 0;
+}
+
+.bip-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    text-align: center;
+}
+
+.bip-title {
+    font-size: 17px;
+    font-weight: 600;
+    color: #f5f5f7;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+    letter-spacing: -0.02em;
+}
+
+.bip-hint {
+    font-size: 13px;
+    color: rgba(245, 245, 247, 0.45);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+}
+
+.bip-input {
+    width: 100%;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1.5px solid rgba(0, 122, 255, 0.5);
+    border-radius: 12px;
+    color: #f5f5f7;
+    font-size: 22px;
+    font-weight: 300;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    letter-spacing: -0.02em;
+    padding: 14px 16px;
+    text-align: center;
+    outline: none;
+    caret-color: #007aff;
+    box-shadow:
+        0 0 0 3px rgba(0, 122, 255, 0.15),
+        0 2px 8px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    -moz-appearance: textfield;
+
+    &::-webkit-outer-spin-button,
+    &::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+    &:focus {
+        border-color: #007aff;
+        box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.22), 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+}
+
+.bip-actions {
+    display: flex;
+    gap: 10px;
+}
+
+.bip-btn {
+    flex: 1;
+    height: 50px;
+    border-radius: 12px;
+    border: none;
+    font-size: 17px;
+    font-weight: 600;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', sans-serif;
+    cursor: pointer;
+    transition: opacity 0.12s, transform 0.08s;
+    letter-spacing: -0.01em;
+
+    &:active { opacity: 0.75; transform: scale(0.97); }
+
+    &--cancel {
+        background: rgba(255, 255, 255, 0.09);
+        color: #f5f5f7;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    &--confirm {
+        background: #007aff;
+        color: #fff;
+        box-shadow: 0 4px 16px rgba(0, 122, 255, 0.35);
+
+        &:hover { background: #0077f0; }
+    }
+}

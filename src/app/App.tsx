@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import React from 'react';
 import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider } from 'react-router-dom';
 import { cleanupUrl, handleOAuthCallback } from '@/external/deriv-core';
+import { isNewLoggedIn, initNewSystemWithToken, createNewWebSocket } from '@/auth/NewDerivAuth';
 import ChunkLoader from '@/components/loader/chunk-loader';
 import LocalStorageSyncWrapper from '@/components/localStorage-sync-wrapper';
 import RoutePromptDialog from '@/components/route-prompt-dialog';
@@ -77,6 +78,13 @@ function App() {
 
     React.useEffect(() => {
         const urlParams = new URLSearchParams(window.location.search);
+
+        // Initialize new system WS if already logged in (no OAuth callback)
+        if (!urlParams.has('code') && isNewLoggedIn() && !window._newSystemWSReady) {
+            console.log("[APP] Already logged in, connecting new system WS");
+            createNewWebSocket();
+        }
+
         if (!urlParams.has('code')) return;
 
         const handleCallback = async () => {
@@ -100,6 +108,8 @@ function App() {
 
                     const { api_base } = await import('@/external/bot-skeleton');
                     await api_base.init(true);
+
+                    initNewSystemWithToken(authInfo.access_token, authInfo.expires_in);
                 } else {
                     console.error('No accounts returned after authentication');
                 }
