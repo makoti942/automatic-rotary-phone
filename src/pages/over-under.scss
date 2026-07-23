@@ -1,0 +1,755 @@
+// ═══════════════════════════════════════════════════════════
+//  Over / Under Terminal  ·  Professional Trading UI
+//  All font-sizes use px to bypass 62.5% root font-size.
+// ═══════════════════════════════════════════════════════════
+
+// ── Tokens ──────────────────────────────────────────────────
+$bg0:     #04080f;
+$bg1:     #070e1c;
+$bg2:     #0b1526;
+$bg3:     #111f38;
+$b0:      rgba(255,255,255,0.05);
+$b1:      rgba(255,255,255,0.10);
+$b2:      rgba(255,255,255,0.16);
+$txt:     #dceaf8;
+$sub:     #7fa0be;
+$dim:     #3a526b;
+$blue:    #3b82f6;
+$purple:  #a855f7;
+$pink:    #ec4899;
+$green:   #10b981;
+$red:     #ef4444;
+$amber:   #f59e0b;
+$orange:  #f97316;
+$cyan:    #06b6d4;
+
+// ── Root ────────────────────────────────────────────────────
+.ou-root {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 16px;
+    background: $bg0;
+    color: $txt;
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+    width: 100%;
+    min-height: 100%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    box-sizing: border-box;
+    position: relative;
+
+    *, *::before, *::after { box-sizing: border-box; }
+
+    &::before {
+        content: '';
+        position: absolute; inset: 0; z-index: 0; pointer-events: none;
+        background-image: radial-gradient(rgba(59,130,246,0.04) 1px, transparent 1px);
+        background-size: 24px 24px;
+    }
+    > * { position: relative; z-index: 1; }
+
+    // On mobile, allow the entire page to scroll if content overflows.
+    @media (max-width: 760px) {
+        height: auto;
+        min-height: 100%;
+        overflow-y: auto;
+        gap: 8px;
+        padding: 10px 10px 90px;
+    }
+}
+
+// ── Guide FAB ───────────────────────────────────────────────
+.ou-fab {
+    position: fixed; bottom: 22px; right: 22px; z-index: 900;
+    display: flex; align-items: center; gap: 9px;
+    padding: 12px 20px; border-radius: 50px;
+    background: linear-gradient(135deg, $blue 0%, $purple 60%, $cyan 100%);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff; font-size: 14px; font-weight: 800;
+    letter-spacing: 0.6px;
+    cursor: pointer;
+    box-shadow:
+        0 6px 22px rgba(59,130,246,0.45),
+        0 0 0 1px rgba(255,255,255,0.08) inset;
+    transition: transform .2s, box-shadow .2s;
+    overflow: visible;
+
+    svg { stroke-width: 2.4px; }
+
+    &:hover {
+        box-shadow:
+            0 10px 28px rgba(168,85,247,0.6),
+            0 0 0 1px rgba(255,255,255,0.18) inset;
+    }
+
+    // Soft pulsing halo behind the button so it pops off the page.
+    &__pulse {
+        position: absolute; inset: -4px; border-radius: 50px;
+        z-index: -1;
+        background: radial-gradient(closest-side, rgba(168,85,247,0.45), rgba(59,130,246,0));
+        animation: ou-fab-pulse 2.2s ease-in-out infinite;
+        pointer-events: none;
+    }
+
+    @media (max-width: 500px) {
+        padding: 13px;
+        border-radius: 50%;
+        gap: 0;
+        span:not(.ou-fab__pulse) { display: none; }
+    }
+}
+
+@keyframes ou-fab-pulse {
+    0%, 100% { transform: scale(1);   opacity: 0.65; }
+    50%      { transform: scale(1.18); opacity: 0.25; }
+}
+
+// ── Guide Modal ──────────────────────────────────────────────
+.ou-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0,0,0,0.72); backdrop-filter: blur(8px);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+
+.ou-modal {
+    background: $bg2; border: 1px solid $b1; border-radius: 16px;
+    width: 100%; max-width: 580px; max-height: 86vh;
+    display: flex; flex-direction: column;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.6); overflow: hidden;
+
+    &__head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 16px 20px; border-bottom: 1px solid $b0;
+        font-size: 15px; font-weight: 700; color: $txt;
+
+        button {
+            width: 28px; height: 28px; border-radius: 50%;
+            border: 1px solid $b1; background: rgba(255,255,255,0.04);
+            color: $sub; font-size: 18px; line-height: 1;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s;
+            &:hover { background: rgba(255,255,255,0.1); color: $txt; transform: rotate(90deg); }
+        }
+    }
+
+    &__body {
+        flex: 1; overflow-y: auto; padding: 18px 20px;
+        display: flex; flex-direction: column; gap: 16px;
+        &::-webkit-scrollbar { width: 3px; }
+        &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.08); border-radius: 3px; }
+    }
+
+    &__sec { display: flex; flex-direction: column; gap: 7px; }
+
+    &__sh {
+        font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 1px;
+        &--blue   { color: $blue; }
+        &--purple { color: $purple; }
+        &--pink   { color: $pink; }
+        &--green  { color: $green; }
+        &--orange { color: $orange; }
+        &--red    { color: $red; }
+        &--cyan   { color: $cyan; }
+        &--amber  { color: $amber; }
+    }
+
+    p {
+        font-size: 13px; line-height: 1.6; color: #6a8eab; margin: 0;
+        padding: 9px 12px; border-radius: 7px;
+        background: rgba(255,255,255,0.02); border-left: 2px solid rgba(255,255,255,0.06);
+        b { color: $txt; font-weight: 600; }
+    }
+}
+
+// ── Status-only top bar (replaces full header) ───────────────
+.ou-statusbar {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 4px 0;
+    flex-shrink: 0;
+}
+
+// ── Mobile panel tab switcher (Config | Monitor) ─────────────
+.ou-mobile-tabs {
+    // Hidden on desktop — panels sit side-by-side there
+    display: none;
+    flex-shrink: 0;
+
+    @media (max-width: 760px) {
+        display: flex;
+        gap: 0;
+        border-radius: 10px;
+        overflow: hidden;
+        border: 1px solid $b1;
+        background: $bg2;
+    }
+}
+
+.ou-mtab {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 9px 0;
+    border: none;
+    background: transparent;
+    color: $sub;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+
+    svg { color: inherit; flex-shrink: 0; }
+
+    &--active {
+        background: $bg3;
+        color: $txt;
+        border-radius: 9px;
+        box-shadow: 0 1px 4px rgba(0,0,0,0.3) inset;
+    }
+
+    &:first-child { border-right: 1px solid $b1; }
+}
+
+// Hide panels on mobile based on which tab is active
+@media (max-width: 760px) {
+    .ou-panel--hidden-mobile   { display: none !important; }
+    .ou-monitor--hidden-mobile { display: none !important; }
+}
+
+// ── Status badge ─────────────────────────────────────────────
+.ou-status {
+    display: flex; align-items: center; gap: 7px;
+    padding: 5px 12px; border-radius: 50px;
+    font-size: 12px; font-weight: 700;
+    border: 1px solid $b0; background: rgba(255,255,255,0.03);
+    white-space: nowrap;
+
+    &__dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+
+    &--ok   { color: $green; border-color: rgba($green,.2); .ou-status__dot { background: $green; box-shadow: 0 0 7px $green; } }
+    &--live { color: $amber; border-color: rgba($amber,.2); .ou-status__dot { background: $amber; box-shadow: 0 0 7px $amber; animation: blink 1.3s ease-in-out infinite; } }
+    &--pulse{ color: $blue; border-color: rgba($blue,.2);  .ou-status__dot { background: $blue;  box-shadow: 0 0 7px $blue;  animation: blink 1s ease-in-out infinite; } }
+    &--off  { color: $dim; .ou-status__dot { background: $dim; } }
+}
+
+// ── Heatmap ──────────────────────────────────────────────────
+.ou-heatmap {
+    display: grid;
+    grid-template-columns: repeat(10, 1fr);
+    gap: 6px;
+    flex-shrink: 0;
+    @media (max-width: 700px) { grid-template-columns: repeat(5, 1fr); }
+}
+
+.ou-cell {
+    // Circular shape — aspect-ratio keeps it square at any grid width
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    aspect-ratio: 1;
+    padding: 4px;
+    background: $bg1; border: 2px solid $b0; border-radius: 50%;
+    cursor: default; position: relative; overflow: hidden;
+    transition: border-color .2s, box-shadow .2s;
+
+    &__badge {
+        font-size: 7px; font-weight: 800; letter-spacing: .6px; text-transform: uppercase;
+        height: 12px; display: flex; align-items: center;
+        position: absolute; top: 6px;
+        &.hot { color: $green; }
+        &.cold { color: $red; }
+        &.predicted { color: #f59e0b; }
+    }
+
+    &__num {
+        font-size: 18px; font-weight: 900; color: $txt;
+        line-height: 1;
+        @media (max-width: 500px) { font-size: 14px; }
+    }
+
+    // Hide the bar inside circles — percentage shown as text below the number
+    &__bar { display: none; }
+    &__fill { display: none; }
+
+    &__pct {
+        font-size: 10px; font-weight: 700; color: $dim;
+        margin-top: 2px;
+        @media (max-width: 500px) { font-size: 9px; }
+    }
+
+    &--active {
+        border-color: $blue;
+        background: rgba($blue,.1);
+        box-shadow: 0 0 0 2px rgba($blue,.25), 0 0 16px rgba($blue,.15);
+        .ou-cell__num { color: $blue; }
+    }
+
+    &--hot {
+        border-color: rgba($green,.6);
+        background: rgba($green,.08);
+        .ou-cell__num { color: $green; }
+        box-shadow: 0 0 12px rgba($green,.2);
+    }
+
+    &--cold {
+        border-color: rgba($red,.5);
+        background: rgba($red,.07);
+        .ou-cell__num { color: $red; }
+    }
+
+    &--predicted {
+        border-color: rgba(#f59e0b,.6);
+        background: rgba(#f59e0b,.07);
+        box-shadow: 0 0 12px rgba(#f59e0b,.18);
+        .ou-cell__num { color: #f59e0b; }
+    }
+}
+
+// ── Body (two-column) ─────────────────────────────────────────
+.ou-body {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(340px, 420px) minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    gap: 16px;
+
+    @media (max-width: 1180px) { grid-template-columns: minmax(320px, 380px) minmax(0, 1fr); }
+    @media (max-width: 980px)  {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(360px, 1fr);
+    }
+    @media (max-width: 760px)  {
+        display: flex;
+        flex-direction: column;
+    }
+}
+
+// ── Config Panel ──────────────────────────────────────────────
+.ou-panel {
+    background: $bg1; border: 1px solid $b1; border-radius: 14px;
+    box-shadow: 0 8px 28px rgba(0,0,0,0.28);
+    position: relative;
+    min-width: 0;
+    // On desktop, the panel scrolls internally without covering the monitor.
+    overflow-y: auto;
+
+    &::-webkit-scrollbar { width: 3px; }
+    &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 3px; }
+
+    // Add a spacer at the bottom of the scroll area to prevent the last
+    // item from being obscured by the sticky CTA button on desktop.
+    &::after {
+        content: '';
+        display: block;
+        height: 85px;
+    }
+
+    &::before {
+        content: '';
+        position: sticky; top: 0; left: 0; right: 0;
+        display: block; height: 2px; z-index: 2;
+        background: linear-gradient(90deg, $blue, $purple, $orange);
+    }
+
+    &__title {
+        display: flex; align-items: center; gap: 8px;
+        padding: 12px 16px 12px;
+        border-bottom: 1px solid $b0;
+        background: rgba(11, 21, 38, 0.7);
+        font-size: 13px; font-weight: 700; color: $sub;
+        position: sticky; top: 2px; z-index: 2;
+        backdrop-filter: blur(8px);
+        svg { color: $blue; }
+    }
+
+    // On mobile, disable internal scrolling and the spacer.
+    @media (max-width: 760px) {
+        overflow-y: visible;
+        &::after { display: none; }
+    }
+}
+
+// ── Section rows ─────────────────────────────────────────────
+.ou-row-wrap {
+    padding: 11px 14px;
+    border-bottom: 1px solid $b0;
+
+    &--last { border-bottom: none; }
+}
+
+.ou-row-label {
+    display: flex; align-items: center; gap: 5px;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    text-transform: uppercase; color: $dim; margin-bottom: 9px;
+    svg { color: $blue; flex-shrink: 0; }
+}
+
+.ou-row-fields {
+    display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap;
+}
+
+// ── Uniform 2-column responsive grid for fields & tiles ──────
+.ou-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+
+    @media (max-width: 380px) { grid-template-columns: 1fr; }
+}
+
+// ── Individual field ─────────────────────────────────────────
+.ou-f {
+    display: flex; flex-direction: column; gap: 5px;
+    min-width: 0;
+    &--grow { flex: 1; }
+    &--full { grid-column: 1 / -1; }
+}
+
+// ── Toggle tile (label + switch) ─────────────────────────────
+.ou-tile {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px;
+    height: 44px; padding: 0 12px;
+    background: rgba(255,255,255,0.025);
+    border: 1px solid $b1;
+    border-radius: 9px;
+    transition: border-color .18s, background .18s, box-shadow .18s;
+
+    &__lbl {
+        font-size: 12px; font-weight: 700; color: $sub;
+        letter-spacing: .3px; line-height: 1.2;
+        flex: 1; min-width: 0;
+    }
+
+    &--on {
+        border-color: rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.04);
+        box-shadow: inset 0 0 0 1px var(--tc, #{$blue}), 0 0 14px rgba(0,0,0,0.22);
+
+        .ou-tile__lbl { color: var(--tc, #{$blue}); }
+    }
+}
+
+.ou-fl {
+    font-size: 11px; font-weight: 700; letter-spacing: .5px;
+    text-transform: uppercase; color: $sub; white-space: nowrap;
+}
+
+// ── Inputs & selects ─────────────────────────────────────────
+.ou-inp,
+.ou-sel {
+    height: 36px;
+    padding: 0 10px;
+    background: rgba(255,255,255,0.04); border: 1px solid $b1;
+    border-radius: 8px; color: $txt;
+    font-size: 14px; font-family: inherit; font-weight: 500;
+    transition: border-color .18s, box-shadow .18s;
+    appearance: none; -webkit-appearance: none;
+
+    &:focus { outline: none; border-color: rgba($blue,.55); box-shadow: 0 0 0 3px rgba($blue,.12); }
+    &:disabled { opacity: .38; cursor: not-allowed; }
+    option { background: $bg2; color: $txt; }
+}
+
+.ou-inp { width: 80px; text-align: center; font-weight: 700; }
+.ou-inp--full { width: 100%; }
+
+.ou-sel {
+    width: 100%; cursor: pointer; padding-right: 28px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%233a526b' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 9px center;
+
+    &--strat {
+        font-weight: 700; background-color: rgba(255,255,255,0.04);
+    }
+}
+
+// ── Strategy info badge ──────────────────────────────────────
+.ou-strat-info {
+    display: flex; align-items: center; gap: 7px;
+    margin-top: 8px;
+    padding: 7px 10px; border-radius: 7px;
+    background: rgba(255,255,255,0.025);
+    border-left: 2px solid var(--c, #{$blue});
+    font-size: 12px; color: $sub; line-height: 1.4;
+
+    &__dot {
+        width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+        background: var(--c, #{$blue}); box-shadow: 0 0 7px var(--c, #{$blue});
+    }
+}
+
+// ── Toggle switch ─────────────────────────────────────────────
+.ou-sw-row { display: flex; align-items: center; gap: 7px; }
+
+.ou-sw {
+    width: 40px; height: 22px; border-radius: 50px; border: none;
+    background: rgba(255,255,255,0.07); cursor: pointer; flex-shrink: 0;
+    position: relative; transition: background .22s;
+
+    &__knob {
+        position: absolute; top: 3px; left: 3px;
+        width: 16px; height: 16px; border-radius: 50%;
+        background: $dim; display: block;
+        transition: all .22s cubic-bezier(.4,0,.2,1);
+        box-shadow: 0 1px 4px rgba(0,0,0,.4);
+    }
+
+    &--on {
+        background: rgba(59,130,246,0.2);
+        .ou-sw__knob { left: 21px; background: var(--tc,#{$blue}); box-shadow: 0 0 8px var(--tc,#{$blue}); }
+    }
+
+    &:disabled { opacity: .35; cursor: not-allowed; }
+}
+
+.ou-sw-lbl {
+    font-size: 13px; font-weight: 700; color: $dim;
+    &.on { color: $blue; }
+}
+
+// ── Trigger digit box ─────────────────────────────────────────
+.ou-trig-row { display: flex; align-items: center; gap: 6px; }
+
+// ── Framed Trigger panel (label + switch + digit input(s) + chip) ──
+.ou-trig-panel {
+    border: 1px solid $b1; border-radius: 10px;
+    background: rgba(255,255,255,0.025);
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    transition: border-color .2s, box-shadow .2s, background .2s;
+
+    &--on {
+        border-color: rgba(255,255,255,0.18);
+        background: rgba(255,255,255,0.045);
+        box-shadow: inset 0 0 0 1px var(--tc, #{$blue});
+    }
+
+    &__head {
+        display: flex; align-items: center; justify-content: space-between;
+        gap: 10px;
+    }
+
+    &__lbl {
+        font-size: 12px; font-weight: 700; letter-spacing: .3px;
+        color: $sub;
+    }
+    &--on &__lbl { color: var(--tc, #{$blue}); }
+
+    &__body {
+        display: flex; align-items: flex-end; justify-content: space-between;
+        gap: 10px; margin-top: 10px; flex-wrap: wrap;
+    }
+
+    &__digits { display: flex; gap: 10px; align-items: flex-end; }
+
+    &__slot { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+    &__cap {
+        font-size: 9px; font-weight: 800; letter-spacing: 1px;
+        color: $dim; text-transform: uppercase;
+    }
+}
+
+.ou-dbox {
+    position: relative; width: 50px;
+
+    input {
+        width: 100%; height: 36px; padding: 0; text-align: center;
+        font-size: 16px; font-weight: 900; font-family: 'JetBrains Mono', monospace;
+        background: rgba(255,255,255,0.05); border: 1px solid $b1; border-radius: 8px;
+        color: $txt; transition: all .18s;
+        &:focus { outline: none; border-color: rgba($blue,.55); box-shadow: 0 0 0 3px rgba($blue,.12); }
+        &:disabled { opacity: .35; cursor: not-allowed; }
+        &::-webkit-inner-spin-button, &::-webkit-outer-spin-button { -webkit-appearance: none; }
+        -moz-appearance: textfield;
+    }
+}
+
+.ou-led {
+    position: absolute; top: -4px; right: -4px;
+    width: 9px; height: 9px; border-radius: 50%;
+    background: rgba(255,255,255,0.08); border: 2px solid $bg1;
+    transition: all .2s;
+    &--on { background: $green; box-shadow: 0 0 9px rgba($green,.9); }
+}
+
+.ou-chip {
+    height: 36px; padding: 0 11px; border-radius: 7px;
+    border: 1px solid $b1; background: rgba(255,255,255,0.03);
+    color: $dim; font-size: 11px; font-weight: 800; letter-spacing: .5px;
+    cursor: pointer; transition: all .18s; white-space: nowrap;
+
+    &.on { background: rgba($blue,.15); color: $blue; border-color: rgba($blue,.45); box-shadow: 0 0 10px rgba($blue,.2); }
+    &:disabled { opacity: .35; cursor: not-allowed; }
+}
+
+// ── Collapse button (recovery) ────────────────────────────────
+.ou-collapse {
+    display: flex; align-items: center; justify-content: space-between;
+    width: 100%; padding: 0; background: none; border: none; cursor: pointer;
+    font-size: 10px; font-weight: 800; letter-spacing: 1px;
+    text-transform: uppercase; color: $dim; transition: color .2s;
+
+    span { display: flex; align-items: center; gap: 5px; }
+    svg { color: inherit; flex-shrink: 0; }
+
+    &:hover { color: $txt; }
+}
+
+// ── CTA ──────────────────────────────────────────────────────
+.ou-cta-wrap {
+    // Stick to the bottom of the scrolling panel on desktop.
+    position: sticky;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 14px;
+    z-index: 3;
+    background: linear-gradient(to top, $bg1 70%, rgba(7, 14, 28, 0.7));
+    backdrop-filter: blur(4px);
+    border-top: 1px solid $b0;
+
+    // On mobile — fixed above the controls section so it's never covered.
+    @media (max-width: 760px) {
+        position: fixed;
+        bottom: 6rem;
+        left: 0;
+        right: 0;
+        z-index: 9;
+        padding: 12px 16px;
+        background: linear-gradient(to top, $bg0 60%, rgba(4,8,15,0.85));
+        backdrop-filter: blur(8px);
+        border-top: 1px solid $b1;
+        padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+    }
+}
+
+.ou-cta {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; height: 46px;
+    border-radius: 10px; border: 1px solid var(--ac, #{$blue});
+    background: linear-gradient(135deg, rgba(59,130,246,.18), rgba(59,130,246,.07));
+    color: var(--ac, #{$blue});
+    font-size: 14px; font-weight: 800; letter-spacing: 1.8px; text-transform: uppercase;
+    cursor: pointer; position: relative; overflow: hidden;
+    transition: all .22s cubic-bezier(.4,0,.2,1);
+
+    &::before { content: ''; position: absolute; inset: 0; background: var(--ac,#{$blue}); opacity: 0; transition: opacity .2s; }
+
+    &:hover:not(:disabled) {
+        box-shadow: 0 0 28px var(--ag, rgba(59,130,246,.4)), 0 6px 20px rgba(0,0,0,.3);
+        transform: translateY(-1px);
+        &::before { opacity: .08; }
+    }
+
+    &:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+    &__ico, &__txt { position: relative; z-index: 1; }
+    &__txt { font-size: 14px; font-weight: 800; letter-spacing: 2px; }
+
+    &__pulse {
+        position: absolute; top: 50%; right: 14px; transform: translateY(-50%);
+        width: 7px; height: 7px; border-radius: 50%;
+        background: var(--ac, #{$blue}); z-index: 1;
+        animation: cta-blink 1.4s ease-in-out infinite;
+    }
+
+    &--stop { border-color: $red; color: $red; background: linear-gradient(135deg, rgba($red,.18), rgba($red,.07)); }
+}
+
+.ou-spin { animation: spin .9s linear infinite; }
+
+// ── Trade Results Panel ──────────────────────────────────────
+
+// ── Monitor ──────────────────────────────────────────────────
+.ou-monitor {
+    background: $bg1; border: 1px solid $b1; border-radius: 14px;
+    display: flex; flex-direction: column;
+    min-width: 0; min-height: 360px; height: 100%;
+    box-shadow: 0 8px 28px rgba(0,0,0,.28); position: relative; overflow: hidden;
+
+    @media (max-width: 760px) {
+        flex-grow: 1;
+        min-height: 320px;
+        height: auto;
+    }
+
+    &::before {
+        content: '';
+        position: absolute; top: 0; left: 0; right: 0; height: 2px; z-index: 1;
+        background: linear-gradient(90deg, $green, $cyan);
+    }
+
+    &__head {
+        display: flex; align-items: center; justify-content: space-between;
+        padding: 12px 14px; padding-top: 14px;
+        border-bottom: 1px solid $b0;
+        background: rgba(255,255,255,0.015);
+        flex-shrink: 0;
+
+        > span {
+            display: flex; align-items: center; gap: 7px;
+            font-size: 13px; font-weight: 700; color: $green;
+        }
+    }
+
+    &__clr {
+        width: 28px; height: 28px; border-radius: 7px;
+        border: 1px solid $b0; background: transparent;
+        color: $dim; cursor: pointer; display: flex; align-items: center; justify-content: center;
+        transition: all .2s;
+        &:hover { background: rgba($red,.1); color: $red; border-color: rgba($red,.25); }
+    }
+
+    &__body {
+        flex: 1; overflow-y: auto; padding: 8px; background: #020710;
+        &::-webkit-scrollbar { width: 3px; }
+        &::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.06); border-radius: 3px; }
+    }
+
+    &__empty {
+        height: 100%; min-height: 260px;
+        display: flex; flex-direction: column; align-items: center; justify-content: center;
+        gap: 9px; color: rgba(255,255,255,.08);
+        font-size: 13px; letter-spacing: .3px;
+    }
+
+    &__logs { display: flex; flex-direction: column; gap: 1px; }
+}
+
+.ou-log {
+    display: flex; align-items: flex-start; gap: 7px;
+    padding: 5px 7px; border-radius: 5px; transition: background .1s;
+
+    &:hover { background: rgba(255,255,255,.02); }
+
+    &__bar { width: 2px; min-height: 16px; flex-shrink: 0; margin-top: 2px; border-radius: 2px; background: rgba(255,255,255,.06); }
+    &__txt { font-family: 'JetBrains Mono','Fira Code',monospace; font-size: 12px; line-height: 1.5; color: #3f5f7d; word-break: break-all; }
+
+    &--win  { background: rgba($green,.03); .ou-log__bar { background: $green; box-shadow: 0 0 5px rgba($green,.5); } .ou-log__txt { color: #34d399; } }
+    &--loss { background: rgba($red,.03);   .ou-log__bar { background: $red;   box-shadow: 0 0 5px rgba($red,.5);   } .ou-log__txt { color: #f87171; } }
+    &--pat  { background: rgba($purple,.03);.ou-log__bar { background: $purple;box-shadow: 0 0 5px rgba($purple,.5);} .ou-log__txt { color: #c084fc; } }
+}
+
+// ── Keyframes ────────────────────────────────────────────────
+@keyframes blink {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50%       { opacity: .35; transform: scale(.65); }
+}
+
+@keyframes cta-blink {
+    0%   { box-shadow: 0 0 0 0 var(--ag, rgba(59,130,246,.4)); }
+    70%  { box-shadow: 0 0 0 9px rgba(0,0,0,0); }
+    100% { box-shadow: 0 0 0 0 rgba(0,0,0,0); }
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}

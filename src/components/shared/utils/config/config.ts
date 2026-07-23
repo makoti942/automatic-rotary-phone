@@ -63,6 +63,10 @@ const getDefaultServerURL = () => {
     return isProductionEnv ? WS_SERVERS.PRODUCTION : WS_SERVERS.STAGING;
 };
 
+export const getAppId = () => {
+    return process.env.NEXT_PUBLIC_DERIV_APP_ID || '';
+};
+
 /**
  * Gets the WebSocket URL using the authenticated flow
  * 1. Get access token from auth_info (localStorage via vendored deriv-core)
