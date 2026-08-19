@@ -100,6 +100,7 @@ export const HighLow: React.FC = () => {
         setRunning(false);
         setInTrade(false);
         setBoard({});
+        setStreamAlive(false);
         setStatus('Stopped');
         try { wsRef.current?.close(); } catch {}
         wsRef.current = null;
@@ -142,8 +143,17 @@ export const HighLow: React.FC = () => {
         const prev = sd.prices[sd.prices.length - 1];
         sd.prices = [...sd.prices.slice(-(MAX_TICKS - 1)), price];
         sd.times = [...sd.times.slice(-(MAX_TICKS - 1)), epoch];
+        lastTickRef.current = Math.max(lastTickRef.current, epoch);
         sd.ready = sd.prices.length >= MIN_TICKS;
-        if (!sd.ready) return;
+
+        // Show the price immediately — don't gate the board on readiness.
+        if (!sd.ready) {
+            setBoard(prev => ({
+                ...prev,
+                [sym]: { side: null, streak: 0, awaiting: false, price, bb: null },
+            }));
+            return;
+        }
 
         const candles = buildCandles(sd.prices, sd.times);
         sd.candles = candles;
@@ -179,6 +189,9 @@ export const HighLow: React.FC = () => {
     tickRef.current = handleTick;
 
     const pocUnsubRef = useRef<(() => void) | null>(null);
+    const lastTickRef = useRef(0);
+    const lastDataLogRef = useRef(0);
+    const [streamAlive, setStreamAlive] = useState(false);
 
     const subscribeAllSymbols = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
@@ -186,6 +199,27 @@ export const HighLow: React.FC = () => {
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
         });
     }, []);
+
+    // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
+    const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    useEffect(() => {
+        if (!running) return;
+        watchdogRef.current = setInterval(() => {
+            if (!runningRef.current) return;
+            const now = Date.now() / 1000;
+            const idle = now - lastTickRef.current;
+            setStreamAlive(idle <= 5);
+            if (idle > 5 && now - lastDataLogRef.current > 8) {
+                lastDataLogRef.current = now;
+                const wsState = window._newSystemWS?.readyState;
+                const wsLabel = wsState === WebSocket.OPEN ? 'open' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : 'closing';
+                addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — re-subscribing symbols`, 'info');
+                setStatus(`No tick data (WS ${wsLabel}) — re-subscribing...`);
+                subscribeAllSymbols();
+            }
+        }, 3000);
+        return () => { if (watchdogRef.current) clearInterval(watchdogRef.current); };
+    }, [running, addLog, subscribeAllSymbols]);
 
     const startEngine = useCallback(() => {
         sessionStorage.removeItem('transaction_cache');
@@ -244,6 +278,12 @@ export const HighLow: React.FC = () => {
                     sd.candles = buildCandles(sd.prices, sd.times);
                     sd.ready = sd.prices.length >= MIN_TICKS;
                     sd.pat = newPattern();
+                    if (sd.ready) {
+                        lastTickRef.current = Math.max(lastTickRef.current, sd.times[sd.times.length - 1] ?? 0);
+                        const readyCount = HL_SYMBOLS.filter(s => sdRef.current[s]?.ready).length;
+                        addLog(`Loaded ${sd.prices.length} ticks — ${SYMBOL_LABELS[sym] || sym} (${readyCount}/10 ready)`, 'info');
+                    }
+                    updateBoard(sym);
                 }
                 if (data.msg_type === 'tick') {
                     const tick = data.tick;
@@ -474,8 +514,14 @@ export const HighLow: React.FC = () => {
                         </div>
                     )}
 
-                    <div style={{ marginTop: 8, fontSize: 10, color: '#94a3b8' }}>
-                        Monitoring {HL_SYMBOLS.length} volatilities — {touchingCount} touching a band
+                    <div style={{ marginTop: 8, fontSize: 10, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
+                        <span>Monitoring {HL_SYMBOLS.length} volatilities — {touchingCount} touching a band</span>
+                        <span>
+                            stream:{' '}
+                            <span style={{ color: streamAlive ? '#22c55e' : '#ef4444' }}>
+                                {streamAlive ? 'live' : 'no ticks'}
+                            </span>
+                        </span>
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
                         {HL_SYMBOLS.map(sym => {
@@ -496,8 +542,11 @@ export const HighLow: React.FC = () => {
                                     textAlign: 'center',
                                 }}>
                                     <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{shortSym(sym)}</div>
+                                    <div style={{ color: r?.price ? '#e2e8f0' : '#64748b', fontVariantNumeric: 'tabular-nums' }}>
+                                        {r?.price ? r.price.toFixed(4) : '—'}
+                                    </div>
                                     <div style={{ color: r?.awaiting ? '#f97316' : '#94a3b8' }}>
-                                        {r?.side ? (t ? 'UPPER' : 'LOWER') : '—'}{r?.streak ? ` · ${r.streak}` : ''}{r?.awaiting ? ' · REV' : ''}
+                                        {r?.side ? (t ? 'UPPER' : 'LOWER') : ''}{r?.streak ? ` · ${r.streak}` : ''}{r?.awaiting ? ' · REV' : ''}
                                     </div>
                                 </div>
                             );
