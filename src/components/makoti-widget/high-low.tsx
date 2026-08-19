@@ -6,7 +6,7 @@ import {
     HL_SYMBOLS, DEFAULT_CONFIG, HighLowConfig, TradeRecord, Candle,
     executeHighLowTrade, buildCandles, getBandTouch, stepPattern, newPattern,
     tickDirection, TickPattern, BbTouch,
-    MAX_TICKS, MIN_TICKS, TRADE_DURATION, MIN_STREAK,
+    MAX_TICKS, MIN_TICKS, TRADE_DURATION, MIN_STREAK, HISTORY_COUNT, BB_PERIOD,
 } from './high-low-engine';
 
 const LS_CONFIG_KEY = 'mw_hl_config';
@@ -65,6 +65,7 @@ export const HighLow: React.FC = () => {
     const contractMapRef = useRef<Map<string, { symbol: string; stake: number; duration: number }>>(new Map());
     const generationRef = useRef(0);
     const lastFireRef = useRef(0);
+    const maxCandlesRef = useRef(0);
 
     cfgRef.current = cfg;
 
@@ -157,6 +158,10 @@ export const HighLow: React.FC = () => {
 
         const candles = buildCandles(sd.prices, sd.times);
         sd.candles = candles;
+        if (candles.length > maxCandlesRef.current) {
+            maxCandlesRef.current = candles.length;
+            setMaxCandles(candles.length);
+        }
         const touch = getBandTouch(candles);
         const prevSide = sd.pat.side;
         const dir = tickDirection(prev, price);
@@ -192,11 +197,12 @@ export const HighLow: React.FC = () => {
     const lastTickRef = useRef(0);
     const lastDataLogRef = useRef(0);
     const [streamAlive, setStreamAlive] = useState(false);
+    const [maxCandles, setMaxCandles] = useState(0);
 
     const subscribeAllSymbols = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
         HL_SYMBOLS.forEach(sym => {
-            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
         });
     }, []);
 
@@ -515,9 +521,15 @@ export const HighLow: React.FC = () => {
                     )}
 
                     <div style={{ marginTop: 8, fontSize: 10, color: '#94a3b8', display: 'flex', justifyContent: 'space-between' }}>
-                        <span>Monitoring {HL_SYMBOLS.length} volatilities — {touchingCount} touching a band</span>
                         <span>
-                            stream:{' '}
+                            Monitoring {HL_SYMBOLS.length} volatilities — {touchingCount} touching a band
+                        </span>
+                        <span>
+                            candles{' '}
+                            <span style={{ color: maxCandles >= BB_PERIOD + 1 ? '#22c55e' : '#f97316' }}>
+                                {Math.min(maxCandles, BB_PERIOD + 1)}/{BB_PERIOD + 1}
+                            </span>
+                            {' · '}stream:{' '}
                             <span style={{ color: streamAlive ? '#22c55e' : '#ef4444' }}>
                                 {streamAlive ? 'live' : 'no ticks'}
                             </span>

@@ -64,7 +64,10 @@ export const HL_SYMBOLS = [
     'R_10', 'R_25', 'R_50', 'R_75', 'R_100',
     '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V',
 ];
-export const MAX_TICKS = 500;
+// 5000 ticks = ~83 min of 1s-volatility data = enough for 20+ 1-minute candles
+// (Bollinger Bands need 21 candles before any touch can be detected).
+export const MAX_TICKS = 5000;
+export const HISTORY_COUNT = 5000;
 export const MIN_TICKS = 30;
 export const CANDLE_INTERVAL_S = 60; // 1-minute candles
 export const BB_PERIOD = 20;
