@@ -354,7 +354,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
                     try {
                         transactions.onBotContractEvent({
                             contract_id: contractId,
-                            transaction_ids: { buy: (response as any)?.buy?.transaction_id },
+                            transaction_ids: { buy: (response as any)?.buy?.transaction_id ?? contractId },
                             buy_price: tradeStake,
                             currency: 'USD',
                             contract_type: direction,
@@ -387,10 +387,11 @@ export const useMarketKiller = (): MarketKillerEngine => {
 
     // --- Sold-contract handling ---
     const processContractSold = useCallback(
-        (contractId: string, profit: number) => {
+        (contractId: string, c: any) => {
             const entry = contractMapRef.current.get(contractId);
             if (!entry) return;
             contractMapRef.current.delete(contractId);
+            const profit = Number(c.profit);
             const { symbol: sym, stake: tradeStake, strategyNames, transactionId } = entry;
             const won = profit >= 0;
             const sd = symDataRef.current[sym];
@@ -399,15 +400,10 @@ export const useMarketKiller = (): MarketKillerEngine => {
             setPnl(pnlRef.current);
             try {
                 transactions.onBotContractEvent({
+                    ...c,
                     contract_id: contractId,
                     transaction_ids: { buy: transactionId ?? contractId },
-                    buy_price: tradeStake,
-                    profit,
-                    currency: 'USD',
-                    underlying: sym,
-                    display_name: SYMBOL_LABELS[sym],
-                    is_sold: true,
-                    is_completed: true,
+                    display_name: c.display_name ?? SYMBOL_LABELS[sym],
                     status: 'sold',
                 } as any);
             } catch {}
@@ -460,6 +456,14 @@ export const useMarketKiller = (): MarketKillerEngine => {
         [addLog, transactions, flushSym, flushAllSyms, stopKiller, checkLimits]
     );
 
+    // --- Per-symbol tick subscriptions (self-sufficient, like under-under-market) ---
+    const subscribeAllSymbols = useCallback(() => {
+        if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
+        ALL_SYMBOLS.forEach(sym => {
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
+        });
+    }, []);
+
     // --- Sold-contract subscription (proposal_open_contract) ---
     const subscribePOC = useCallback(() => {
         if (window._newSystemWS?.readyState === WebSocket.OPEN) {
@@ -478,7 +482,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
                 if (!c?.is_sold) return;
                 const cid = String(c.contract_id);
                 if (!contractMapRef.current.has(cid)) return;
-                processContractSold(cid, Number(c.profit));
+                processContractSold(cid, c);
             } catch {}
         });
         return () => {
@@ -685,6 +689,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
             handleMsg,
             () => {
                 addLog('Connected — live tick stream active', 'info');
+                subscribeAllSymbols();
             },
             () => {
                 if (runningRef.current) {
@@ -694,8 +699,9 @@ export const useMarketKiller = (): MarketKillerEngine => {
             }
         );
         wsRef.current = mws;
+        subscribeAllSymbols();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [stake, martingale, takeProfit, stopLoss, vhEnabled, vhThreshold, maxDir, addLog, stopKiller]);
+    }, [stake, martingale, takeProfit, stopLoss, vhEnabled, vhThreshold, maxDir, addLog, stopKiller, subscribeAllSymbols]);
 
     startKillerRef.current = startKiller;
 

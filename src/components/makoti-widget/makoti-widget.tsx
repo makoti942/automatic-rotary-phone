@@ -36,7 +36,6 @@ export const MakotiWidget: React.FC = () => {
     const [minimized, setMinimized] = useState(false);
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
-    const subscribedRef = useRef(false);
     const [tabOpen, setTabOpen] = useState(false);
     const tabDropRef = useRef<HTMLDivElement>(null);
 
@@ -78,14 +77,12 @@ export const MakotiWidget: React.FC = () => {
     }, []);
 
     useEffect(() => {
-        if (TRADING_TABS.includes(tab) && window._newSystemWS?.readyState === WebSocket.OPEN && !subscribedRef.current) {
-            subscribedRef.current = true;
+        if (TRADING_TABS.includes(tab) && window._newSystemWS?.readyState === WebSocket.OPEN) {
+            // Re-subscribe on every tab switch — other strategies may have
+            // sent `forget` for these streams (idempotent on the server).
             ALL_SYMBOLS.forEach(sym => {
                 window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 1, end: 'latest', subscribe: 1 }));
             });
-        }
-        if (tab === 'scanner') {
-            subscribedRef.current = false;
         }
     }, [tab]);
 

@@ -215,7 +215,14 @@ export const HighLow: React.FC = () => {
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
-        const mws = openMakotiWS(
+        const subscribeAllSymbols = useCallback(() => {
+        if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
+        HL_SYMBOLS.forEach(sym => {
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
+        });
+    }, []);
+
+    const mws = openMakotiWS(
             (data: any) => {
                 if (!runningRef.current) return;
                 if (data.msg_type === 'history') {
@@ -253,13 +260,15 @@ export const HighLow: React.FC = () => {
                 if (!runningRef.current) return;
                 addLog('Live tick stream active — monitoring BB bands', 'info');
                 setStatus('Monitoring Bollinger Bands on 1m candles...');
+                subscribeAllSymbols();
             },
             () => {
                 if (runningRef.current) { addLog('Connection lost. Stopping.', 'info'); stopEngine(); }
             },
         );
         wsRef.current = mws;
-    }, [cfg, addLog, stopEngine]);
+        subscribeAllSymbols();
+    }, [cfg, addLog, stopEngine, subscribeAllSymbols]);
 
     useEffect(() => {
         if (!running) return;
