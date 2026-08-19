@@ -3,10 +3,10 @@ import { useStore } from '@/hooks/useStore';
 import { SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
 import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import {
-    HL_SYMBOLS, DEFAULT_CONFIG, HighLowConfig, TradeRecord,
+    HL_SYMBOLS, DEFAULT_CONFIG, HighLowConfig, TradeRecord, Candle,
     executeHighLowTrade, buildCandles, getBandTouch, stepPattern, newPattern,
     tickDirection, TickPattern, BbTouch,
-    MAX_TICKS, MIN_TICKS, TRADE_DURATION,
+    MAX_TICKS, MIN_TICKS, TRADE_DURATION, MIN_STREAK,
 } from './high-low-engine';
 
 const LS_CONFIG_KEY = 'mw_hl_config';
@@ -23,7 +23,20 @@ interface SymData {
     prices: number[];
     times: number[];
     pat: TickPattern;
+    candles: Candle[];
     ready: boolean;
+}
+
+interface BoardRow {
+    side: 'upper' | 'lower' | null;
+    streak: number;
+    awaiting: boolean;
+    price: number;
+    bb: { upper: number; middle: number; lower: number } | null;
+}
+
+function shortSym(sym: string): string {
+    return sym.startsWith('1HZ') ? `1s${sym.slice(4, -1)}` : `V${sym.slice(2)}`;
 }
 
 export const HighLow: React.FC = () => {
@@ -36,13 +49,7 @@ export const HighLow: React.FC = () => {
     const [dailyPnl, setDailyPnl] = useState(0);
     const [trades, setTrades] = useState<TradeRecord[]>([]);
     const [status, setStatus] = useState('');
-    const [currentSymbol, setCurrentSymbol] = useState('');
-    const [currentSide, setCurrentSide] = useState<'upper' | 'lower' | null>(null);
-    const [currentStreak, setCurrentStreak] = useState(0);
-    const [currentAwaiting, setCurrentAwaiting] = useState(false);
-    const [currentPrice, setCurrentPrice] = useState(0);
-    const [currentBb, setCurrentBb] = useState<{ upper: number; middle: number; lower: number } | null>(null);
-    const [currentTouch, setCurrentTouch] = useState<BbTouch | null>(null);
+    const [board, setBoard] = useState<Record<string, BoardRow>>({});
     const [consecutiveLosses, setConsecutiveLosses] = useState(0);
     const [logs, setLogs] = useState<{ time: string; msg: string; type: string }[]>([]);
 
@@ -70,17 +77,20 @@ export const HighLow: React.FC = () => {
 
     const clearLogs = useCallback(() => { setLogs([]); }, []);
 
-    const updateSignal = useCallback((sym: string) => {
+    const updateBoard = useCallback((sym: string) => {
         const sd = sdRef.current[sym];
         if (!sd) return;
-        setCurrentSymbol(sym);
-        setCurrentSide(sd.pat.side);
-        setCurrentStreak(sd.pat.streak);
-        setCurrentAwaiting(sd.pat.awaitingReversal);
-        setCurrentPrice(sd.prices[sd.prices.length - 1] ?? 0);
-        const touch = getBandTouch(buildCandles(sd.prices, sd.times));
-        setCurrentTouch(touch);
-        setCurrentBb(touch?.bb ?? null);
+        const touch = getBandTouch(sd.candles);
+        setBoard(prev => ({
+            ...prev,
+            [sym]: {
+                side: sd.pat.side,
+                streak: sd.pat.streak,
+                awaiting: sd.pat.awaitingReversal,
+                price: sd.prices[sd.prices.length - 1] ?? 0,
+                bb: touch?.bb ?? null,
+            },
+        }));
     }, []);
 
     const stopEngine = useCallback(() => {
@@ -89,12 +99,7 @@ export const HighLow: React.FC = () => {
         generationRef.current++;
         setRunning(false);
         setInTrade(false);
-        setCurrentSymbol('');
-        setCurrentSide(null);
-        setCurrentStreak(0);
-        setCurrentAwaiting(false);
-        setCurrentBb(null);
-        setCurrentTouch(null);
+        setBoard({});
         setStatus('Stopped');
         try { wsRef.current?.close(); } catch {}
         wsRef.current = null;
@@ -141,25 +146,34 @@ export const HighLow: React.FC = () => {
         if (!sd.ready) return;
 
         const candles = buildCandles(sd.prices, sd.times);
+        sd.candles = candles;
         const touch = getBandTouch(candles);
+        const prevSide = sd.pat.side;
         const dir = tickDirection(prev, price);
         const res = stepPattern(sd.pat, touch, dir);
         sd.pat = res.pat;
+
+        if (res.pat.side && res.pat.side !== prevSide) {
+            addLog(
+                `📊 ${SYMBOL_LABELS[sym] || sym} touching ${res.pat.side.toUpperCase()} band — waiting for ${MIN_STREAK}+ ${res.pat.side === 'upper' ? 'UP' : 'DOWN'} ticks`,
+                'info'
+            );
+        }
 
         if (res.fire && res.action && !inTradeRef.current && runningRef.current) {
             const now = Date.now();
             if (now - lastFireRef.current < 3000) return;
             lastFireRef.current = now;
             addLog(
-                `BB TRIGGER ${SYMBOL_LABELS[sym] || sym}: ${touch!.side.toUpperCase()} band + ${sd.pat.streak} ticks + reversal → ${res.action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS'}`,
+                `BB TRIGGER ${SYMBOL_LABELS[sym] || sym}: ${touch!.side.toUpperCase()} band + ${MIN_STREAK}+ ticks + reversal → ${res.action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS'}`,
                 'trigger'
             );
-            updateSignal(sym);
+            updateBoard(sym);
             executeTrade(sym, res.action);
-        } else if (sym === currentSymbol || !inTradeRef.current) {
-            updateSignal(sym);
+        } else {
+            updateBoard(sym);
         }
-    }, [addLog, executeTrade, updateSignal, currentSymbol]);
+    }, [addLog, executeTrade, updateBoard]);
 
     const tickRef = useRef(handleTick);
     tickRef.current = handleTick;
@@ -178,23 +192,18 @@ export const HighLow: React.FC = () => {
         if (!hasData) {
             sdRef.current = {};
             HL_SYMBOLS.forEach(sym => {
-                sdRef.current[sym] = { prices: [], times: [], pat: newPattern(), ready: false };
+                sdRef.current[sym] = { prices: [], times: [], pat: newPattern(), candles: [], ready: false };
             });
         } else {
             HL_SYMBOLS.forEach(sym => {
-                if (!sdRef.current[sym]) sdRef.current[sym] = { prices: [], times: [], pat: newPattern(), ready: false };
+                if (!sdRef.current[sym]) sdRef.current[sym] = { prices: [], times: [], pat: newPattern(), candles: [], ready: false };
             });
         }
 
         runningRef.current = true;
         setRunning(true);
         setInTrade(false);
-        setCurrentSymbol('');
-        setCurrentSide(null);
-        setCurrentStreak(0);
-        setCurrentAwaiting(false);
-        setCurrentBb(null);
-        setCurrentTouch(null);
+        setBoard({});
         setStatus('Connected — building 1m candles from live ticks');
         setConsecutiveLosses(0);
         setPnl(0);
@@ -225,6 +234,7 @@ export const HighLow: React.FC = () => {
                     }
                     sd.prices = prices.slice(-MAX_TICKS);
                     sd.times = times.slice(-MAX_TICKS);
+                    sd.candles = buildCandles(sd.prices, sd.times);
                     sd.ready = sd.prices.length >= MIN_TICKS;
                     sd.pat = newPattern();
                 }
@@ -334,8 +344,18 @@ export const HighLow: React.FC = () => {
     const wins = trades.filter(t => t.won).length;
     const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(1) : '0.0';
 
-    const phaseLabel = !running ? 'OFF' : inTrade ? 'LIVE' : currentAwaiting ? 'REVERSAL?' : currentSide ? 'TRACKING' : 'SCANNING';
-    const phaseColor = !running ? '#6b7280' : inTrade ? '#22c55e' : currentAwaiting ? '#ef4444' : currentSide ? '#f59e0b' : '#6b7280';
+    const touchingCount = HL_SYMBOLS.filter(s => board[s]?.side).length;
+    const activeSym = HL_SYMBOLS
+        .filter(s => board[s]?.side)
+        .sort((a, b) => {
+            const wa = (board[a].awaiting ? 2 : 0) + Math.min(board[a].streak, MIN_STREAK) / MIN_STREAK;
+            const wb = (board[b].awaiting ? 2 : 0) + Math.min(board[b].streak, MIN_STREAK) / MIN_STREAK;
+            return wb - wa;
+        })[0] ?? null;
+    const active = activeSym ? board[activeSym] : null;
+
+    const phaseLabel = !running ? 'OFF' : inTrade ? 'LIVE' : active?.awaiting ? 'REVERSAL?' : active?.side ? 'TRACKING' : 'SCANNING';
+    const phaseColor = !running ? '#6b7280' : inTrade ? '#22c55e' : active?.awaiting ? '#ef4444' : active?.side ? '#f59e0b' : '#6b7280';
 
     return (
         <div className='mw-killer'>
@@ -384,22 +404,21 @@ export const HighLow: React.FC = () => {
             {running && (
                 <div className='mw-killer__signal'>
                     <div className='mw-killer__signal-detail'>{status}</div>
-                    {currentSymbol && (
+
+                    {active && (
                         <div className='mw-killer__signal-strength'>
-                            <span style={{ color: currentSide === 'upper' ? '#ef4444' : currentSide === 'lower' ? '#22c55e' : '#94a3b8' }}>
-                                {SYMBOL_LABELS[currentSymbol] || currentSymbol}
+                            <span style={{ color: active.side === 'upper' ? '#ef4444' : '#22c55e' }}>
+                                {SYMBOL_LABELS[activeSym!] || activeSym}
                             </span>
-                            {currentSide && (
-                                <span style={{ color: currentSide === 'upper' ? '#ef4444' : '#22c55e', marginLeft: 8 }}>
-                                    {currentSide === 'upper' ? 'UPPER BAND' : 'LOWER BAND'}
-                                </span>
-                            )}
-                            {currentStreak > 0 && (
+                            <span style={{ color: active.side === 'upper' ? '#ef4444' : '#22c55e', marginLeft: 8 }}>
+                                {active.side === 'upper' ? 'UPPER BAND' : 'LOWER BAND'}
+                            </span>
+                            {active.streak > 0 && (
                                 <span style={{ color: '#facc15', marginLeft: 8 }}>
-                                    {currentStreak} {currentSide === 'upper' ? 'UP' : 'DOWN'} ticks
+                                    {active.streak} {active.side === 'upper' ? 'UP' : 'DOWN'} ticks
                                 </span>
                             )}
-                            {currentAwaiting && (
+                            {active.awaiting && (
                                 <span style={{ color: '#f97316', marginLeft: 8 }}>awaiting reversal</span>
                             )}
                             <span style={{
@@ -416,16 +435,65 @@ export const HighLow: React.FC = () => {
                             </span>
                             {inTrade && <span className='mw-killer__active-dot'> LIVE</span>}
                             {consecutiveLosses > 0 && <span style={{ color: '#ef4444', marginLeft: 8 }}>x{consecutiveLosses} losses</span>}
-                            {currentBb && currentPrice > 0 && (
+
+                            <div style={{ marginTop: 6 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
+                                    <span>
+                                        streak {Math.min(active.streak, MIN_STREAK)}/{MIN_STREAK} {active.side === 'upper' ? 'UP' : 'DOWN'}
+                                    </span>
+                                    <span>{active.awaiting ? 'waiting for reversal tick...' : 'building streak...'}</span>
+                                </div>
+                                <div style={{ height: 4, background: '#1e293b', borderRadius: 2, marginTop: 2 }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(active.streak / MIN_STREAK, 1) * 100}%`,
+                                        background: active.awaiting ? '#f59e0b' : '#facc15',
+                                        borderRadius: 2,
+                                        transition: 'width 0.15s linear',
+                                    }} />
+                                </div>
+                            </div>
+
+                            {active.bb && active.price > 0 && (
                                 <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, display: 'flex', gap: 12 }}>
-                                    <span>Upper: <span style={{ color: '#ef4444' }}>{currentBb.upper.toFixed(4)}</span></span>
-                                    <span>Mid: <span style={{ color: '#facc15' }}>{currentBb.middle.toFixed(4)}</span></span>
-                                    <span>Lower: <span style={{ color: '#22c55e' }}>{currentBb.lower.toFixed(4)}</span></span>
-                                    <span>Price: <span style={{ color: '#e2e8f0' }}>{currentPrice.toFixed(4)}</span></span>
+                                    <span>Upper: <span style={{ color: '#ef4444' }}>{active.bb.upper.toFixed(4)}</span></span>
+                                    <span>Mid: <span style={{ color: '#facc15' }}>{active.bb.middle.toFixed(4)}</span></span>
+                                    <span>Lower: <span style={{ color: '#22c55e' }}>{active.bb.lower.toFixed(4)}</span></span>
+                                    <span>Price: <span style={{ color: '#e2e8f0' }}>{active.price.toFixed(4)}</span></span>
                                 </div>
                             )}
                         </div>
                     )}
+
+                    <div style={{ marginTop: 8, fontSize: 10, color: '#94a3b8' }}>
+                        Monitoring {HL_SYMBOLS.length} volatilities — {touchingCount} touching a band
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}>
+                        {HL_SYMBOLS.map(sym => {
+                            const r = board[sym];
+                            const t = r?.side === 'upper';
+                            const b = r?.side === 'lower';
+                            const borderColor = t ? '#ef4444' : b ? '#22c55e' : '#334155';
+                            return (
+                                <div key={sym} style={{
+                                    flex: '1 1 16%',
+                                    minWidth: 58,
+                                    padding: '3px 6px',
+                                    borderRadius: 4,
+                                    fontSize: 10,
+                                    background: '#1e293b',
+                                    border: `1px solid ${borderColor}`,
+                                    opacity: r?.side ? 1 : 0.45,
+                                    textAlign: 'center',
+                                }}>
+                                    <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{shortSym(sym)}</div>
+                                    <div style={{ color: r?.awaiting ? '#f97316' : '#94a3b8' }}>
+                                        {r?.side ? (t ? 'UPPER' : 'LOWER') : '—'}{r?.streak ? ` · ${r.streak}` : ''}{r?.awaiting ? ' · REV' : ''}
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
                 </div>
             )}
 
