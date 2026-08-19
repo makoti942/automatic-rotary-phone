@@ -39,8 +39,11 @@ self.addEventListener('fetch', (event) => {
         event.respondWith(
             fetch(request)
                 .then((response) => {
-                    const copy = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                    // Only cache full (200) responses — 206 partials can't be cached.
+                    if (response.status === 200) {
+                        const copy = response.clone();
+                        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
+                    }
                     return response;
                 })
                 .catch(() => caches.match(request).then((cached) => cached || caches.match('./')))
@@ -52,9 +55,10 @@ self.addEventListener('fetch', (event) => {
         caches.match(request).then((cached) => {
             if (cached) return cached;
             return fetch(request).then((response) => {
-                if (response.ok) {
+                // Range requests (videos, wasm) come back as 206 — skip them.
+                if (response.status === 200) {
                     const copy = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy)).catch(() => {});
                 }
                 return response;
             });

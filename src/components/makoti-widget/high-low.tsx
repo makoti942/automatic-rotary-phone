@@ -180,6 +180,13 @@ export const HighLow: React.FC = () => {
 
     const pocUnsubRef = useRef<(() => void) | null>(null);
 
+    const subscribeAllSymbols = useCallback(() => {
+        if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
+        HL_SYMBOLS.forEach(sym => {
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
+        });
+    }, []);
+
     const startEngine = useCallback(() => {
         sessionStorage.removeItem('transaction_cache');
         consecutiveLossesRef.current = 0;
@@ -215,14 +222,7 @@ export const HighLow: React.FC = () => {
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
-        const subscribeAllSymbols = useCallback(() => {
-        if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
-        HL_SYMBOLS.forEach(sym => {
-            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 50, end: 'latest', subscribe: 1 }));
-        });
-    }, []);
-
-    const mws = openMakotiWS(
+        const mws = openMakotiWS(
             (data: any) => {
                 if (!runningRef.current) return;
                 if (data.msg_type === 'history') {
