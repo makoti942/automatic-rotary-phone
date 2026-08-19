@@ -17,7 +17,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'market_killer', label: 'Market Killer' },
     { value: 'over_under', label: 'O/U Killer' },
     { value: 'high_low', label: 'HIGH/LOW' },
-    { value: 'under_under_market', label: 'UNDER/UNDER MARKET' },
+    { value: 'under_under_market', label: 'UNDER 7,6,5 KILLER' },
     { value: 'differs_auto', label: 'DIFFERS AUTO' },
 ];
 

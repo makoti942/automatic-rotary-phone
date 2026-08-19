@@ -42,6 +42,7 @@ export interface ContractEntry {
     symbol: string;
     stake: number;
     strategyNames: string[];
+    transactionId?: string;
 }
 
 export interface VirtualTrade {

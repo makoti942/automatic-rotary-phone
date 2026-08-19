@@ -272,8 +272,6 @@ export const useMarketKiller = (): MarketKillerEngine => {
                     is_virtual: true,
                 } as any);
             } catch {}
-            pnlRef.current += profit;
-            setPnl(pnlRef.current);
             const sd = symDataRef.current[sym];
             if (won) {
                 if (sd) sd.wins++;
@@ -350,6 +348,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
                         symbol: sym,
                         stake: tradeStake,
                         strategyNames: ['tick_direction'],
+                        transactionId: (response as any)?.buy?.transaction_id,
                     });
                     addLog(`Contract ${contractId} open on ${SYMBOL_LABELS[sym]}`, 'info');
                     try {
@@ -392,7 +391,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
             const entry = contractMapRef.current.get(contractId);
             if (!entry) return;
             contractMapRef.current.delete(contractId);
-            const { symbol: sym, stake: tradeStake, strategyNames } = entry;
+            const { symbol: sym, stake: tradeStake, strategyNames, transactionId } = entry;
             const won = profit >= 0;
             const sd = symDataRef.current[sym];
             strategyNames.forEach(n => recordOutcome(n, won));
@@ -401,7 +400,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
             try {
                 transactions.onBotContractEvent({
                     contract_id: contractId,
-                    transaction_ids: { buy: contractId },
+                    transaction_ids: { buy: transactionId ?? contractId },
                     buy_price: tradeStake,
                     profit,
                     currency: 'USD',
@@ -669,10 +668,12 @@ export const useMarketKiller = (): MarketKillerEngine => {
                     }
                     const sym: string = data.echo_req?.parameters?.symbol;
                     if (sym) {
+                        const prev = contractMapRef.current.get(cid);
                         contractMapRef.current.set(cid, {
                             symbol: sym,
                             stake: currentStakeRef.current,
                             strategyNames: ['tick_direction'],
+                            transactionId: data.buy?.transaction_id ?? prev?.transactionId,
                         });
                     }
                     break;
