@@ -63,6 +63,24 @@ const getDefaultServerURL = () => {
     return isProductionEnv ? WS_SERVERS.PRODUCTION : WS_SERVERS.STAGING;
 };
 
+// =============================================================================
+// WebSocket fallback state
+// =============================================================================
+
+// When the authenticated OTP socket proves unusable (stale/consumed OTP — e.g.
+// after a page reload), the app falls back to the public socket for the rest of
+// the session. The public socket serves market data (active symbols, ticks,
+// history) without authentication, so the app shell and widget keep working;
+// account info and buying require a fresh login (which resets this flag).
+let publicSocketFallback = false;
+export const isPublicSocketFallbackActive = () => publicSocketFallback;
+export const enablePublicSocketFallback = () => {
+    publicSocketFallback = true;
+};
+export const resetPublicSocketFallback = () => {
+    publicSocketFallback = false;
+};
+
 /**
  * Gets the WebSocket URL using the authenticated flow
  * 1. Get access token from auth_info (localStorage via vendored deriv-core)
@@ -72,6 +90,10 @@ const getDefaultServerURL = () => {
  */
 export const getSocketURL = async (): Promise<string> => {
     try {
+        if (publicSocketFallback) {
+            return getDefaultServerURL();
+        }
+
         const authInfo = getAuthInfo();
         if (!authInfo || !authInfo.access_token) {
             return getDefaultServerURL();

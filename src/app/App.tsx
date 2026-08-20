@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import React from 'react';
 import { createBrowserRouter, createRoutesFromElements, Route, RouterProvider } from 'react-router-dom';
 import { cleanupUrl, handleOAuthCallback } from '@/external/deriv-core';
+import { resetPublicSocketFallback } from '@/components/shared';
 import ChunkLoader from '@/components/loader/chunk-loader';
 import MakotiLoader from '@/components/loader/makoti-loader';
 import MakotiLoaderGate, { markLoaderDone } from '@/components/loader/makoti-loader-gate';
@@ -91,6 +92,9 @@ function App() {
                     redirectUri: window.location.origin,
                     scopes: 'trade',
                 });
+
+                // Fresh login — the authenticated OTP flow is usable again.
+                resetPublicSocketFallback();
 
                 const { DerivWSAccountsService } = await import('@/services/derivws-accounts.service');
                 const accounts = await DerivWSAccountsService.fetchAccountsList(authInfo.access_token);

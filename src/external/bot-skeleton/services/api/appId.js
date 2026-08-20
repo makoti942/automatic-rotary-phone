@@ -1,4 +1,4 @@
-import { getSocketURL } from '@/components/shared';
+import { getSocketURL, enablePublicSocketFallback } from '@/components/shared';
 import DerivAPIBasic from '@deriv/deriv-api/dist/DerivAPIBasic';
 import APIMiddleware from './api-middleware';
 
@@ -8,6 +8,25 @@ import APIMiddleware from './api-middleware';
 let derivApiInstance = null;
 let derivApiPromise = null;
 let currentWebSocketURL = null;
+
+/**
+ * True once the authenticated OTP socket has been rejected by the server.
+ * Reset on instance clear so a fresh login can try the OTP flow again.
+ */
+let authFallbackTriggered = false;
+
+/**
+ * Core account requests whose rejection means the session itself is dead
+ * (a stale/consumed one-time OTP), not just a single bad request.
+ */
+const AUTH_MSG_TYPES = new Set([
+    'active_symbols',
+    'balance',
+    'transaction',
+    'authorize',
+    'proposal_open_contract',
+]);
+const AUTH_ERROR_RE = /unrecognis|unauthori|invalid|expired|forbidden|not authenticated/i;
 
 /**
  * Clears the singleton instance (useful for logout or forced reconnection)
@@ -23,6 +42,7 @@ export const clearDerivApiInstance = () => {
     derivApiInstance = null;
     derivApiPromise = null;
     currentWebSocketURL = null;
+    authFallbackTriggered = false;
 };
 
 /**
@@ -97,6 +117,34 @@ export const generateDerivApiInstance = async (forceNew = false) => {
             deriv_socket.addEventListener('open', () => {
                 console.log('[DerivAPI] WebSocket connection established');
             });
+
+            // Watch for a dead authenticated session (stale/consumed OTP, common
+            // after a page reload). When the server rejects core account requests,
+            // fall back to the public socket so market data and the widget keep
+            // working without forcing a manual re-login.
+            const authErrorListener = event => {
+                if (authFallbackTriggered) return;
+                const wsURL = currentWebSocketURL || '';
+                if (!/otp=/i.test(wsURL)) return;
+                try {
+                    const msg = JSON.parse(event.data);
+                    if (msg && msg.error && AUTH_MSG_TYPES.has(msg.msg_type)) {
+                        const text = `${msg.error.message || ''} ${msg.error.code || ''}`;
+                        if (AUTH_ERROR_RE.test(text)) {
+                            authFallbackTriggered = true;
+                            console.warn(
+                                '[DerivAPI] OTP session rejected by server — switching to public socket (re-login to trade).'
+                            );
+                            enablePublicSocketFallback();
+                            deriv_socket.close();
+                        }
+                    }
+                } catch {
+                    // Non-JSON messages are irrelevant here
+                }
+            };
+
+            deriv_socket.addEventListener('message', authErrorListener);
 
             deriv_socket.addEventListener('message', (event) => {
                 window.dispatchEvent(new CustomEvent('newSystemMessage', { detail: event }));
