@@ -188,10 +188,12 @@ export const HighLow: React.FC = () => {
             return;
         }
         HL_SYMBOLS.forEach(sym => {
-            // forget ONLY on a full reset — clears the widget's count:1 subscription
-            // so the server returns full history with the new subscription.
+            // forget_all ONLY on a full reset — clears the widget's count:1
+            // subscription so the server returns full history with the new
+            // subscription. (Note: `forget` takes a subscription id, not a
+            // symbol — the public socket rejects `forget: <symbol>`.)
             if (forceFull) {
-                window._newSystemWS.send(JSON.stringify({ forget: sym }));
+                window._newSystemWS.send(JSON.stringify({ forget_all: sym }));
             }
             // full-history streaming subscription: initial response = 5000 ticks
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
@@ -263,7 +265,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v9 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v10 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 

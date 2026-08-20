@@ -536,7 +536,7 @@ export const DiffersAuto: React.FC = () => {
 
     const unsubscribeAll = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
-        ALL_SYMBOLS.forEach(sym => window._newSystemWS.send(JSON.stringify({ forget: sym })));
+        ALL_SYMBOLS.forEach(sym => window._newSystemWS.send(JSON.stringify({ forget_all: sym })));
     }, []);
 
     const start = useCallback(() => {

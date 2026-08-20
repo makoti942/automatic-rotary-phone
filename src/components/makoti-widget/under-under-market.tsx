@@ -238,7 +238,7 @@ export const UnderUnderMarket: React.FC = () => {
 
     const unsubscribeAll = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
-        ALL_SYMBOLS.forEach(sym => window._newSystemWS.send(JSON.stringify({ forget: sym })));
+        ALL_SYMBOLS.forEach(sym => window._newSystemWS.send(JSON.stringify({ forget_all: sym })));
     }, []);
 
     useEffect(() => { return () => { runRef.current = false; unsubscribeAll(); if (wsRef.current) { wsRef.current.close(); wsRef.current = null; } }; }, [unsubscribeAll]);
