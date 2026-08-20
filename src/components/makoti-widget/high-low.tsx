@@ -53,6 +53,8 @@ export const HighLow: React.FC = () => {
     const maxCandlesRef = useRef(0);
     const diagRef = useRef(0);
     const lastErrorRef = useRef('');
+    const lastFullResetRef = useRef(0);
+    const rateLimitedUntilRef = useRef(0);
 
     const addLog = useCallback((msg: string, type: string = 'info') => {
         const time = new Date().toLocaleTimeString();
@@ -198,6 +200,8 @@ export const HighLow: React.FC = () => {
     }, [addLog]);
 
     // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
+    // Throttled hard: repeated full resets spam `forget` and trip the server's
+    // per-message rate limits (which then also block `time`/`history` responses).
     const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const forceFullRef = useRef(false);
     useEffect(() => {
@@ -207,21 +211,25 @@ export const HighLow: React.FC = () => {
             const now = Date.now() / 1000;
             const idle = now - lastTickRef.current;
             setStreamAlive(idle <= 5);
-            if (idle > 5 && now - lastDataLogRef.current > 8) {
-                lastDataLogRef.current = now;
-                const wsState = window._newSystemWS?.readyState;
-                const wsLabel = wsState === WebSocket.OPEN ? 'open' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : 'closing';
-                if (wsState !== WebSocket.OPEN) {
-                    addLog(`⚠ WebSocket ${wsLabel} — Deriv session may have expired. Stop, re-login if needed, then RUN again.`, 'info');
-                    setStatus(`WS ${wsLabel} — session may have expired`);
-                    return;
-                }
-                // escalate to a full reset if ticks have been dead for a while
-                forceFullRef.current = idle > 20;
-                addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — ${forceFullRef.current ? 'full reset' : 're-subscribing'}`, 'info');
-                setStatus(`No tick data (WS ${wsLabel}) — ${forceFullRef.current ? 'full reset' : 're-subscribing'}...`);
-                subscribeAllSymbols(forceFullRef.current);
+            if (idle <= 5) return;
+            if (now < rateLimitedUntilRef.current) return;
+            if (now - lastDataLogRef.current < 10) return;
+            lastDataLogRef.current = now;
+            const wsState = window._newSystemWS?.readyState;
+            const wsLabel = wsState === WebSocket.OPEN ? 'open' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : 'closing';
+            if (wsState !== WebSocket.OPEN) {
+                addLog(`⚠ WebSocket ${wsLabel} — Deriv session may have expired. Stop, re-login if needed, then RUN again.`, 'info');
+                setStatus(`WS ${wsLabel} — session may have expired`);
+                return;
             }
+            // full reset (forget + history) only when ticks have been dead a while
+            // AND the last full reset was more than a minute ago
+            const full = idle > 20 && now - lastFullResetRef.current > 60;
+            if (full) lastFullResetRef.current = now;
+            forceFullRef.current = full;
+            addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — ${full ? 'full reset' : 're-subscribing'}`, 'info');
+            setStatus(`No tick data (WS ${wsLabel}) — ${full ? 'full reset' : 're-subscribing'}...`);
+            subscribeAllSymbols(full);
         }, 3000);
         return () => { if (watchdogRef.current) clearInterval(watchdogRef.current); };
     }, [running, addLog, subscribeAllSymbols]);
@@ -230,7 +238,9 @@ export const HighLow: React.FC = () => {
         generationRef.current++;
         lastFireRef.current = 0;
         lastTickRef.current = 0;
-        lastDataLogRef.current = 0;
+        lastDataLogRef.current = Date.now() / 1000;
+        lastFullResetRef.current = Date.now() / 1000;
+        rateLimitedUntilRef.current = 0;
         maxCandlesRef.current = 0;
 
         const hasData = Object.values(sdRef.current).some(sd => sd.prices.length > 0);
@@ -257,11 +267,23 @@ export const HighLow: React.FC = () => {
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
+        // One forget + history pass up front: clears the widget's count:1
+        // subscriptions so the server returns full history immediately.
+        subscribeAllSymbols(true);
+
         const mws = openMakotiWS(
             (data: any) => {
                 if (!runningRef.current) return;
                 const mt = data?.msg_type;
                 if (mt !== 'tick' && mt !== 'history' && mt !== 'candles' && mt !== 'error') {
+                    if (data?.error && /rate limit/i.test(`${data.error.message || ''} ${data.error.code || ''}`)) {
+                        const now = Date.now() / 1000;
+                        if (now > rateLimitedUntilRef.current) {
+                            rateLimitedUntilRef.current = now + 60;
+                            addLog(`⚠ Rate limited on ${mt} — backing off 60s`, 'info');
+                        }
+                        return;
+                    }
                     if (Date.now() - diagRef.current > 2000) {
                         diagRef.current = Date.now();
                         const err = data?.error ? ` err=${data.error.message || data.error.code || '?'}` : '';
@@ -271,6 +293,14 @@ export const HighLow: React.FC = () => {
                 if (mt === 'error') {
                     const e = data.error || {};
                     const msg = e.message || e.code || 'unknown';
+                    if (/rate limit/i.test(msg)) {
+                        const now = Date.now() / 1000;
+                        if (now > rateLimitedUntilRef.current) {
+                            rateLimitedUntilRef.current = now + 60;
+                            addLog(`⚠ Rate limited — backing off 60s`, 'info');
+                        }
+                        return;
+                    }
                     if (msg !== lastErrorRef.current) {
                         lastErrorRef.current = msg;
                         addLog(`⚠ SERVER ERROR: ${msg}`, 'info');
@@ -282,8 +312,9 @@ export const HighLow: React.FC = () => {
                         stopEngine();
                         return;
                     }
-                    if (Date.now() - lastDataLogRef.current > 8) {
-                        lastDataLogRef.current = Date.now();
+                    const now = Date.now() / 1000;
+                    if (now - lastDataLogRef.current > 10) {
+                        lastDataLogRef.current = now;
                         setStatus(`Server error: ${msg} — re-subscribing`);
                         subscribeAllSymbols(forceFullRef.current);
                     }
@@ -331,7 +362,9 @@ export const HighLow: React.FC = () => {
                 if (!runningRef.current) return;
                 addLog('Live tick stream active — monitoring BB bands', 'info');
                 setStatus('Monitoring Bollinger Bands — signals only');
-                subscribeAllSymbols(true);
+                // plain subscribe on (re)open: a fresh socket has no stale
+                // subscriptions, so forgets here would just burn the rate limit
+                subscribeAllSymbols(false);
             },
             () => {
                 if (runningRef.current) { addLog('Connection lost. Stopping.', 'info'); stopEngine(); }
