@@ -182,21 +182,34 @@ export const HighLow: React.FC = () => {
             addLog(`DBG subscribe skipped: wsState=${wsState} (${wsState === undefined ? 'no socket' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : wsState === WebSocket.CLOSING ? 'closing' : '? (open=' + WebSocket.OPEN + ')'})`, 'info');
             return;
         }
+    const subscribeAllSymbols = useCallback((forceFull: boolean = false) => {
+        const wsState = window._newSystemWS?.readyState;
+        if (wsState !== WebSocket.OPEN) {
+            if (wsState === undefined || wsState === WebSocket.CLOSED) {
+                // socket missing or dead — try to recreate it
+                import('@/external/bot-skeleton/services/api/appId').then(mod => {
+                    mod.generateDerivApiInstance().catch(() => {});
+                }).catch(() => {});
+            }
+            addLog(`DBG subscribe skipped: wsState=${wsState}`, 'info');
+            return;
+        }
         HL_SYMBOLS.forEach(sym => {
-            // CRITICAL: forget first — if the symbol is already subscribed (e.g. the
-            // widget's count:1 tab subscription), the server updates it silently and
-            // returns NO history. Forget forces a fresh subscription WITH full history.
-            window._newSystemWS.send(JSON.stringify({ forget: sym }));
+            // forget ONLY on a full reset — clears the widget's count:1 subscription
+            // so the server returns full history with the new subscription.
+            if (forceFull) {
+                window._newSystemWS.send(JSON.stringify({ forget: sym }));
+                loadCandlesViaPromise(sym);
+            }
             // full-history streaming subscription: initial response = 5000 ticks
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
-            // extra: 1m candles via promise for instant Bollinger data
-            loadCandlesViaPromise(sym);
         });
-        addLog('Requested history + candles for all 10 volatilities', 'info');
+        addLog(forceFull ? 'Full reset: forget + history + candles for all symbols' : 'Re-subscribed tick streams', 'info');
     }, [addLog, loadCandlesViaPromise]);
 
     // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
     const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+    const forceFullRef = useRef(false);
     useEffect(() => {
         if (!running) return;
         watchdogRef.current = setInterval(() => {
@@ -208,9 +221,11 @@ export const HighLow: React.FC = () => {
                 lastDataLogRef.current = now;
                 const wsState = window._newSystemWS?.readyState;
                 const wsLabel = wsState === WebSocket.OPEN ? 'open' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : 'closing';
-                addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — re-subscribing symbols`, 'info');
-                setStatus(`No tick data (WS ${wsLabel}) — re-subscribing...`);
-                subscribeAllSymbols();
+                // escalate to a full reset if ticks have been dead for a while
+                forceFullRef.current = idle > 20;
+                addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — ${forceFullRef.current ? 'full reset' : 're-subscribing'}`, 'info');
+                setStatus(`No tick data (WS ${wsLabel}) — ${forceFullRef.current ? 'full reset' : 're-subscribing'}...`);
+                subscribeAllSymbols(forceFullRef.current);
             }
         }, 3000);
         return () => { if (watchdogRef.current) clearInterval(watchdogRef.current); };
@@ -243,7 +258,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v4 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v5 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -254,7 +269,8 @@ export const HighLow: React.FC = () => {
                 if (mt !== 'tick' && mt !== 'history' && mt !== 'candles') {
                     if (Date.now() - diagRef.current > 2000) {
                         diagRef.current = Date.now();
-                        addLog(`DBG rx type=${mt} keys=[${Object.keys(data || {}).join(',')}]`, 'info');
+                        const err = data?.error ? ` err=${data.error.message || data.error.code || '?'}` : '';
+                        addLog(`DBG rx type=${mt}${err} keys=[${Object.keys(data || {}).join(',')}]`, 'info');
                     }
                 }
                 if (mt === 'history') {
@@ -268,8 +284,8 @@ export const HighLow: React.FC = () => {
                     const times = Array.isArray(rawTimes) && rawTimes.length === prices.length
                         ? rawTimes.map((t: any) => Number(t))
                         : prices.map((_, i) => Math.floor(Date.now() / 1000) - (prices.length - 1 - i));
-                    sd.prices = prices.slice(-MAX_TICKS);
-                    sd.times = times.slice(-MAX_TICKS);
+                    sd.prices = prices.length >= sd.prices.length ? prices.slice(-MAX_TICKS) : sd.prices;
+                    sd.times = times.length >= sd.times.length ? times.slice(-MAX_TICKS) : sd.times;
                     const candles = buildCandles(sd.prices, sd.times);
                     if (candles.length > 0) {
                         sd.candles = candles;
@@ -299,14 +315,14 @@ export const HighLow: React.FC = () => {
                 if (!runningRef.current) return;
                 addLog('Live tick stream active — monitoring BB bands', 'info');
                 setStatus('Monitoring Bollinger Bands — signals only');
-                subscribeAllSymbols();
+                subscribeAllSymbols(true);
             },
             () => {
                 if (runningRef.current) { addLog('Connection lost. Stopping.', 'info'); stopEngine(); }
             },
         );
         wsRef.current = mws;
-        subscribeAllSymbols();
+        subscribeAllSymbols(true);
     }, [addLog, stopEngine, subscribeAllSymbols]);
 
     useEffect(() => {
