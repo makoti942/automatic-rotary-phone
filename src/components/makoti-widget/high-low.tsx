@@ -172,7 +172,10 @@ export const HighLow: React.FC = () => {
                 addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: empty response`, 'info');
             }
         } catch (e: any) {
-            if (runningRef.current) addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${e?.message || e || 'failed'}`, 'info');
+            if (runningRef.current) {
+                const msg = e?.error?.message || e?.error?.code || e?.message || (e && typeof e === 'object' ? JSON.stringify(e).slice(0, 140) : String(e));
+                addLog(`DBG candles ${sym}: ${msg}`, 'info');
+            }
         }
     }, [addLog, updateBoard]);
 
@@ -252,7 +255,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v5 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v6 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -266,6 +269,17 @@ export const HighLow: React.FC = () => {
                         const err = data?.error ? ` err=${data.error.message || data.error.code || '?'}` : '';
                         addLog(`DBG rx type=${mt}${err} keys=[${Object.keys(data || {}).join(',')}]`, 'info');
                     }
+                }
+                if (mt === 'error') {
+                    const e = data.error || {};
+                    const msg = e.message || e.code || 'unknown';
+                    addLog(`⚠ SERVER ERROR: ${msg}`, 'info');
+                    if (Date.now() - lastDataLogRef.current > 8) {
+                        lastDataLogRef.current = Date.now();
+                        setStatus(`Server error: ${msg} — full reset`);
+                        subscribeAllSymbols(true);
+                    }
+                    return;
                 }
                 if (mt === 'history') {
                     const sym: string = data.echo_req?.ticks_history;
@@ -316,7 +330,6 @@ export const HighLow: React.FC = () => {
             },
         );
         wsRef.current = mws;
-        subscribeAllSymbols(true);
     }, [addLog, stopEngine, subscribeAllSymbols]);
 
     useEffect(() => {
@@ -462,7 +475,7 @@ export const HighLow: React.FC = () => {
                                 }}>
                                     <div style={{ fontWeight: 600, color: '#e2e8f0' }}>{shortSym(sym)}</div>
                                     <div style={{ color: r?.price ? '#e2e8f0' : '#64748b', fontVariantNumeric: 'tabular-nums' }}>
-                                        {r?.price ? r.price.toFixed(4) : '—'}
+                                        {typeof r?.price === 'number' && isFinite(r.price) ? r.price.toFixed(4) : '—'}
                                     </div>
                                     <div style={{ color: r?.awaiting ? '#f97316' : '#94a3b8' }}>
                                         {r?.side ? (t ? 'UPPER' : 'LOWER') : ''}{r?.streak ? ` · ${r.streak}` : ''}{r?.awaiting ? ' · REV' : ''}
