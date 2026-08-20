@@ -147,41 +147,6 @@ export const HighLow: React.FC = () => {
     const tickRef = useRef(handleTick);
     tickRef.current = handleTick;
 
-    const loadHistoryViaPromise = useCallback(async (sym: string) => {
-        try {
-            const res: any = await sendViaNewSystemWithPromise({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest' });
-            if (!runningRef.current) return;
-            if (res?.error) { addLog(`DBG history ${sym}: ${res.error.message || res.error.code || 'error'}`, 'info'); return; }
-            const hist = res?.history;
-            if (!hist || !Array.isArray(hist.prices)) {
-                addLog(`DBG history ${sym}: bad response keys=[${Object.keys(res || {}).join(',')}]`, 'info');
-                return;
-            }
-            const sd = sdRef.current[sym];
-            if (!sd) return;
-            const prices = hist.prices.map((p: any) => Number(p));
-            const times = Array.isArray(hist.times) && hist.times.length === prices.length
-                ? hist.times.map((t: any) => Number(t))
-                : prices.map((_, i) => Math.floor(Date.now() / 1000) - (prices.length - 1 - i));
-            sd.prices = prices.slice(-MAX_TICKS);
-            sd.times = times.slice(-MAX_TICKS);
-            const candles = buildCandles(sd.prices, sd.times);
-            if (candles.length > 0) {
-                sd.candles = candles;
-                maxCandlesRef.current = Math.max(maxCandlesRef.current, candles.length);
-                setMaxCandles(maxCandlesRef.current);
-            }
-            sd.ready = sd.prices.length >= MIN_TICKS;
-            sd.pat = newPattern();
-            lastTickRef.current = Math.max(lastTickRef.current, sd.times[sd.times.length - 1] ?? 0);
-            const readyCount = HL_SYMBOLS.filter(s => sdRef.current[s]?.ready).length;
-            addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${sd.prices.length} ticks -> ${candles.length} 1m candles (${readyCount}/10 ready)`, 'info');
-            updateBoard(sym);
-        } catch (e: any) {
-            if (runningRef.current) addLog(`DBG history ${sym}: ${e?.message || e || 'failed'}`, 'info');
-        }
-    }, [addLog, updateBoard]);
-
     const loadCandlesViaPromise = useCallback(async (sym: string) => {
         try {
             const res: any = await sendViaNewSystemWithPromise({ candles: sym, granularity: 60, count: 200, end: 'latest' });
@@ -218,14 +183,17 @@ export const HighLow: React.FC = () => {
             return;
         }
         HL_SYMBOLS.forEach(sym => {
-            // streaming subscription (live ticks for the streak logic)
-            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 1, end: 'latest', subscribe: 1 }));
-            // one-shot history + candles loaded via promise = instant 21+ candles, no waiting
-            loadHistoryViaPromise(sym);
+            // CRITICAL: forget first — if the symbol is already subscribed (e.g. the
+            // widget's count:1 tab subscription), the server updates it silently and
+            // returns NO history. Forget forces a fresh subscription WITH full history.
+            window._newSystemWS.send(JSON.stringify({ forget: sym }));
+            // full-history streaming subscription: initial response = 5000 ticks
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
+            // extra: 1m candles via promise for instant Bollinger data
             loadCandlesViaPromise(sym);
         });
         addLog('Requested history + candles for all 10 volatilities', 'info');
-    }, [addLog, loadHistoryViaPromise, loadCandlesViaPromise]);
+    }, [addLog, loadCandlesViaPromise]);
 
     // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
     const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -275,7 +243,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v3 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v4 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -288,6 +256,33 @@ export const HighLow: React.FC = () => {
                         diagRef.current = Date.now();
                         addLog(`DBG rx type=${mt} keys=[${Object.keys(data || {}).join(',')}]`, 'info');
                     }
+                }
+                if (mt === 'history') {
+                    const sym: string = data.echo_req?.ticks_history;
+                    if (!sym || !sdRef.current[sym]) return;
+                    const sd = sdRef.current[sym];
+                    const rawPrices = data.history?.prices;
+                    if (!Array.isArray(rawPrices) || rawPrices.length === 0) return;
+                    const prices = rawPrices.map((p: any) => Number(p));
+                    const rawTimes = data.history?.times;
+                    const times = Array.isArray(rawTimes) && rawTimes.length === prices.length
+                        ? rawTimes.map((t: any) => Number(t))
+                        : prices.map((_, i) => Math.floor(Date.now() / 1000) - (prices.length - 1 - i));
+                    sd.prices = prices.slice(-MAX_TICKS);
+                    sd.times = times.slice(-MAX_TICKS);
+                    const candles = buildCandles(sd.prices, sd.times);
+                    if (candles.length > 0) {
+                        sd.candles = candles;
+                        maxCandlesRef.current = Math.max(maxCandlesRef.current, candles.length);
+                        setMaxCandles(maxCandlesRef.current);
+                    }
+                    sd.ready = sd.prices.length >= MIN_TICKS;
+                    sd.pat = newPattern();
+                    lastTickRef.current = Math.max(lastTickRef.current, sd.times[sd.times.length - 1] ?? 0);
+                    const readyCount = HL_SYMBOLS.filter(s => sdRef.current[s]?.ready).length;
+                    addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${sd.prices.length} ticks -> ${candles.length} 1m candles (${readyCount}/10 ready)`, 'info');
+                    updateBoard(sym);
+                    return;
                 }
                 if (mt === 'tick') {
                     const tick = data.tick;
