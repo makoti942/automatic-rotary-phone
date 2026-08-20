@@ -1,23 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useStore } from '@/hooks/useStore';
 import { SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
 import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import {
-    HL_SYMBOLS, DEFAULT_CONFIG, HighLowConfig, TradeRecord, Candle,
-    executeHighLowTrade, buildCandles, getBandTouch, stepPattern, newPattern,
+    HL_SYMBOLS, Candle,
+    buildCandles, getBandTouch, stepPattern, newPattern,
     tickDirection, TickPattern, BbTouch,
-    MAX_TICKS, MIN_TICKS, TRADE_DURATION, MIN_STREAK, HISTORY_COUNT, BB_PERIOD,
+    MAX_TICKS, MIN_TICKS, MIN_STREAK, HISTORY_COUNT, BB_PERIOD,
 } from './high-low-engine';
-
-const LS_CONFIG_KEY = 'mw_hl_config';
-
-function loadConfig(): HighLowConfig {
-    try { const raw = localStorage.getItem(LS_CONFIG_KEY); return raw ? { ...DEFAULT_CONFIG, ...JSON.parse(raw) } : DEFAULT_CONFIG; }
-    catch { return DEFAULT_CONFIG; }
-}
-function saveConfig(cfg: HighLowConfig) {
-    try { localStorage.setItem(LS_CONFIG_KEY, JSON.stringify(cfg)); } catch {}
-}
 
 interface SymData {
     prices: number[];
@@ -35,41 +24,33 @@ interface BoardRow {
     bb: { upper: number; middle: number; lower: number } | null;
 }
 
+interface Signal {
+    symbol: string;
+    action: 'RUNHIGH' | 'RUNLOW';
+    time: string;
+}
+
 function shortSym(sym: string): string {
     return sym.startsWith('1HZ') ? `1s${sym.slice(4, -1)}` : `V${sym.slice(2)}`;
 }
 
 export const HighLow: React.FC = () => {
-    const { transactions } = useStore();
-    const initCfg = loadConfig();
-    const [cfg, setCfg] = useState<HighLowConfig>(initCfg);
     const [running, setRunning] = useState(false);
-    const [inTrade, setInTrade] = useState(false);
-    const [pnl, setPnl] = useState(0);
-    const [dailyPnl, setDailyPnl] = useState(0);
-    const [trades, setTrades] = useState<TradeRecord[]>([]);
     const [status, setStatus] = useState('');
     const [board, setBoard] = useState<Record<string, BoardRow>>({});
-    const [consecutiveLosses, setConsecutiveLosses] = useState(0);
+    const [signal, setSignal] = useState<Signal | null>(null);
+    const [streamAlive, setStreamAlive] = useState(false);
+    const [maxCandles, setMaxCandles] = useState(0);
     const [logs, setLogs] = useState<{ time: string; msg: string; type: string }[]>([]);
 
     const wsRef = useRef<MakotiWS | null>(null);
     const sdRef = useRef<Record<string, SymData>>({});
     const runningRef = useRef(false);
-    const inTradeRef = useRef(false);
-    const pnlRef = useRef(0);
-    const dailyPnlRef = useRef(0);
-    const tradesRef = useRef<TradeRecord[]>([]);
-    const cfgRef = useRef(cfg);
-    const consecutiveLossesRef = useRef(0);
-    const contractMapRef = useRef<Map<string, { symbol: string; stake: number; duration: number }>>(new Map());
     const generationRef = useRef(0);
     const lastFireRef = useRef(0);
+    const lastTickRef = useRef(0);
+    const lastDataLogRef = useRef(0);
     const maxCandlesRef = useRef(0);
-
-    cfgRef.current = cfg;
-
-    useEffect(() => { saveConfig(cfg); }, [cfg]);
 
     const addLog = useCallback((msg: string, type: string = 'info') => {
         const time = new Date().toLocaleTimeString();
@@ -96,44 +77,15 @@ export const HighLow: React.FC = () => {
 
     const stopEngine = useCallback(() => {
         runningRef.current = false;
-        inTradeRef.current = false;
         generationRef.current++;
         setRunning(false);
-        setInTrade(false);
         setBoard({});
+        setSignal(null);
         setStreamAlive(false);
         setStatus('Stopped');
         try { wsRef.current?.close(); } catch {}
         wsRef.current = null;
-        addLog('HIGH/LOW engine stopped.', 'info');
-    }, [addLog]);
-
-    const executeTrade = useCallback(async (sym: string, action: 'RUNHIGH' | 'RUNLOW') => {
-        if (!runningRef.current) return;
-        inTradeRef.current = true;
-        setInTrade(true);
-        const label = action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS';
-        setStatus(`Firing ${label} on ${SYMBOL_LABELS[sym] || sym}...`);
-
-        let stake = cfgRef.current.stake;
-        if (cfgRef.current.martingaleEnabled && consecutiveLossesRef.current > 0) {
-            stake = Math.min(stake * Math.pow(cfgRef.current.martingale, consecutiveLossesRef.current), 100);
-        }
-        if (cfgRef.current.useCompounding && tradesRef.current.length > 0 && pnlRef.current > 0) {
-            stake = Math.max(0.35, Number((pnlRef.current * 0.02).toFixed(2)));
-        }
-        stake = Math.max(0.35, stake);
-
-        const result = await executeHighLowTrade(sym, action, stake, TRADE_DURATION);
-        if (result.contractId) {
-            contractMapRef.current.set(result.contractId, { symbol: sym, stake, duration: TRADE_DURATION });
-            addLog(`Contract ${result.contractId} — ${label} on ${SYMBOL_LABELS[sym] || sym} @ $${stake} x ${TRADE_DURATION}t`, 'trade');
-            setStatus(`LIVE — ${SYMBOL_LABELS[sym] || sym} ${label} $${stake} x ${TRADE_DURATION}t`);
-        } else {
-            addLog('Trade execution failed', 'info');
-            inTradeRef.current = false;
-            setInTrade(false);
-        }
+        addLog('HIGH/LOW signal engine stopped.', 'info');
     }, [addLog]);
 
     const handleTick = useCallback((sym: string, price: number, epoch: number) => {
@@ -147,7 +99,6 @@ export const HighLow: React.FC = () => {
         lastTickRef.current = Math.max(lastTickRef.current, epoch);
         sd.ready = sd.prices.length >= MIN_TICKS;
 
-        // Show the price immediately — don't gate the board on readiness.
         if (!sd.ready) {
             setBoard(prev => ({
                 ...prev,
@@ -157,12 +108,14 @@ export const HighLow: React.FC = () => {
         }
 
         const candles = buildCandles(sd.prices, sd.times);
-        sd.candles = candles;
-        if (candles.length > maxCandlesRef.current) {
-            maxCandlesRef.current = candles.length;
-            setMaxCandles(candles.length);
+        if (candles.length >= BB_PERIOD + 1) {
+            sd.candles = candles;
+            if (candles.length > maxCandlesRef.current) {
+                maxCandlesRef.current = candles.length;
+                setMaxCandles(candles.length);
+            }
         }
-        const touch = getBandTouch(candles);
+        const touch = getBandTouch(sd.candles);
         const prevSide = sd.pat.side;
         const dir = tickDirection(prev, price);
         const res = stepPattern(sd.pat, touch, dir);
@@ -175,34 +128,30 @@ export const HighLow: React.FC = () => {
             );
         }
 
-        if (res.fire && res.action && !inTradeRef.current && runningRef.current) {
+        if (res.fire && res.action && runningRef.current) {
             const now = Date.now();
             if (now - lastFireRef.current < 3000) return;
             lastFireRef.current = now;
-            addLog(
-                `BB TRIGGER ${SYMBOL_LABELS[sym] || sym}: ${touch!.side.toUpperCase()} band + ${MIN_STREAK}+ ticks + reversal → ${res.action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS'}`,
-                'trigger'
-            );
+            const label = res.action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS';
+            const time = new Date().toLocaleTimeString();
+            setSignal({ symbol: sym, action: res.action, time });
+            addLog(`🚨 RUN BOT — ${SYMBOL_LABELS[sym] || sym} ${label} 2 ticks @ ${time}`, 'trigger');
+            setStatus(`🚨 SIGNAL READY — run bot: ${label} on ${SYMBOL_LABELS[sym] || sym}`);
             updateBoard(sym);
-            executeTrade(sym, res.action);
         } else {
             updateBoard(sym);
         }
-    }, [addLog, executeTrade, updateBoard]);
+    }, [addLog, updateBoard]);
 
     const tickRef = useRef(handleTick);
     tickRef.current = handleTick;
-
-    const pocUnsubRef = useRef<(() => void) | null>(null);
-    const lastTickRef = useRef(0);
-    const lastDataLogRef = useRef(0);
-    const [streamAlive, setStreamAlive] = useState(false);
-    const [maxCandles, setMaxCandles] = useState(0);
 
     const subscribeAllSymbols = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
         HL_SYMBOLS.forEach(sym => {
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
+            // Load 1-minute candles from history immediately — no waiting for 21 candles to form.
+            window._newSystemWS.send(JSON.stringify({ candles: sym, granularity: 60, count: 200, end: 'latest' }));
         });
     }, []);
 
@@ -228,12 +177,11 @@ export const HighLow: React.FC = () => {
     }, [running, addLog, subscribeAllSymbols]);
 
     const startEngine = useCallback(() => {
-        sessionStorage.removeItem('transaction_cache');
-        consecutiveLossesRef.current = 0;
-        inTradeRef.current = false;
-        contractMapRef.current = new Map();
         generationRef.current++;
         lastFireRef.current = 0;
+        lastTickRef.current = 0;
+        lastDataLogRef.current = 0;
+        maxCandlesRef.current = 0;
 
         const hasData = Object.values(sdRef.current).some(sd => sd.prices.length > 0);
         if (!hasData) {
@@ -249,16 +197,13 @@ export const HighLow: React.FC = () => {
 
         runningRef.current = true;
         setRunning(true);
-        setInTrade(false);
         setBoard({});
-        setStatus('Connected — building 1m candles from live ticks');
-        setConsecutiveLosses(0);
-        setPnl(0);
-        setDailyPnl(0);
-        pnlRef.current = 0;
-        dailyPnlRef.current = 0;
+        setSignal(null);
+        setMaxCandles(0);
+        setStatus('Connected — loading 1m candles from history...');
+        setLogs([]);
 
-        addLog(`HIGH/LOW — ${HL_SYMBOLS.length} volatilities | BB(${20},${2}) 1m candles | stake $${Math.max(0.35, cfg.stake)}`, 'info');
+        addLog(`HIGH/LOW SIGNALS — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -281,7 +226,12 @@ export const HighLow: React.FC = () => {
                     }
                     sd.prices = prices.slice(-MAX_TICKS);
                     sd.times = times.slice(-MAX_TICKS);
-                    sd.candles = buildCandles(sd.prices, sd.times);
+                    const candles = buildCandles(sd.prices, sd.times);
+                    if (candles.length >= BB_PERIOD + 1) {
+                        sd.candles = candles;
+                        maxCandlesRef.current = Math.max(maxCandlesRef.current, candles.length);
+                        setMaxCandles(maxCandlesRef.current);
+                    }
                     sd.ready = sd.prices.length >= MIN_TICKS;
                     sd.pat = newPattern();
                     if (sd.ready) {
@@ -290,6 +240,27 @@ export const HighLow: React.FC = () => {
                         addLog(`Loaded ${sd.prices.length} ticks — ${SYMBOL_LABELS[sym] || sym} (${readyCount}/10 ready)`, 'info');
                     }
                     updateBoard(sym);
+                    return;
+                }
+                if (data.msg_type === 'candles') {
+                    const sym: string = data.echo_req?.candles;
+                    if (!sym || !sdRef.current[sym]) return;
+                    const sd = sdRef.current[sym];
+                    const raw = data.candles;
+                    if (!Array.isArray(raw) || raw.length === 0) return;
+                    sd.candles = raw.map((c: any) => ({
+                        open: Number(c.open),
+                        high: Number(c.high),
+                        low: Number(c.low),
+                        close: Number(c.close),
+                        time: Number(c.epoch),
+                    }));
+                    maxCandlesRef.current = Math.max(maxCandlesRef.current, sd.candles.length);
+                    setMaxCandles(maxCandlesRef.current);
+                    sd.pat = newPattern();
+                    updateBoard(sym);
+                    addLog(`Loaded ${sd.candles.length} × 1m candles — ${SYMBOL_LABELS[sym] || sym}`, 'info');
+                    return;
                 }
                 if (data.msg_type === 'tick') {
                     const tick = data.tick;
@@ -305,7 +276,7 @@ export const HighLow: React.FC = () => {
             () => {
                 if (!runningRef.current) return;
                 addLog('Live tick stream active — monitoring BB bands', 'info');
-                setStatus('Monitoring Bollinger Bands on 1m candles...');
+                setStatus('Monitoring Bollinger Bands — signals only');
                 subscribeAllSymbols();
             },
             () => {
@@ -314,90 +285,14 @@ export const HighLow: React.FC = () => {
         );
         wsRef.current = mws;
         subscribeAllSymbols();
-    }, [cfg, addLog, stopEngine, subscribeAllSymbols]);
-
-    useEffect(() => {
-        if (!running) return;
-        if (pocUnsubRef.current) pocUnsubRef.current();
-        const unsub = onNewSystemMessage((event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.msg_type !== 'proposal_open_contract') return;
-                const c = data.proposal_open_contract;
-                if (!c?.is_sold) return;
-                const cid = String(c.contract_id);
-                const entry = contractMapRef.current.get(cid);
-                if (!entry) return;
-                contractMapRef.current.delete(cid);
-
-                const profit = Number(c.profit);
-                const won = profit >= 0;
-                pnlRef.current += profit;
-                dailyPnlRef.current += profit;
-                setPnl(pnlRef.current);
-                setDailyPnl(dailyPnlRef.current);
-
-                const trade: TradeRecord = {
-                    time: new Date().toLocaleTimeString(),
-                    symbol: entry.symbol, direction: c.contract_type === 'RUNHIGH' ? 'RUNHIGH' : 'RUNLOW',
-                    stake: entry.stake, duration: entry.duration,
-                    entryPrice: Number(c.entry_tick ?? 0), exitPrice: Number(c.exit_tick ?? 0),
-                    profit, won,
-                };
-                tradesRef.current = [trade, ...tradesRef.current].slice(0, 50);
-                setTrades(tradesRef.current);
-
-                try {
-                    const pocWithDisplay = !(c as any).display_name ? { ...c, display_name: SYMBOL_LABELS[entry.symbol] } : c;
-                    transactions.onBotContractEvent(pocWithDisplay);
-                } catch (_) {}
-
-                if (won) {
-                    consecutiveLossesRef.current = 0;
-                    setConsecutiveLosses(0);
-                    addLog(`WON +$${profit.toFixed(2)} on ${SYMBOL_LABELS[entry.symbol] || entry.symbol} | P&L $${pnlRef.current.toFixed(2)}`, 'win');
-                } else {
-                    consecutiveLossesRef.current++;
-                    setConsecutiveLosses(consecutiveLossesRef.current);
-                    addLog(`LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[entry.symbol] || entry.symbol} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
-
-                    if (consecutiveLossesRef.current >= cfgRef.current.maxConsecutiveLosses) {
-                        addLog(`Max consecutive losses (${cfgRef.current.maxConsecutiveLosses}) reached. Stopping.`, 'info');
-                        stopEngine();
-                        return;
-                    }
-                    if (dailyPnlRef.current <= cfgRef.current.dailyStopLoss) {
-                        addLog(`Daily stop loss ($${cfgRef.current.dailyStopLoss}) reached. Stopping.`, 'info');
-                        stopEngine();
-                        return;
-                    }
-                }
-
-                if (dailyPnlRef.current >= cfgRef.current.dailyProfitTarget) {
-                    addLog(`Daily profit target ($${cfgRef.current.dailyProfitTarget}) reached. Stopping.`, 'info');
-                    stopEngine();
-                    return;
-                }
-
-                inTradeRef.current = false;
-                setInTrade(false);
-            } catch {}
-        });
-        pocUnsubRef.current = unsub;
-        return () => { unsub(); pocUnsubRef.current = null; };
-    }, [running, addLog, stopEngine, transactions]);
+    }, [addLog, stopEngine, subscribeAllSymbols]);
 
     useEffect(() => {
         return () => {
             runningRef.current = false;
             try { wsRef.current?.close(); } catch {}
-            if (pocUnsubRef.current) { pocUnsubRef.current(); pocUnsubRef.current = null; }
         };
     }, []);
-
-    const totalTrades = trades.length;
-    const wins = trades.filter(t => t.won).length;
-    const winRate = totalTrades > 0 ? ((wins / totalTrades) * 100).toFixed(1) : '0.0';
 
     const touchingCount = HL_SYMBOLS.filter(s => board[s]?.side).length;
     const activeSym = HL_SYMBOLS
@@ -409,52 +304,34 @@ export const HighLow: React.FC = () => {
         })[0] ?? null;
     const active = activeSym ? board[activeSym] : null;
 
-    const phaseLabel = !running ? 'OFF' : inTrade ? 'LIVE' : active?.awaiting ? 'REVERSAL?' : active?.side ? 'TRACKING' : 'SCANNING';
-    const phaseColor = !running ? '#6b7280' : inTrade ? '#22c55e' : active?.awaiting ? '#ef4444' : active?.side ? '#f59e0b' : '#6b7280';
+    const phaseLabel = !running ? 'OFF' : signal ? 'SIGNAL!' : active?.awaiting ? 'REVERSAL?' : active?.side ? 'TRACKING' : 'SCANNING';
+    const phaseColor = !running ? '#6b7280' : signal ? '#ef4444' : active?.awaiting ? '#f59e0b' : active?.side ? '#f97316' : '#6b7280';
 
     return (
         <div className='mw-killer'>
-            <div className='mw-killer__fields'>
-                <div className='mw-field'>
-                    <label className='mw-label'>Stake ($)</label>
-                    <input className='mw-input' type='number' min='0.35' step='0.01'
-                        value={cfg.stake} onChange={e => setCfg(p => ({ ...p, stake: Math.max(0.35, parseFloat(e.target.value) || 0.35) }))} disabled={running} />
-                </div>
-                <div className='mw-field'>
-                    <label className='mw-label'>Max Losses</label>
-                    <input className='mw-input' type='number' min='1' step='1'
-                        value={cfg.maxConsecutiveLosses} onChange={e => setCfg(p => ({ ...p, maxConsecutiveLosses: Math.max(1, parseInt(e.target.value) || 3) }))} disabled={running} />
-                </div>
-            </div>
-            <div className='mw-killer__fields'>
-                <div className='mw-field'>
-                    <label className='mw-label'>Daily Target ($)</label>
-                    <input className='mw-input' type='number' step='1'
-                        value={cfg.dailyProfitTarget} onChange={e => setCfg(p => ({ ...p, dailyProfitTarget: parseFloat(e.target.value) || 50 }))} disabled={running} />
-                </div>
-                <div className='mw-field'>
-                    <label className='mw-label'>Daily Stop ($)</label>
-                    <input className='mw-input' type='number' step='1'
-                        value={cfg.dailyStopLoss} onChange={e => setCfg(p => ({ ...p, dailyStopLoss: parseFloat(e.target.value) || -25 }))} disabled={running} />
-                </div>
-            </div>
-            <div className='mw-killer__vh'>
-                <label className='mw-killer__vh-toggle'>
-                    <input type='checkbox' checked={cfg.martingaleEnabled}
-                        onChange={e => setCfg(p => ({ ...p, martingaleEnabled: e.target.checked }))} disabled={running} />
-                    <span>Martingale <small>(x{cfg.martingale} on loss)</small></span>
-                </label>
-                <label className='mw-killer__vh-toggle'>
-                    <input type='checkbox' checked={cfg.useCompounding}
-                        onChange={e => setCfg(p => ({ ...p, useCompounding: e.target.checked }))} disabled={running} />
-                    <span>Compounding <small>(2% of P&L)</small></span>
-                </label>
-            </div>
-
             <button className={`mw-btn${running ? ' mw-btn--stop' : ' mw-btn--kill'}`}
                 onClick={running ? stopEngine : startEngine}>
                 {running ? <><span className='mw-pulse' /> STOP</> : 'RUN'}
             </button>
+
+            {running && signal && (
+                <div style={{
+                    marginTop: 8,
+                    padding: '10px 12px',
+                    borderRadius: 6,
+                    background: 'rgba(239,68,68,0.15)',
+                    border: '2px solid #ef4444',
+                    animation: 'mw-blink 1s step-start infinite',
+                }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#ef4444' }}>
+                        🚨 RUN BOT
+                    </div>
+                    <div style={{ fontSize: 12, color: '#fca5a5', marginTop: 2 }}>
+                        {SYMBOL_LABELS[signal.symbol] || signal.symbol} —{' '}
+                        {signal.action === 'RUNHIGH' ? 'ONLY UPS' : 'ONLY DOWNS'} · 2 ticks · {signal.time}
+                    </div>
+                </div>
+            )}
 
             {running && (
                 <div className='mw-killer__signal'>
@@ -488,8 +365,6 @@ export const HighLow: React.FC = () => {
                             }}>
                                 {phaseLabel}
                             </span>
-                            {inTrade && <span className='mw-killer__active-dot'> LIVE</span>}
-                            {consecutiveLosses > 0 && <span style={{ color: '#ef4444', marginLeft: 8 }}>x{consecutiveLosses} losses</span>}
 
                             <div style={{ marginTop: 6 }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: '#94a3b8' }}>
@@ -567,42 +442,13 @@ export const HighLow: React.FC = () => {
                 </div>
             )}
 
-            {(running || pnl !== 0) && (
-                <div className='mw-killer__stats'>
-                    <div className={`mw-killer__pnl${pnl >= 0 ? ' mw-killer__pnl--pos' : ' mw-killer__pnl--neg'}`}>
-                        P&L: {pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}
-                    </div>
-                    <div className='mw-killer__meta'>
-                        <span>Trades: {totalTrades}</span>
-                        <span>Win Rate: {winRate}%</span>
-                        <span>Daily: {dailyPnl >= 0 ? '+' : ''}${dailyPnl.toFixed(2)}</span>
-                    </div>
-                </div>
-            )}
-
-            {trades.length > 0 && (
-                <div className='mw-killer__trades'>
-                    <div className='mw-killer__log-header'>
-                        <span className='mw-killer__log-title'>Trade History</span>
-                    </div>
-                    <div className='mw-killer__trade-list'>
-                        {trades.slice(0, 10).map((t, i) => (
-                            <div key={i} className={`mw-log-line mw-log-line--${t.won ? 'win' : 'loss'}`}>
-                                <span className='mw-log-time'>{t.time}</span>
-                                <span className='mw-log-msg'>
-                                    {t.won ? '+' : '-'}{t.direction === 'RUNHIGH' ? 'U' : 'D'} {SYMBOL_LABELS[t.symbol] || t.symbol} {t.won ? '+' : ''}${t.profit.toFixed(2)}
-                                </span>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
-
             {logs.length > 0 && (
                 <div className='mw-killer__log-wrap'>
                     <div className='mw-killer__log-header'>
                         <span className='mw-killer__log-title'>Activity Log</span>
-                        <button className='mw-btn-clear' onClick={clearLogs}>Clear</button>
+                        <button className='mw-btn-clear' onClick={clearLogs}>
+                            Clear
+                        </button>
                     </div>
                     <div className='mw-killer__log'>
                         {logs.map((l, i) => (
