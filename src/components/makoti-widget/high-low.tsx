@@ -51,6 +51,7 @@ export const HighLow: React.FC = () => {
     const lastTickRef = useRef(0);
     const lastDataLogRef = useRef(0);
     const maxCandlesRef = useRef(0);
+    const diagRef = useRef(0);
 
     const addLog = useCallback((msg: string, type: string = 'info') => {
         const time = new Date().toLocaleTimeString();
@@ -150,9 +151,12 @@ export const HighLow: React.FC = () => {
         try {
             const res: any = await sendViaNewSystemWithPromise({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest' });
             if (!runningRef.current) return;
-            if (res?.error) { addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${res.error.message || 'error'}`, 'info'); return; }
+            if (res?.error) { addLog(`DBG history ${sym}: ${res.error.message || res.error.code || 'error'}`, 'info'); return; }
             const hist = res?.history;
-            if (!hist || !Array.isArray(hist.prices)) return;
+            if (!hist || !Array.isArray(hist.prices)) {
+                addLog(`DBG history ${sym}: bad response keys=[${Object.keys(res || {}).join(',')}]`, 'info');
+                return;
+            }
             const sd = sdRef.current[sym];
             if (!sd) return;
             const prices = hist.prices.map((p: any) => Number(p));
@@ -174,7 +178,7 @@ export const HighLow: React.FC = () => {
             addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${sd.prices.length} ticks -> ${candles.length} 1m candles (${readyCount}/10 ready)`, 'info');
             updateBoard(sym);
         } catch (e: any) {
-            if (runningRef.current) addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${e?.message || e || 'failed'}`, 'info');
+            if (runningRef.current) addLog(`DBG history ${sym}: ${e?.message || e || 'failed'}`, 'info');
         }
     }, [addLog, updateBoard]);
 
@@ -182,7 +186,7 @@ export const HighLow: React.FC = () => {
         try {
             const res: any = await sendViaNewSystemWithPromise({ candles: sym, granularity: 60, count: 200, end: 'latest' });
             if (!runningRef.current) return;
-            if (res?.error) { addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${res.error.message || 'error'}`, 'info'); return; }
+            if (res?.error) { addLog(`DBG candles ${sym}: ${res.error.message || res.error.code || 'error'}`, 'info'); return; }
             const raw = res?.candles;
             const sd = sdRef.current[sym];
             if (!sd) return;
@@ -208,7 +212,11 @@ export const HighLow: React.FC = () => {
     }, [addLog, updateBoard]);
 
     const subscribeAllSymbols = useCallback(() => {
-        if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
+        const wsState = window._newSystemWS?.readyState;
+        if (wsState !== WebSocket.OPEN) {
+            addLog(`DBG subscribe skipped: wsState=${wsState} (${wsState === undefined ? 'no socket' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : wsState === WebSocket.CLOSING ? 'closing' : '? (open=' + WebSocket.OPEN + ')'})`, 'info');
+            return;
+        }
         HL_SYMBOLS.forEach(sym => {
             // streaming subscription (live ticks for the streak logic)
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 1, end: 'latest', subscribe: 1 }));
@@ -267,14 +275,21 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v3 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
         const mws = openMakotiWS(
             (data: any) => {
                 if (!runningRef.current) return;
-                if (data.msg_type === 'tick') {
+                const mt = data?.msg_type;
+                if (mt !== 'tick' && mt !== 'history' && mt !== 'candles') {
+                    if (Date.now() - diagRef.current > 2000) {
+                        diagRef.current = Date.now();
+                        addLog(`DBG rx type=${mt} keys=[${Object.keys(data || {}).join(',')}]`, 'info');
+                    }
+                }
+                if (mt === 'tick') {
                     const tick = data.tick;
                     if (!tick) return;
                     const sym: string = tick.symbol;
