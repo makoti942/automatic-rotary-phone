@@ -209,12 +209,10 @@ export const HighLow: React.FC = () => {
     const subscribeAllSymbols = useCallback((forceFull: boolean = false) => {
         const wsState = window._newSystemWS?.readyState;
         if (wsState !== WebSocket.OPEN) {
-            if (wsState === undefined || wsState === WebSocket.CLOSED) {
-                // socket missing or dead — try to recreate it
-                import('@/external/bot-skeleton/services/api/appId').then(mod => {
-                    mod.generateDerivApiInstance().catch(() => {});
-                }).catch(() => {});
-            }
+            // NEVER recreate the socket here: the app owns the connection and its
+            // OTP/session (wss://.../ws/demo?otp=... is single-use). Recreating it
+            // with a consumed/expired OTP breaks the whole app (blank market data).
+            // The app's own reconnect logic handles recovery.
             addLog(`DBG subscribe skipped: wsState=${wsState}`, 'info');
             return;
         }
@@ -245,6 +243,11 @@ export const HighLow: React.FC = () => {
                 lastDataLogRef.current = now;
                 const wsState = window._newSystemWS?.readyState;
                 const wsLabel = wsState === WebSocket.OPEN ? 'open' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : 'closing';
+                if (wsState !== WebSocket.OPEN) {
+                    addLog(`⚠ WebSocket ${wsLabel} — Deriv session may have expired. Stop, re-login if needed, then RUN again.`, 'info');
+                    setStatus(`WS ${wsLabel} — session may have expired`);
+                    return;
+                }
                 // escalate to a full reset if ticks have been dead for a while
                 forceFullRef.current = idle > 20;
                 addLog(`⚠ No tick data for ${Math.round(idle)}s (WS: ${wsLabel}) — ${forceFullRef.current ? 'full reset' : 're-subscribing'}`, 'info');
@@ -282,7 +285,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v7 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v8 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
