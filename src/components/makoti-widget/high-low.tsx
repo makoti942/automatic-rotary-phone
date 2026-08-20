@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
-import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
+import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import {
     HL_SYMBOLS, Candle,
     buildCandles, getBandTouch, stepPattern, newPattern,
@@ -52,6 +52,7 @@ export const HighLow: React.FC = () => {
     const lastDataLogRef = useRef(0);
     const maxCandlesRef = useRef(0);
     const diagRef = useRef(0);
+    const lastErrorRef = useRef('');
 
     const addLog = useCallback((msg: string, type: string = 'info') => {
         const time = new Date().toLocaleTimeString();
@@ -174,38 +175,6 @@ export const HighLow: React.FC = () => {
     const tickRef = useRef(handleTick);
     tickRef.current = handleTick;
 
-    const loadCandlesViaPromise = useCallback(async (sym: string) => {
-        try {
-            const res: any = await sendViaNewSystemWithPromise({ candles: sym, granularity: 60, count: 200, end: 'latest' });
-            if (!runningRef.current) return;
-            if (res?.error) { addLog(`DBG candles ${sym}: ${res.error.message || res.error.code || 'error'}`, 'info'); return; }
-            const raw = res?.candles;
-            const sd = sdRef.current[sym];
-            if (!sd) return;
-            if (Array.isArray(raw) && raw.length > 0) {
-                sd.candles = raw.map((c: any) => ({
-                    open: Number(c.open),
-                    high: Number(c.high),
-                    low: Number(c.low),
-                    close: Number(c.close),
-                    time: Number(c.epoch),
-                }));
-                maxCandlesRef.current = Math.max(maxCandlesRef.current, sd.candles.length);
-                setMaxCandles(maxCandlesRef.current);
-                sd.pat = newPattern();
-                updateBoard(sym);
-                addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${sd.candles.length} x 1m candles loaded`, 'info');
-            } else {
-                addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: empty response`, 'info');
-            }
-        } catch (e: any) {
-            if (runningRef.current) {
-                const msg = e?.error?.message || e?.error?.code || e?.message || (e && typeof e === 'object' ? JSON.stringify(e).slice(0, 140) : String(e));
-                addLog(`DBG candles ${sym}: ${msg}`, 'info');
-            }
-        }
-    }, [addLog, updateBoard]);
-
     const subscribeAllSymbols = useCallback((forceFull: boolean = false) => {
         const wsState = window._newSystemWS?.readyState;
         if (wsState !== WebSocket.OPEN) {
@@ -221,13 +190,12 @@ export const HighLow: React.FC = () => {
             // so the server returns full history with the new subscription.
             if (forceFull) {
                 window._newSystemWS.send(JSON.stringify({ forget: sym }));
-                loadCandlesViaPromise(sym);
             }
             // full-history streaming subscription: initial response = 5000 ticks
             window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
         });
-        addLog(forceFull ? 'Full reset: forget + history + candles for all symbols' : 'Re-subscribed tick streams', 'info');
-    }, [addLog, loadCandlesViaPromise]);
+        addLog(forceFull ? 'Full reset: forget + history for all symbols' : 'Re-subscribed tick streams', 'info');
+    }, [addLog]);
 
     // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
     const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -285,7 +253,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v8 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v9 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -293,7 +261,7 @@ export const HighLow: React.FC = () => {
             (data: any) => {
                 if (!runningRef.current) return;
                 const mt = data?.msg_type;
-                if (mt !== 'tick' && mt !== 'history' && mt !== 'candles') {
+                if (mt !== 'tick' && mt !== 'history' && mt !== 'candles' && mt !== 'error') {
                     if (Date.now() - diagRef.current > 2000) {
                         diagRef.current = Date.now();
                         const err = data?.error ? ` err=${data.error.message || data.error.code || '?'}` : '';
@@ -303,11 +271,21 @@ export const HighLow: React.FC = () => {
                 if (mt === 'error') {
                     const e = data.error || {};
                     const msg = e.message || e.code || 'unknown';
-                    addLog(`⚠ SERVER ERROR: ${msg}`, 'info');
+                    if (msg !== lastErrorRef.current) {
+                        lastErrorRef.current = msg;
+                        addLog(`⚠ SERVER ERROR: ${msg}`, 'info');
+                    }
+                    if (/unrecognised|unrecognized/i.test(msg)) {
+                        // The connection/session is invalid (stale/consumed OTP) —
+                        // retrying is futile and spams the server. Stop cleanly.
+                        addLog('Stopped — Deriv session invalid. Re-login, then press RUN again.', 'info');
+                        stopEngine();
+                        return;
+                    }
                     if (Date.now() - lastDataLogRef.current > 8) {
                         lastDataLogRef.current = Date.now();
-                        setStatus(`Server error: ${msg} — full reset`);
-                        subscribeAllSymbols(true);
+                        setStatus(`Server error: ${msg} — re-subscribing`);
+                        subscribeAllSymbols(forceFullRef.current);
                     }
                     return;
                 }
