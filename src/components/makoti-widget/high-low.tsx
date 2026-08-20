@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
-import { onNewSystemMessage } from '@/auth/NewDerivAuth';
+import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import {
     HL_SYMBOLS, Candle,
     buildCandles, getBandTouch, stepPattern, newPattern,
@@ -146,14 +146,78 @@ export const HighLow: React.FC = () => {
     const tickRef = useRef(handleTick);
     tickRef.current = handleTick;
 
+    const loadHistoryViaPromise = useCallback(async (sym: string) => {
+        try {
+            const res: any = await sendViaNewSystemWithPromise({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest' });
+            if (!runningRef.current) return;
+            if (res?.error) { addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${res.error.message || 'error'}`, 'info'); return; }
+            const hist = res?.history;
+            if (!hist || !Array.isArray(hist.prices)) return;
+            const sd = sdRef.current[sym];
+            if (!sd) return;
+            const prices = hist.prices.map((p: any) => Number(p));
+            const times = Array.isArray(hist.times) && hist.times.length === prices.length
+                ? hist.times.map((t: any) => Number(t))
+                : prices.map((_, i) => Math.floor(Date.now() / 1000) - (prices.length - 1 - i));
+            sd.prices = prices.slice(-MAX_TICKS);
+            sd.times = times.slice(-MAX_TICKS);
+            const candles = buildCandles(sd.prices, sd.times);
+            if (candles.length > 0) {
+                sd.candles = candles;
+                maxCandlesRef.current = Math.max(maxCandlesRef.current, candles.length);
+                setMaxCandles(maxCandlesRef.current);
+            }
+            sd.ready = sd.prices.length >= MIN_TICKS;
+            sd.pat = newPattern();
+            lastTickRef.current = Math.max(lastTickRef.current, sd.times[sd.times.length - 1] ?? 0);
+            const readyCount = HL_SYMBOLS.filter(s => sdRef.current[s]?.ready).length;
+            addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${sd.prices.length} ticks -> ${candles.length} 1m candles (${readyCount}/10 ready)`, 'info');
+            updateBoard(sym);
+        } catch (e: any) {
+            if (runningRef.current) addLog(`History ${SYMBOL_LABELS[sym] || sym}: ${e?.message || e || 'failed'}`, 'info');
+        }
+    }, [addLog, updateBoard]);
+
+    const loadCandlesViaPromise = useCallback(async (sym: string) => {
+        try {
+            const res: any = await sendViaNewSystemWithPromise({ candles: sym, granularity: 60, count: 200, end: 'latest' });
+            if (!runningRef.current) return;
+            if (res?.error) { addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${res.error.message || 'error'}`, 'info'); return; }
+            const raw = res?.candles;
+            const sd = sdRef.current[sym];
+            if (!sd) return;
+            if (Array.isArray(raw) && raw.length > 0) {
+                sd.candles = raw.map((c: any) => ({
+                    open: Number(c.open),
+                    high: Number(c.high),
+                    low: Number(c.low),
+                    close: Number(c.close),
+                    time: Number(c.epoch),
+                }));
+                maxCandlesRef.current = Math.max(maxCandlesRef.current, sd.candles.length);
+                setMaxCandles(maxCandlesRef.current);
+                sd.pat = newPattern();
+                updateBoard(sym);
+                addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${sd.candles.length} x 1m candles loaded`, 'info');
+            } else {
+                addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: empty response`, 'info');
+            }
+        } catch (e: any) {
+            if (runningRef.current) addLog(`Candles ${SYMBOL_LABELS[sym] || sym}: ${e?.message || e || 'failed'}`, 'info');
+        }
+    }, [addLog, updateBoard]);
+
     const subscribeAllSymbols = useCallback(() => {
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) return;
         HL_SYMBOLS.forEach(sym => {
-            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: HISTORY_COUNT, end: 'latest', subscribe: 1 }));
-            // Load 1-minute candles from history immediately — no waiting for 21 candles to form.
-            window._newSystemWS.send(JSON.stringify({ candles: sym, granularity: 60, count: 200, end: 'latest' }));
+            // streaming subscription (live ticks for the streak logic)
+            window._newSystemWS.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 1, end: 'latest', subscribe: 1 }));
+            // one-shot history + candles loaded via promise = instant 21+ candles, no waiting
+            loadHistoryViaPromise(sym);
+            loadCandlesViaPromise(sym);
         });
-    }, []);
+        addLog('Requested history + candles for all 10 volatilities', 'info');
+    }, [addLog, loadHistoryViaPromise, loadCandlesViaPromise]);
 
     // Watchdog: if no ticks arrive, say so and re-subscribe (self-healing).
     const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -210,58 +274,6 @@ export const HighLow: React.FC = () => {
         const mws = openMakotiWS(
             (data: any) => {
                 if (!runningRef.current) return;
-                if (data.msg_type === 'history') {
-                    const sym: string = data.echo_req?.ticks_history;
-                    if (!sym || !sdRef.current[sym]) return;
-                    const sd = sdRef.current[sym];
-                    const rawPrices = data.history?.prices;
-                    if (!Array.isArray(rawPrices)) return;
-                    const prices = rawPrices.map((p: string | number) => Number(p));
-                    let times: number[];
-                    const rawTimes = data.history?.times;
-                    if (Array.isArray(rawTimes) && rawTimes.length === prices.length) {
-                        times = rawTimes.map((t: string | number) => Number(t));
-                    } else {
-                        times = prices.map((_, i) => Math.floor(Date.now() / 1000) - (prices.length - 1 - i));
-                    }
-                    sd.prices = prices.slice(-MAX_TICKS);
-                    sd.times = times.slice(-MAX_TICKS);
-                    const candles = buildCandles(sd.prices, sd.times);
-                    if (candles.length >= BB_PERIOD + 1) {
-                        sd.candles = candles;
-                        maxCandlesRef.current = Math.max(maxCandlesRef.current, candles.length);
-                        setMaxCandles(maxCandlesRef.current);
-                    }
-                    sd.ready = sd.prices.length >= MIN_TICKS;
-                    sd.pat = newPattern();
-                    if (sd.ready) {
-                        lastTickRef.current = Math.max(lastTickRef.current, sd.times[sd.times.length - 1] ?? 0);
-                        const readyCount = HL_SYMBOLS.filter(s => sdRef.current[s]?.ready).length;
-                        addLog(`Loaded ${sd.prices.length} ticks — ${SYMBOL_LABELS[sym] || sym} (${readyCount}/10 ready)`, 'info');
-                    }
-                    updateBoard(sym);
-                    return;
-                }
-                if (data.msg_type === 'candles') {
-                    const sym: string = data.echo_req?.candles;
-                    if (!sym || !sdRef.current[sym]) return;
-                    const sd = sdRef.current[sym];
-                    const raw = data.candles;
-                    if (!Array.isArray(raw) || raw.length === 0) return;
-                    sd.candles = raw.map((c: any) => ({
-                        open: Number(c.open),
-                        high: Number(c.high),
-                        low: Number(c.low),
-                        close: Number(c.close),
-                        time: Number(c.epoch),
-                    }));
-                    maxCandlesRef.current = Math.max(maxCandlesRef.current, sd.candles.length);
-                    setMaxCandles(maxCandlesRef.current);
-                    sd.pat = newPattern();
-                    updateBoard(sym);
-                    addLog(`Loaded ${sd.candles.length} × 1m candles — ${SYMBOL_LABELS[sym] || sym}`, 'info');
-                    return;
-                }
                 if (data.msg_type === 'tick') {
                     const tick = data.tick;
                     if (!tick) return;
