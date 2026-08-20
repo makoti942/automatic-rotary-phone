@@ -59,6 +59,8 @@ const FreeBots = observer(() => {
                 'Latest version of the Makoti Rise/Fall bot. Enhanced with improved entry signals and advanced recovery management for maximum stability.',
             'ONLY UPS AND DOWNS BOT':
                 'Simple and effective Only Ups and Downs bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts with a 2x martingale on losses and stake reset on wins.',
+            'FREE BOT WITH MARTINGALE':
+                'Simple and effective martingale bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts, doubles the stake after each loss and resets to the initial stake after a win.',
                         };
 
         // Try exact match first
@@ -92,7 +94,7 @@ const FreeBots = observer(() => {
             'UNDER7_R56 PRO.xml',
             'MAKOTIV3RISE_FALL.xml',
             'MAKOTIRISE_FALLV4.xml',
-            'ONLY UPS AND DOWNS BOT.xml',
+            'FREE BOT WITH MARTINGALE.xml',
         ];
     };
 

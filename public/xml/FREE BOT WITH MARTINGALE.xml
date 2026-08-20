@@ -1,9 +1,9 @@
 <xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
-    <variable type="" id="initStakeVar">Initial Stake</variable>
-    <variable type="" id="martFactorVar">Martingale Factor</variable>
-    <variable type="" id="stakeVar">Current Stake</variable>
-    <variable type="" id="initializedVar">Martingale Initialized</variable>
+    <variable id="initStakeVar">Initial Stake</variable>
+    <variable id="stakeVar">Current Stake</variable>
+    <variable id="martFactorVar">Martingale Factor</variable>
+    <variable id="initializedVar">Martingale Initialized</variable>
   </variables>
   <block type="trade_definition" id="}F,4#Sa]HciWV~Jye~gS" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
@@ -39,6 +39,46 @@
         </next>
       </block>
     </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="setInitialStakeValue">
+        <field name="VAR" id="initStakeVar">Initial Stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="initialStakeValue">
+            <field name="NUM">1</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="setCurrentStakeInitial">
+            <field name="VAR" id="stakeVar">Current Stake</field>
+            <value name="VALUE">
+              <block type="variables_get" id="getInitialStake">
+                <field name="VAR" id="initStakeVar">Initial Stake</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="setMartingaleFactor">
+                <field name="VAR" id="martFactorVar">Martingale Factor</field>
+                <value name="VALUE">
+                  <block type="math_number" id="martFactorValue">
+                    <field name="NUM">2</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="markInitialized">
+                    <field name="VAR" id="initializedVar">Martingale Initialized</field>
+                    <value name="VALUE">
+                      <block type="logic_boolean" id="initializedTrue">
+                        <field name="BOOL">TRUE</field>
+                      </block>
+                    </value>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
     <statement name="SUBMARKET">
       <block type="trade_definition_tradeoptions" id="/6=T~KI`X+mn5$|K,]tI">
         <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="false" vh_enabled="false"></mutation>
@@ -51,7 +91,7 @@
         </value>
         <value name="AMOUNT">
           <block type="variables_get" id="getStakeAmount">
-            <field name="VAR" id="stakeVar" variabletype="">Current Stake</field>
+            <field name="VAR" id="stakeVar">Current Stake</field>
           </block>
         </value>
       </block>
@@ -69,7 +109,7 @@
   <block type="after_purchase" id="c;hEA7}nM@_,g?5*L(=e" x="714" y="292">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="martingaleResultCheck">
-        <mutation else="1"></mutation>
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
         <value name="IF0">
           <block type="contract_check_result" id="checkWinResult">
             <field name="CHECK_RESULT">win</field>
@@ -77,17 +117,17 @@
         </value>
         <statement name="DO0">
           <block type="variables_set" id="resetStakeAfterWin">
-            <field name="VAR" id="stakeVar" variabletype="">Current Stake</field>
+            <field name="VAR" id="stakeVar">Current Stake</field>
             <value name="VALUE">
               <block type="variables_get" id="getInitialStakeOnWin">
-                <field name="VAR" id="initStakeVar" variabletype="">Initial Stake</field>
+                <field name="VAR" id="initStakeVar">Initial Stake</field>
               </block>
             </value>
           </block>
         </statement>
         <statement name="ELSE">
           <block type="variables_set" id="increaseStakeAfterLoss">
-            <field name="VAR" id="stakeVar" variabletype="">Current Stake</field>
+            <field name="VAR" id="stakeVar">Current Stake</field>
             <value name="VALUE">
               <block type="math_arithmetic" id="multiplyStakeByFactor">
                 <field name="OP">MULTIPLY</field>
@@ -96,7 +136,7 @@
                     <field name="NUM">1</field>
                   </shadow>
                   <block type="variables_get" id="getCurrentStakeForMultiply">
-                    <field name="VAR" id="stakeVar" variabletype="">Current Stake</field>
+                    <field name="VAR" id="stakeVar">Current Stake</field>
                   </block>
                 </value>
                 <value name="B">
@@ -104,7 +144,7 @@
                     <field name="NUM">2</field>
                   </shadow>
                   <block type="variables_get" id="getMartingaleFactor">
-                    <field name="VAR" id="martFactorVar" variabletype="">Martingale Factor</field>
+                    <field name="VAR" id="martFactorVar">Martingale Factor</field>
                   </block>
                 </value>
               </block>
@@ -117,63 +157,10 @@
       </block>
     </statement>
   </block>
-  <block type="before_purchase" id="D_FIc+E9*cr|grV8}?n?" deletable="false" x="0" y="658">
+  <block type="before_purchase" id="D_FIc+E9*cr|grV8}?n?" deletable="false" x="0" y="834">
     <statement name="BEFOREPURCHASE_STACK">
-      <block type="controls_if" id="initializeMartingale">
-        <value name="IF0">
-          <block type="logic_negate" id="notInitialized">
-            <value name="BOOL">
-              <block type="variables_get" id="getInitialized">
-                <field name="VAR" id="initializedVar" variabletype="">Martingale Initialized</field>
-              </block>
-            </value>
-          </block>
-        </value>
-        <statement name="DO0">
-          <block type="variables_set" id="setInitialStakeValue">
-            <field name="VAR" id="initStakeVar" variabletype="">Initial Stake</field>
-            <value name="VALUE">
-              <block type="math_number" id="initialStakeValue">
-                <field name="NUM">1</field>
-              </block>
-            </value>
-            <next>
-              <block type="variables_set" id="setCurrentStakeInitial">
-                <field name="VAR" id="stakeVar" variabletype="">Current Stake</field>
-                <value name="VALUE">
-                  <block type="variables_get" id="getInitialStake">
-                    <field name="VAR" id="initStakeVar" variabletype="">Initial Stake</field>
-                  </block>
-                </value>
-                <next>
-                  <block type="variables_set" id="setMartingaleFactor">
-                    <field name="VAR" id="martFactorVar" variabletype="">Martingale Factor</field>
-                    <value name="VALUE">
-                      <block type="math_number" id="martFactorValue">
-                        <field name="NUM">2</field>
-                      </block>
-                    </value>
-                    <next>
-                      <block type="variables_set" id="markInitialized">
-                        <field name="VAR" id="initializedVar" variabletype="">Martingale Initialized</field>
-                        <value name="VALUE">
-                          <block type="logic_boolean" id="initializedTrue">
-                            <field name="BOOL">TRUE</field>
-                          </block>
-                        </value>
-                      </block>
-                    </next>
-                  </block>
-                </next>
-              </block>
-            </next>
-          </block>
-        </statement>
-        <next>
-          <block type="purchase" id="og/YYS3nvV1*r61Co/hE">
-            <field name="PURCHASE_LIST">CALL</field>
-          </block>
-        </next>
+      <block type="purchase" id="og/YYS3nvV1*r61Co/hE">
+        <field name="PURCHASE_LIST">CALL</field>
       </block>
     </statement>
   </block>
