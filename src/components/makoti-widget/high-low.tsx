@@ -60,6 +60,33 @@ export const HighLow: React.FC = () => {
 
     const clearLogs = useCallback(() => { setLogs([]); }, []);
 
+    const copyLogs = useCallback(() => {
+        const text = logs.map(l => `[${l.time}] ${l.msg}`).join('\n');
+        if (!text) return;
+        const done = () => addLog('Activity log copied to clipboard', 'info');
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(() => {
+                try {
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                    done();
+                } catch { addLog('Copy failed — select the log manually', 'info'); }
+            });
+        } else {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            done();
+        }
+    }, [logs, addLog]);
+
     const updateBoard = useCallback((sym: string) => {
         const sd = sdRef.current[sym];
         if (!sd) return;
@@ -255,7 +282,7 @@ export const HighLow: React.FC = () => {
         setStatus('Connected — loading 1m candles from history...');
         setLogs([]);
 
-        addLog(`HIGH/LOW SIGNALS v6 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
+        addLog(`HIGH/LOW SIGNALS v7 — ${HL_SYMBOLS.length} volatilities | BB(${BB_PERIOD},${2}) 1m candles | signal only, no trades`, 'info');
 
         if (wsRef.current) { try { wsRef.current.close(); } catch {} wsRef.current = null; }
 
@@ -491,9 +518,10 @@ export const HighLow: React.FC = () => {
                 <div className='mw-killer__log-wrap'>
                     <div className='mw-killer__log-header'>
                         <span className='mw-killer__log-title'>Activity Log</span>
-                        <button className='mw-btn-clear' onClick={clearLogs}>
-                            Clear
-                        </button>
+                        <span style={{ display: 'flex', gap: 6 }}>
+                            <button className='mw-btn-clear' onClick={copyLogs}>Copy</button>
+                            <button className='mw-btn-clear' onClick={clearLogs}>Clear</button>
+                        </span>
                     </div>
                     <div className='mw-killer__log'>
                         {logs.map((l, i) => (
