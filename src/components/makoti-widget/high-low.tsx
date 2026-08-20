@@ -176,12 +176,6 @@ export const HighLow: React.FC = () => {
         }
     }, [addLog, updateBoard]);
 
-    const subscribeAllSymbols = useCallback(() => {
-        const wsState = window._newSystemWS?.readyState;
-        if (wsState !== WebSocket.OPEN) {
-            addLog(`DBG subscribe skipped: wsState=${wsState} (${wsState === undefined ? 'no socket' : wsState === WebSocket.CONNECTING ? 'connecting' : wsState === WebSocket.CLOSED ? 'closed' : wsState === WebSocket.CLOSING ? 'closing' : '? (open=' + WebSocket.OPEN + ')'})`, 'info');
-            return;
-        }
     const subscribeAllSymbols = useCallback((forceFull: boolean = false) => {
         const wsState = window._newSystemWS?.readyState;
         if (wsState !== WebSocket.OPEN) {
