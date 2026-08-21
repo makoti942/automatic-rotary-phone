@@ -11,6 +11,11 @@ import { observer as globalObserver } from '../../../utils/observer';
 let delayIndex = 0;
 let purchase_reference;
 
+// Minimum gap between consecutive virtual trades. Without it a settled virtual
+// trade hands control straight back to the bot loop, which starts the next one
+// immediately — making several trades appear to execute at once.
+const VIRTUAL_TRADE_DELAY_MS = 2000;
+
 const getStakeVariableName = () => {
     try {
         const workspace = window?.Blockly?.derivWorkspace || window?.Blockly?.getMainWorkspace?.();
@@ -42,8 +47,12 @@ const getStakeVariableName = () => {
 
 const getStakeVariableCandidates = () => {
     const derived = getStakeVariableName();
-    if (!derived) return [];
-    const candidates = [derived];
+    // Always include the common names as fallbacks: if block introspection fails
+    // (inline amount, differently-named variable), the threshold handoff would
+    // otherwise silently skip resetting the interpreter Stake variable, leaving a
+    // pre-virtual martingale value frozen in it — which then gets doubled by the
+    // first real after_purchase and shows up as an unexpectedly huge stake.
+    const candidates = derived ? [derived] : [];
     if (!candidates.includes('Stake')) candidates.push('Stake');
     if (!candidates.includes('stake')) candidates.push('stake');
     return candidates;
@@ -232,22 +241,27 @@ export default Engine =>
             setTimeout(() => {
                 const resolve = this.vh_state.virtual_resolve;
                 this.resetVirtualTrade();
-                if (resolve) resolve();
 
-                // For virtual trades, do NOT run the bot's after_purchase blocks
-                // (e.g. martingale logic) — virtual results should not affect
-                // real trading stake calculations.
-                try {
-                    if (typeof console !== 'undefined') {
-                        console.debug('[Virtual Hook] Skipping afterPromise for virtual trade');
-                    }
-                } catch (e) {
-                    /* noop */
-                }
-
+                // Space consecutive virtual trades out by VIRTUAL_TRADE_DELAY_MS
+                // so they cannot fire back-to-back in the same instant.
                 setTimeout(() => {
-                    this.store.dispatch(start());
-                }, 10);
+                    if (resolve) resolve();
+
+                    // For virtual trades, do NOT run the bot's after_purchase blocks
+                    // (e.g. martingale logic) — virtual results should not affect
+                    // real trading stake calculations.
+                    try {
+                        if (typeof console !== 'undefined') {
+                            console.debug('[Virtual Hook] Skipping afterPromise for virtual trade');
+                        }
+                    } catch (e) {
+                        /* noop */
+                    }
+
+                    setTimeout(() => {
+                        this.store.dispatch(start());
+                    }, 10);
+                }, VIRTUAL_TRADE_DELAY_MS);
             }, 0);
         }
 
