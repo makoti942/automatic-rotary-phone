@@ -446,6 +446,16 @@ export default Engine =>
                 });
             };
 
+            // Virtual trades must leave no trace: when the loss threshold has
+            // just flipped us back to real trading, the FIRST real purchase
+            // (proposal or direct-buy) must start from the initial stake, not an
+            // inflated Stake variable. Enforcing it here — before the proposal /
+            // direct split — guarantees both code paths reset the amount, so the
+            // stake reset cannot be bypassed by an early `return` in either branch.
+            if (this.vh_state?.enabled && this.vh_state.needs_stake_reset) {
+                this.tradeOptions.amount = this.vh_state.initial_stake || this.tradeOptions.amount || 1;
+            }
+
             if (this.is_proposal_subscription_required) {
                 this.applyAlternateMarketsToCurrentTradeOptions();
                 try {
@@ -492,14 +502,15 @@ export default Engine =>
 
             this.applyAlternateMarketsToCurrentTradeOptions();
 
-            // If this is the first real trade after switching from virtual, use initial_stake.
-            // The interpreter Stake variable was reset to initial_stake by
-            // resetStakeVariableForRealTrading(), and after_purchase blocks are skipped
-            // during virtual trades, so the first real martingale step starts from a
-            // clean base (previous real stake × factor) instead of an inflated value.
-            if (this.vh_state.needs_stake_reset) {
-                this.tradeOptions.amount = this.vh_state.initial_stake || this.tradeOptions.amount || 1;
-            }
+        // Virtual trades must leave no trace: the interpreter Stake variable was
+        // reset to initial_stake by resetStakeVariableForRealTrading() at the
+        // threshold, and after_purchase blocks are skipped during virtual trades,
+        // so the first real trade starts from a clean base (initial stake). The
+        // early enforcement above already set tradeOptions.amount; this second
+        // guard only covers the direct-buy path and keeps it consistent.
+        if (this.vh_state?.enabled && this.vh_state.needs_stake_reset) {
+            this.tradeOptions.amount = this.vh_state.initial_stake || this.tradeOptions.amount || 1;
+        }
 
             const trade_option = tradeOptionToBuy(contract_type, this.tradeOptions);
             const action = () => api_base.api.send(trade_option);
