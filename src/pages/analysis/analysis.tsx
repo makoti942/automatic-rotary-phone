@@ -14,6 +14,7 @@ const MARKETS: { value: Market; label: string }[] = [
 interface Tick {
     p: number;
     t: number;
+    quote: string;
 }
 
 interface Chip {
@@ -24,7 +25,13 @@ interface Chip {
     newest: boolean;
 }
 
-const digitOf = (p: number) => Math.floor(p) % 10;
+// Last digit of the spot price exactly as shown in the manual-trade tab
+// (the right-most digit of the price text), NOT the integer units digit.
+const lastDigitOf = (quote: string | number): number => {
+    const digits = String(quote).match(/\d/g);
+    if (!digits || digits.length === 0) return 0;
+    return Number(digits[digits.length - 1]);
+};
 
 const STORAGE_KEY = 'analysis_settings';
 
@@ -132,6 +139,7 @@ const Analysis = () => {
                 const arr: Tick[] = prices.map((p: any, i: number) => ({
                     p: Number(p),
                     t: Array.isArray(times) ? Number(times[i]) || 0 : 0,
+                    quote: String(p),
                 }));
                 ticksRef.current = arr;
                 setTicks(arr);
@@ -148,7 +156,7 @@ const Analysis = () => {
                 const max = cfgRef.current.tickCount;
                 const arr = [
                     ...ticksRef.current.slice(-(max - 1)),
-                    { p: Number(tick.quote), t: Number(tick.epoch) || Math.floor(Date.now() / 1000) },
+                    { p: Number(tick.quote), t: Number(tick.epoch) || Math.floor(Date.now() / 1000), quote: String(tick.quote) },
                 ];
                 ticksRef.current = arr;
                 setTicks(arr);
@@ -211,7 +219,7 @@ const Analysis = () => {
         if (n === 0) return null;
         const m = cfgRef.current.market;
         const d = cfgRef.current.digit;
-        const digits = ticks.map(t => digitOf(t.p));
+        const digits = ticks.map(t => lastDigitOf(t.quote));
 
         const longestRun = (pred: (i: number) => boolean) => {
             let best = 0;
@@ -288,7 +296,7 @@ const Analysis = () => {
         const out: Chip[] = [];
         for (let i = start; i < n; i++) {
             const t = ticks[i];
-            const dig = digitOf(t.p);
+            const dig = lastDigitOf(t.quote);
             let label = '—';
             let cls = 'flat';
             if (m === 'even_odd') {
