@@ -32,6 +32,7 @@ import {
 } from '@/utils/trade-type-modal-handler';
 import {
     LabelPairedChartLineCaptionRegularIcon,
+    LabelPairedChartTrendUpCaptionRegularIcon,
     LabelPairedObjectsColumnCaptionRegularIcon,
     LabelPairedPlayLgFillIcon,
     LabelPairedPuzzlePieceTwoCaptionBoldIcon,
@@ -47,6 +48,7 @@ import './main.scss';
 
 import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
+import Analysis from '../analysis/analysis';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
@@ -81,9 +83,9 @@ const AppWrapper = observer(() => {
         [key: string]: string;
     };
     const { clear } = summary_card;
-    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, MANUAL_TRADE } = DBOT_TABS;
+    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'manual_trade', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -373,7 +375,7 @@ const AppWrapper = observer(() => {
     // [/AI]
     return (
         <React.Fragment>
-            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE })}>
+            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS })}>
                 <div
                     className={classNames('main__container', {
                         'main__container--active': active_tour && active_tab === DASHBOARD && !isDesktop,
@@ -451,6 +453,21 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
+                                        <LabelPairedChartTrendUpCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Analysis' />
+                                    </>
+                                }
+                                id='id-analysis'
+                            >
+                                <Analysis />
+                            </div>
+                            <div
+                                label={
+                                    <>
                                         <LabelPairedPlayLgFillIcon
                                             height='24px'
                                             width='24px'
@@ -492,7 +509,7 @@ const AppWrapper = observer(() => {
                     </div>
                 </div>
             </div>
-            {active_tab !== MANUAL_TRADE && (
+            {active_tab !== MANUAL_TRADE && active_tab !== ANALYSIS && (
                 <DesktopWrapper>
                     <div className='main__run-strategy-wrapper'>
                         <RunStrategy />
@@ -502,7 +519,7 @@ const AppWrapper = observer(() => {
                     <TradingViewModal />
                 </DesktopWrapper>
             )}
-            {active_tab !== MANUAL_TRADE && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
+            {active_tab !== MANUAL_TRADE && active_tab !== ANALYSIS && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
             <Dialog
                 cancel_button_text={cancel_button_text || localize('Cancel')}
                 className='dc-dialog__wrapper--fixed'
