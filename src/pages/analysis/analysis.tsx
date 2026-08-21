@@ -35,11 +35,31 @@ const lastDigitOf = (quote: string | number): number => {
 
 const STORAGE_KEY = 'analysis_settings';
 
+const DEFAULTS = { symbol: 'R_100', market: 'even_odd' as Market, tickCount: 100, digit: 5 };
+
+// Read once at module load so remounting the tab (navigate away and back)
+// restores the last-used settings instead of clobbering them with defaults.
+const SAVED: Partial<typeof DEFAULTS> = (() => {
+    try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+        return {};
+    }
+})();
+
 const Analysis = () => {
-    const [symbol, setSymbol] = useState<string>('R_100');
-    const [market, setMarket] = useState<Market>('even_odd');
-    const [tickCount, setTickCount] = useState<number>(100);
-    const [digit, setDigit] = useState<number>(5);
+    // Initialize directly from the saved settings: a mount-time save effect must
+    // never run before restore, or it overwrites storage with defaults.
+    const [symbol, setSymbol] = useState<string>(() =>
+        SAVED.symbol && ALL_SYMBOLS.includes(SAVED.symbol) ? SAVED.symbol : DEFAULTS.symbol
+    );
+    const [market, setMarket] = useState<Market>(SAVED.market ?? DEFAULTS.market);
+    const [tickCount, setTickCount] = useState<number>(Number(SAVED.tickCount) || DEFAULTS.tickCount);
+    const [digit, setDigit] = useState<number>(
+        Number.isFinite(Number(SAVED.digit)) ? Number(SAVED.digit) : DEFAULTS.digit
+    );
     const [ticks, setTicks] = useState<Tick[]>([]);
     const [status, setStatus] = useState<string>('Pick a volatility and press Refresh.');
     const [live, setLive] = useState<boolean>(false);
@@ -50,59 +70,58 @@ const Analysis = () => {
             localStorage.setItem(STORAGE_KEY, JSON.stringify({ symbol, market, tickCount, digit }));
         } catch {}
     }, [symbol, market, tickCount, digit]);
-    useEffect(() => {
-        try {
-            const raw = localStorage.getItem(STORAGE_KEY);
-            const saved = raw ? (JSON.parse(raw) as Partial<typeof DEFAULTS>) : null;
-            if (saved) {
-                if (saved.symbol) setSymbol(saved.symbol);
-                if (saved.market) setMarket(saved.market);
-                if (saved.tickCount) setTickCount(saved.tickCount);
-                if (saved.digit !== undefined) setDigit(saved.digit);
-            }
-        } catch {}
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, []);
 
     const cfgRef = useRef({ symbol, market, tickCount, digit });
     cfgRef.current = { symbol, market, tickCount, digit };
     const ticksRef = useRef<Tick[]>([]);
     const subIdRef = useRef<string | null>(null);
     const genRef = useRef(0);
+    const histReqIdRef = useRef(0);
+    const subReqIdRef = useRef(0);
     const lastLiveRef = useRef(0);
     const lastResetRef = useRef(0);
     const lastSeedAttemptRef = useRef(0);
     const seedAttemptsRef = useRef(0);
 
     const load = useCallback(() => {
-        const gen = ++genRef.current;
-        seedAttemptsRef.current = 0;
-        lastSeedAttemptRef.current = Date.now();
-        lastResetRef.current = Date.now() / 1000;
+        const ws = window._newSystemWS;
         ticksRef.current = [];
         setTicks([]);
         setLive(false);
-        const ws = window._newSystemWS;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             setStatus('WebSocket not connected — waiting…');
             return;
         }
+        // Forget only OUR previous subscription — never one borrowed from the bot.
         if (subIdRef.current) {
             try {
                 ws.send(JSON.stringify({ forget: subIdRef.current }));
             } catch {}
             subIdRef.current = null;
         }
+        subReqIdRef.current = 0;
         const { symbol: sym, tickCount: n } = cfgRef.current;
         setStatus(`Loading last ${n} ticks…`);
+        const gen = ++genRef.current;
+        histReqIdRef.current = gen;
+        seedAttemptsRef.current = 0;
+        lastSeedAttemptRef.current = Date.now();
+        lastResetRef.current = Date.now() / 1000;
+        // Plain history fetch (no subscribe) — can never collide with the bot's
+        // own ticks_history subscription on the shared socket.
+        ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: n, end: 'latest', req_id: gen }));
+        // Own live subscription. If the bot already streams this symbol the
+        // server answers AlreadySubscribed and we fall back to its stream.
+        const subGen = ++genRef.current;
+        subReqIdRef.current = subGen;
         ws.send(
             JSON.stringify({
                 ticks_history: sym,
                 style: 'ticks',
-                count: n,
+                count: 1,
                 end: 'latest',
                 subscribe: 1,
-                req_id: gen,
+                req_id: subGen,
             })
         );
     }, []);
@@ -125,10 +144,24 @@ const Analysis = () => {
                 return;
             }
             const mt = data?.msg_type;
-            if (data?.error) return; // ignore errors silently
+
+            if (data?.error) {
+                // Our subscribe was rejected because the bot already streams
+                // this symbol on the shared socket — share its stream instead.
+                if (data.echo_req?.req_id === subReqIdRef.current) {
+                    subReqIdRef.current = 0;
+                    if (data.error?.code === 'AlreadySubscribed') {
+                        setStatus('Live — sharing stream with bot');
+                    } else {
+                        setStatus(`Stream error: ${data.error?.message || data.error?.code || 'unknown'}`);
+                    }
+                }
+                return;
+            }
+
             if (mt === 'history') {
-                if (data.echo_req?.ticks_history !== cfgRef.current.symbol) return;
-                if (data.echo_req?.req_id !== undefined && data.echo_req.req_id !== genRef.current) return;
+                // Only accept the seed from our own plain history fetch.
+                if (data.echo_req?.req_id !== histReqIdRef.current) return;
                 const prices = data.history?.prices;
                 const times = data.history?.times;
                 if (!Array.isArray(prices) || prices.length === 0) {
@@ -147,10 +180,13 @@ const Analysis = () => {
                 setStatus('');
             } else if (mt === 'tick') {
                 const tick = data.tick;
+                // Accept any tick for our symbol regardless of which
+                // subscription produced it (ours or the bot's shared one).
                 if (!tick || tick.symbol !== cfgRef.current.symbol) return;
-                if (data.echo_req?.req_id !== undefined && data.echo_req?.req_id !== genRef.current) return;
                 lastLiveRef.current = Date.now() / 1000;
-                if (data.subscription?.id && !subIdRef.current) {
+                // Capture the subscription id ONLY for a subscription we own,
+                // so we never forget the bot's stream on cleanup.
+                if (data.subscription?.id && !subIdRef.current && data.echo_req?.req_id === subReqIdRef.current) {
                     subIdRef.current = data.subscription.id;
                 }
                 const max = cfgRef.current.tickCount;
@@ -160,14 +196,14 @@ const Analysis = () => {
                 ];
                 ticksRef.current = arr;
                 setTicks(arr);
-                if (!live) setLive(true);
+                setLive(true);
             }
         });
         return () => {
             unsub();
             unsubscribeAll();
         };
-    }, [unsubscribeAll, live]);
+    }, [unsubscribeAll]);
 
     // (re)subscribe when controls change
     useEffect(() => {
@@ -193,20 +229,26 @@ const Analysis = () => {
                 }
                 return;
             }
-            // data exists but live stream stalled -> resubscribe once
-            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60) {
+            // Data exists but OUR live stream stalled -> re-subscribe once.
+            // In passive mode (sharing the bot's stream) leave it alone.
+            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60 && subIdRef.current) {
                 lastResetRef.current = now;
-                const { symbol: sym, tickCount: n } = cfgRef.current;
-                const gen = ++genRef.current;
+                try {
+                    ws.send(JSON.stringify({ forget: subIdRef.current }));
+                } catch {}
+                subIdRef.current = null;
+                const { symbol: sym } = cfgRef.current;
+                const subGen = ++genRef.current;
+                subReqIdRef.current = subGen;
                 setStatus('Reconnecting live stream…');
                 ws.send(
                     JSON.stringify({
                         ticks_history: sym,
                         style: 'ticks',
-                        count: n,
+                        count: 1,
                         end: 'latest',
                         subscribe: 1,
-                        req_id: gen,
+                        req_id: subGen,
                     })
                 );
             }
@@ -462,7 +504,5 @@ const Analysis = () => {
         </div>
     );
 };
-
-const DEFAULTS = { symbol: 'R_100', market: 'even_odd' as Market, tickCount: 100, digit: 5 };
 
 export default Analysis;
