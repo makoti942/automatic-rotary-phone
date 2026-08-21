@@ -5,7 +5,8 @@
     flex-direction: column;
     gap: 1.6rem;
     padding: 1.6rem;
-    overflow-y: auto;
+    box-sizing: border-box;
+    overflow: hidden;
     background: var(--general-main-2, var(--general-main-1));
 
     &__controls {
@@ -16,9 +17,22 @@
         padding: 1.2rem 1.6rem;
         background: var(--general-main-1);
         border: 1px solid var(--border-normal, var(--general-section-1));
+        border-left: 0.7rem solid var(--brand-secondary, #f5444f);
         border-radius: 1rem;
         box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
         flex-shrink: 0;
+
+        &.has-market-even-odd {
+            border-left-color: var(--status-success, #4bb4b3);
+        }
+
+        &.has-market-rise-fall {
+            border-left-color: var(--brand-secondary, #f5444f);
+        }
+
+        &.has-market-over-under {
+            border-left-color: var(--status-info, #377cfc);
+        }
     }
 
     &__field {
@@ -100,11 +114,22 @@
     }
 
     &__status {
-        display: flex;
+        display: inline-flex;
         align-items: center;
         gap: 0.6rem;
+        padding: 0.4rem 1rem;
+        border-radius: 2rem;
+        background: var(--general-section-1);
         font-size: 1.2rem;
         color: var(--text-less-prominent);
+        max-width: 28rem;
+    }
+
+    &__status-text {
+        display: block;
+        max-width: 18rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
         white-space: nowrap;
     }
 
@@ -127,16 +152,43 @@
 
     &__body {
         display: grid;
-        grid-template-columns: 1.25fr 0.75fr;
+        grid-template-columns: 1.15fr 0.85fr;
         gap: 1.6rem;
         flex: 1;
         min-height: 0;
+        overflow-y: auto;
+        padding-inline-end: 0.4rem;
 
         @media (max-width: 1023px) {
             grid-template-columns: 1fr;
         }
     }
 
+    &__card {
+        background: var(--general-main-1);
+        border: 1px solid var(--border-normal, var(--general-section-1));
+        border-left: 0.7rem solid var(--brand-secondary, #f5444f);
+        border-radius: 1rem;
+        padding: 1.6rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1.2rem;
+        min-height: 0;
+        overflow: hidden;
+        box-shadow: 0 2px 8px rgb(0 0 0 / 6%);
+
+        &.has-market-even-odd {
+            border-left-color: var(--status-success, #4bb4b3);
+        }
+
+        &.has-market-rise-fall {
+            border-left-color: var(--brand-secondary, #f5444f);
+        }
+
+        &.has-market-over-under {
+            border-left-color: var(--status-info, #377cfc);
+        }
+    }
     &__card {
         background: var(--general-main-1);
         border: 1px solid var(--border-normal, var(--general-section-1));
