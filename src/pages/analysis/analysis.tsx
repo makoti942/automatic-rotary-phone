@@ -5,118 +5,110 @@ import './analysis.scss';
 
 type Market = 'even_odd' | 'rise_fall' | 'over_under';
 
-type SavedSettings = {
-    symbol: string;
-    market: Market;
-    tickCount: number;
-    digit: number;
-};
-
 const MARKETS: { value: Market; label: string }[] = [
     { value: 'even_odd', label: 'Even / Odd' },
     { value: 'rise_fall', label: 'Rise / Fall' },
     { value: 'over_under', label: 'Over / Under' },
 ];
 
-const MARKET_THEME: Record<Market, string> = {
-    even_odd: 'even-odd',
-    rise_fall: 'rise-fall',
-    over_under: 'over-under',
-};
+interface Tick {
+    p: number;
+    t: number;
+}
 
-const STORAGE_KEY = 'analysis_settings';
-const DEFAULTS: SavedSettings = { symbol: 'R_100', market: 'even_odd', tickCount: 100, digit: 5 };
+interface Chip {
+    label: string;
+    cls: string;
+    price: number;
+    time: number;
+    newest: boolean;
+}
 
 const digitOf = (p: number) => Math.floor(p) % 10;
 
-const usePersistentState = <T extends SavedSettings>(key: string, initial: T) => {
-    const [state, setState] = useState<T>(() => {
-        try {
-            const raw = localStorage.getItem(key);
-            const parsed = raw ? (JSON.parse(raw) as Partial<T>) : null;
-            return { ...initial, ...parsed };
-        } catch {
-            return initial;
-        }
-    });
-    useEffect(() => {
-        try {
-            localStorage.setItem(key, JSON.stringify(state));
-        } catch {
-            // ignore storage errors
-        }
-    }, [key, state]);
-    useEffect(() => {
-        const handler = (e: StorageEvent) => {
-            if (e.key !== key || !e.newValue) return;
-            try {
-                setState(prev => ({ ...prev, ...JSON.parse(e.newValue as string) }));
-            } catch {
-                // ignore
-            }
-        };
-        window.addEventListener('storage', handler);
-        return () => window.removeEventListener('storage', handler);
-    }, [key]);
-    return [state, setState] as const;
-};
+const STORAGE_KEY = 'analysis_settings';
 
 const Analysis = () => {
-    const [settings, setSettings] = usePersistentState<SavedSettings>(STORAGE_KEY, DEFAULTS);
-    const { symbol, market, tickCount, digit } = settings;
-
-    const [ticks, setTicks] = useState<{ p: number; t: number }[]>([]);
-    const [status, setStatus] = useState<string>('Waiting for connection…');
+    const [symbol, setSymbol] = useState<string>('R_100');
+    const [market, setMarket] = useState<Market>('even_odd');
+    const [tickCount, setTickCount] = useState<number>(100);
+    const [digit, setDigit] = useState<number>(5);
+    const [ticks, setTicks] = useState<Tick[]>([]);
+    const [status, setStatus] = useState<string>('Pick a volatility and press Refresh.');
     const [live, setLive] = useState<boolean>(false);
+
+    // Persist settings so tab-switching never resets them.
+    useEffect(() => {
+        try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify({ symbol, market, tickCount, digit }));
+        } catch {}
+    }, [symbol, market, tickCount, digit]);
+    useEffect(() => {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            const saved = raw ? (JSON.parse(raw) as Partial<typeof DEFAULTS>) : null;
+            if (saved) {
+                if (saved.symbol) setSymbol(saved.symbol);
+                if (saved.market) setMarket(saved.market);
+                if (saved.tickCount) setTickCount(saved.tickCount);
+                if (saved.digit !== undefined) setDigit(saved.digit);
+            }
+        } catch {}
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     const cfgRef = useRef({ symbol, market, tickCount, digit });
     cfgRef.current = { symbol, market, tickCount, digit };
-    const ticksRef = useRef<typeof ticks>([]);
+    const ticksRef = useRef<Tick[]>([]);
     const subIdRef = useRef<string | null>(null);
     const genRef = useRef(0);
     const lastLiveRef = useRef(0);
-    const lastResubRef = useRef(0);
-    const unsubRef = useRef<(() => void) | null>(null);
-    const rateLimitedUntilRef = useRef(0);
+    const lastResetRef = useRef(0);
+    const lastSeedAttemptRef = useRef(0);
+    const seedAttemptsRef = useRef(0);
 
-    const handleSymbol = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSettings(s => ({ ...s, symbol: e.target.value }));
-    };
-    const handleMarket = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSettings(s => ({ ...s, market: e.target.value as Market }));
-    };
-    const handleTickCount = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const v = Math.max(20, Math.min(5000, Number(e.target.value) || 100));
-        setSettings(s => ({ ...s, tickCount: v }));
-    };
-    const handleDigit = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        setSettings(s => ({ ...s, digit: Number(e.target.value) }));
-    };
-
-    const refresh = useCallback(() => {
-        genRef.current += 1;
+    const load = useCallback(() => {
+        const gen = ++genRef.current;
+        seedAttemptsRef.current = 0;
+        lastSeedAttemptRef.current = Date.now();
+        lastResetRef.current = Date.now() / 1000;
+        ticksRef.current = [];
         setTicks([]);
         setLive(false);
-        ticksRef.current = [];
-        setStatus('Refreshing…');
-    }, []);
-
-    const subscribeLive = useCallback(() => {
         const ws = window._newSystemWS;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             setStatus('WebSocket not connected — waiting…');
-            return false;
+            return;
         }
-        const { symbol: sym } = cfgRef.current;
-        const n = cfgRef.current.tickCount;
-        const gen = genRef.current;
+        if (subIdRef.current) {
+            try {
+                ws.send(JSON.stringify({ forget: subIdRef.current }));
+            } catch {}
+            subIdRef.current = null;
+        }
+        const { symbol: sym, tickCount: n } = cfgRef.current;
         setStatus(`Loading last ${n} ticks…`);
-        ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: n, end: 'latest', req_id: gen }));
-        ws.send(JSON.stringify({ ticks: sym, subscribe: 1, req_id: gen }));
-        return true;
+        ws.send(
+            JSON.stringify({
+                ticks_history: sym,
+                style: 'ticks',
+                count: n,
+                end: 'latest',
+                subscribe: 1,
+                req_id: gen,
+            })
+        );
     }, []);
 
-    // Wire socket messages
+    const unsubscribeAll = useCallback(() => {
+        if (subIdRef.current && window._newSystemWS?.readyState === WebSocket.OPEN) {
+            try {
+                window._newSystemWS.send(JSON.stringify({ forget: subIdRef.current }));
+            } catch {}
+        }
+        subIdRef.current = null;
+    }, []);
+
     useEffect(() => {
         const unsub = onNewSystemMessage((event: any) => {
             let data: any;
@@ -126,36 +118,29 @@ const Analysis = () => {
                 return;
             }
             const mt = data?.msg_type;
-            const reqSym = cfgRef.current.symbol;
-            const gen = genRef.current;
-            if (data?.error) {
-                const msg = `${data.error.message || ''} ${data.error.code || ''}`;
-                if (/rate limit/i.test(msg)) {
-                    rateLimitedUntilRef.current = Date.now() / 1000 + 30;
-                    setStatus('Rate limited — pausing briefly');
-                }
-                return;
-            }
+            if (data?.error) return; // ignore errors silently
             if (mt === 'history') {
-                if (data.echo_req?.ticks_history !== reqSym) return;
-                if (data.echo_req?.req_id !== undefined && data.echo_req.req_id !== gen) return;
+                if (data.echo_req?.ticks_history !== cfgRef.current.symbol) return;
+                if (data.echo_req?.req_id !== undefined && data.echo_req.req_id !== genRef.current) return;
                 const prices = data.history?.prices;
-                if (!Array.isArray(prices) || !prices.length) {
-                    setStatus('No ticks returned');
+                const times = data.history?.times;
+                if (!Array.isArray(prices) || prices.length === 0) {
+                    setStatus('No ticks returned for this symbol.');
                     return;
                 }
-                const times = data.history?.times;
-                const arr = prices.map((p: any, i: number) => ({
+                seedAttemptsRef.current = 0;
+                const arr: Tick[] = prices.map((p: any, i: number) => ({
                     p: Number(p),
                     t: Array.isArray(times) ? Number(times[i]) || 0 : 0,
                 }));
                 ticksRef.current = arr;
                 setTicks(arr);
-                if (!live) setLive(true);
+                setLive(true);
+                setStatus('');
             } else if (mt === 'tick') {
                 const tick = data.tick;
-                if (!tick || tick.symbol !== reqSym) return;
-                if (data.echo_req?.req_id !== undefined && data.echo_req?.req_id !== gen) return;
+                if (!tick || tick.symbol !== cfgRef.current.symbol) return;
+                if (data.echo_req?.req_id !== undefined && data.echo_req?.req_id !== genRef.current) return;
                 lastLiveRef.current = Date.now() / 1000;
                 if (data.subscription?.id && !subIdRef.current) {
                     subIdRef.current = data.subscription.id;
@@ -167,57 +152,59 @@ const Analysis = () => {
                 ];
                 ticksRef.current = arr;
                 setTicks(arr);
-                if (status === '' || status === '' ) setLive(true);
+                if (!live) setLive(true);
             }
         });
-        unsubRef.current = unsub;
+        return () => {
+            unsub();
+            unsubscribeAll();
+        };
+    }, [unsubscribeAll, live]);
 
-        // Load on mount / gen change
-        const timer = setTimeout(() => subscribeLive(), 0);
-        // Tick-health watchdog: resubscribe if ticks stall
-        const watchdog = setInterval(() => {
-            if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) return;
-            if (Date.now() / 1000 < rateLimitedUntilRef.current) return;
-            const idle = Date.now() / 1000 - lastLiveRef.current;
-            // resubscribe only if we already have some data and ticks went cold
-            if (ticksRef.current.length > 0 && idle > 15 && Date.now() / 1000 - lastResubRef.current > 20) {
-                lastResubRef.current = Date.now() / 1000;
-                if (subIdRef.current) {
-                    window._newSystemWS.send(JSON.stringify({ forget: subIdRef.current }));
-                    subIdRef.current = null;
+    // (re)subscribe when controls change
+    useEffect(() => {
+        const id = setTimeout(() => {
+            load();
+        }, 200);
+        return () => clearTimeout(id);
+    }, [symbol, market, tickCount, digit, load]);
+
+    // gentle seed retry while the socket is open but no history arrived yet,
+    // and a single recovery (no re-seed) if the live stream goes cold.
+    useEffect(() => {
+        const id = setInterval(() => {
+            const ws = window._newSystemWS;
+            if (!ws || ws.readyState !== WebSocket.OPEN) return;
+            const now = Date.now() / 1000;
+            // cold start: no data at all yet -> re-seed, but cap the attempts
+            if (ticksRef.current.length === 0) {
+                if (Date.now() - lastSeedAttemptRef.current > 4000 && seedAttemptsRef.current < 3) {
+                    lastSeedAttemptRef.current = Date.now();
+                    seedAttemptsRef.current += 1;
+                    load();
                 }
-                setTicks([]);
-                ticksRef.current = [];
-                setLive(false);
-                setStatus('Ticks stalled — re-subscribing…');
-                subscribeLive();
+                return;
+            }
+            // data exists but live stream stalled -> resubscribe once
+            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60) {
+                lastResetRef.current = now;
+                const { symbol: sym, tickCount: n } = cfgRef.current;
+                const gen = ++genRef.current;
+                setStatus('Reconnecting live stream…');
+                ws.send(
+                    JSON.stringify({
+                        ticks_history: sym,
+                        style: 'ticks',
+                        count: n,
+                        end: 'latest',
+                        subscribe: 1,
+                        req_id: gen,
+                    })
+                );
             }
         }, 4000);
-        return () => {
-            clearTimeout(timer);
-            clearInterval(watchdog);
-            unsub();
-            if (subIdRef.current && window._newSystemWS?.readyState === WebSocket.OPEN) {
-                try {
-                    window._newSystemWS.send(JSON.stringify({ forget: subIdRef.current }));
-                } catch {
-                    // ignore
-                }
-            }
-            subIdRef.current = null;
-        };
-    }, [subscribeLive]);
-
-    // Re-subscribe when controls change
-    useEffect(() => {
-        genRef.current += 1;
-        setTicks([]);
-        ticksRef.current = [];
-        setLive(false);
-        subIdRef.current = null;
-        const id = setTimeout(() => subscribeLive(), 150);
-        return () => clearTimeout(id);
-    }, [symbol, market, tickCount, digit, subscribeLive]);
+        return () => clearInterval(id);
+    }, [load]);
 
     const stats = useMemo(() => {
         const n = ticks.length;
@@ -237,88 +224,58 @@ const Analysis = () => {
             }
             return best;
         };
-        const currentRun = (pred: (i: number) => boolean) => {
-            let run = 0;
-            for (let i = n - 1; i >= 0 && pred(i); i--) run++;
-            return run;
-        };
-        const base = {
-            total: n,
-            last: ticks[n - 1].p,
-            first: ticks[0].p,
-            change: ticks[n - 1].p - ticks[0].p,
-        };
 
         if (m === 'even_odd') {
             const even = digits.filter(x => x % 2 === 0).length;
             const odd = n - even;
             const dominant = even >= odd ? 'EVEN' : 'ODD';
-            const evenPred = (i: number) => digits[i] % 2 === 0;
-            const lastEven = digits[n - 1] % 2 === 0;
-            const current = lastEven ? currentRun(evenPred) : currentRun((i: number) => digits[i] % 2 !== 0);
             return {
-                ...base,
                 kind: 'even_odd' as const,
-                counts: { even, odd },
-                pcts: { even: (even / n) * 100, odd: (odd / n) * 100 },
+                bars: [
+                    { key: 'even', label: 'Even', count: even, pct: (even / n) * 100, cls: 'even' },
+                    { key: 'odd', label: 'Odd', count: odd, pct: (odd / n) * 100, cls: 'odd' },
+                ],
                 dominant,
-                longest: longestRun(evenPred),
-                current,
+                dominantCount: even >= odd ? even : odd,
             };
         }
-
         if (m === 'rise_fall') {
             let rise = 0;
             let fall = 0;
-            let flat = 0;
             for (let i = 1; i < n; i++) {
                 const diff = ticks[i].p - ticks[i - 1].p;
                 if (diff > 0) rise++;
                 else if (diff < 0) fall++;
-                else flat++;
             }
-            const cmp = n - 1;
+            const cmp = Math.max(n - 1, 1);
             const dominant = rise >= fall ? 'RISE' : 'FALL';
             const risePred = (i: number) => i > 0 && ticks[i].p - ticks[i - 1].p > 0;
             const fallPred = (i: number) => i > 0 && ticks[i].p - ticks[i - 1].p < 0;
-            const longestRise = longestRun(risePred);
-            const longestFall = longestRun(fallPred);
-            const current = dominant === 'RISE' ? currentRun(risePred) : currentRun(fallPred);
             return {
-                ...base,
                 kind: 'rise_fall' as const,
-                counts: { rise, fall, flat },
-                pcts: { rise: (rise / cmp) * 100, fall: (fall / cmp) * 100 },
-                cmp,
+                bars: [
+                    { key: 'rise', label: 'Rise', count: rise, pct: (rise / cmp) * 100, cls: 'rise' },
+                    { key: 'fall', label: 'Fall', count: fall, pct: (fall / cmp) * 100, cls: 'fall' },
+                ],
                 dominant,
-                longest: dominant === 'RISE' ? longestRise : longestFall,
-                current,
-                longestRise,
-                longestFall,
+                dominantCount: rise >= fall ? rise : fall,
+                longestRise: longestRun(risePred),
+                longestFall: longestRun(fallPred),
             };
         }
-
         const under = digits.filter(x => x < d).length;
         const over = digits.filter(x => x > d).length;
         const eq = n - under - over;
         const dominant = under >= over ? 'UNDER' : 'OVER';
-        const underPred = (i: number) => digits[i] < d;
-        const overPred = (i: number) => digits[i] > d;
-        const longestUnder = longestRun(underPred);
-        const longestOver = longestRun(overPred);
-        const curUnder = currentRun(underPred);
-        const curOver = currentRun(overPred);
         return {
-            ...base,
             kind: 'over_under' as const,
-            counts: { under, over, eq },
-            pcts: { under: (under / n) * 100, over: (over / n) * 100 },
+            bars: [
+                { key: 'under', label: `Under ${d}`, count: under, pct: (under / n) * 100, cls: 'under' },
+                { key: 'over', label: `Over ${d}`, count: over, pct: (over / n) * 100, cls: 'over' },
+                { key: 'equal', label: `Equal ${d}`, count: eq, pct: (eq / n) * 100, cls: 'flat' },
+            ],
             dominant,
-            longest: dominant === 'UNDER' ? longestUnder : longestOver,
-            current: dominant === 'UNDER' ? curUnder : curOver,
-            longestUnder,
-            longestOver,
-            target: d,
+            dominantCount: under >= over ? under : over,
         };
     }, [ticks]);
 
@@ -361,32 +318,15 @@ const Analysis = () => {
         return out;
     }, [ticks]);
 
-    const distribution = useMemo(() => {
-        if (cfgRef.current.market === 'rise_fall') return null;
-        const counts = Array(10).fill(0);
-        ticks.forEach(t => {
-            counts[digitOf(t.p)]++;
-        });
-        const max = Math.max(...counts, 1);
-        const total = ticks.length || 1;
-        return counts.map((c, i) => ({ digit: i, count: c, pct: (c / total) * 100, barPct: (c / max) * 100 }));
-    }, [ticks]);
-
-    const fmtTime = (t: number) => {
-        if (!t) return '';
-        return new Date(t * 1000).toLocaleTimeString();
-    };
-
-    const theme = MARKET_THEME[market];
-
-    const statusText = live ? (ticks.length ? `Live — ${ticks.length} ticks analyzed` : 'Live — receiving ticks…') : status || 'Stopped';
+    const fmtTime = (t: number) => (!t ? '' : new Date(t * 1000).toLocaleTimeString());
+    const symbolLabel = SYMBOL_LABELS[symbol] || symbol;
 
     return (
         <div className='analysis'>
-            <div className='analysis__controls'>
+            <div className={`analysis__controls has-market-${cfgRef.current.market.replace('_', '-')} `}>
                 <div className='analysis__field'>
                     <label htmlFor='an-symbol'>Volatility</label>
-                    <select id='an-symbol' value={symbol} onChange={handleSymbol}>
+                    <select id='an-symbol' value={symbol} onChange={e => setSymbol(e.target.value)}>
                         {ALL_SYMBOLS.map(s => (
                             <option key={s} value={s}>
                                 {SYMBOL_LABELS[s] || s}
@@ -396,7 +336,7 @@ const Analysis = () => {
                 </div>
                 <div className='analysis__field'>
                     <label htmlFor='an-market'>Market</label>
-                    <select id='an-market' value={market} onChange={handleMarket}>
+                    <select id='an-market' value={market} onChange={e => setMarket(e.target.value as Market)}>
                         {MARKETS.map(m => (
                             <option key={m.value} value={m.value}>
                                 {m.label}
@@ -413,45 +353,48 @@ const Analysis = () => {
                         max={5000}
                         step={10}
                         value={tickCount}
-                        onChange={handleTickCount}
+                        onChange={e => setTickCount(Math.max(20, Math.min(5000, Number(e.target.value) || 100)))}
                     />
                 </div>
                 {market === 'over_under' && (
                     <div className='analysis__field'>
                         <label htmlFor='an-digit'>Target digit</label>
-                        <select id='an-digit' value={digit} onChange={handleDigit}>
+                        <select id='an-digit' value={digit} onChange={e => setDigit(Number(e.target.value))}>
                             {Array.from({ length: 10 }, (_, i) => (
                                 <option key={i} value={i}>
-                                    Digit {i}
+                                    {i}
                                 </option>
                             ))}
                         </select>
                     </div>
                 )}
                 <div className='analysis__actions'>
-                    <button type='button' className={`analysis__refresh has-market-${theme}`} onClick={refresh}>
+                    <button type='button' className='analysis__refresh' onClick={load}>
                         Refresh
                     </button>
-                    <div className='analysis__status' title={statusText}>
-                        <span className={`analysis__dot ${live ? 'is-ok' : 'is-wait'}`} />
-                        <span className='analysis__status-text'>{statusText}</span>
+                    <div className={`analysis__status ${live ? 'is-ok' : 'is-wait'}`}>
+                        <span className='analysis__dot' />
+                        <span className='analysis__status-text'>{live ? `Live — ${symbolLabel}` : status}</span>
                     </div>
                 </div>
             </div>
 
-            <div className={`analysis__body has-market-${theme}`}>
-                <section className='analysis__card analysis__histogram'>
+            <div className='analysis__body'>
+                <section className={`analysis__card analysis__histogram has-market-${market.replace('_', '-')}`}>
                     <header className='analysis__card-head'>
-                        <h3>{MARKETS.find(m => m.value === market)?.label} histogram</h3>
+                        <div>
+                            <h3>{MARKETS.find(m => m.value === market)?.label} histogram</h3>
+                            <span className='analysis__subtitle'>{symbolLabel}</span>
+                        </div>
                         {stats && (
                             <span className='analysis__dominant'>
-                                Dominant: <strong>{stats.dominant}</strong>
+                                Dominant: <strong>{stats.dominant}</strong> ({stats.dominantCount})
                             </span>
                         )}
                     </header>
                     {stats ? (
                         <div className='analysis__bars'>
-                            {barsFor(stats).map(b => (
+                            {stats.bars.map(b => (
                                 <div key={b.key} className='analysis__bar-row'>
                                     <div className='analysis__bar-meta'>
                                         <span className={`analysis__bar-label ${b.cls}`}>{b.label}</span>
@@ -460,134 +403,58 @@ const Analysis = () => {
                                         </span>
                                     </div>
                                     <div className='analysis__bar-track'>
-                                        <div className={`analysis__bar-fill ${b.cls}`} style={{ width: `${Math.max(2, b.pct)}%` }} />
+                                        <div
+                                            className={`analysis__bar-fill ${b.cls}`}
+                                            style={{ width: `${Math.max(4, b.pct)}%` }}
+                                        />
                                     </div>
                                     <span className='analysis__bar-pct'>{b.pct.toFixed(1)}%</span>
                                 </div>
                             ))}
                         </div>
                     ) : (
-                        <div className='analysis__empty'>Choose a volatility and press Refresh to begin</div>
+                        <div className='analysis__empty'>Press Refresh to load ticks.</div>
                     )}
                 </section>
 
-                <section className='analysis__card analysis__stats'>
+                <section className={`analysis__card analysis__ticks has-market-${market.replace('_', '-')}`}>
                     <header className='analysis__card-head'>
-                        <h3>Live stats</h3>
-                    </header>
-                    {stats ? (
-                        <div className='analysis__stat-grid'>
-                            <StatRow label='Last price' value={stats.last.toFixed(2)} />
-                            <StatRow label='Range' value={`${stats.change >= 0 ? '+' : ''}${stats.change.toFixed(2)}`} />
-                            <StatRow label='Ticks analysed' value={String(stats.total)} />
-                            <StatRow label='Dominant' value={stats.dominant} highlight />
-                            <StatRow label='Current streak' value={String(stats.current)} />
-                            <StatRow label='Longest streak' value={String(stats.longest)} />
-                            {stats.kind === 'rise_fall' && (
-                                <>
-                                    <StatRow label='Longest rise run' value={String(stats.longestRise)} />
-                                    <StatRow label='Longest fall run' value={String(stats.longestFall)} />
-                                    <StatRow label='Flat ticks' value={String(stats.counts.flat)} />
-                                </>
-                            )}
-                            {stats.kind === 'over_under' && (
-                                <>
-                                    <StatRow label={`Equal to ${stats.target}`} value={String(stats.counts.eq)} />
-                                    <StatRow label={`Longest under/over`} value={`${stats.longestUnder} / ${stats.longestOver}`} />
-                                </>
-                            )}
+                        <div>
+                            <h3>Last 20 ticks</h3>
+                            <span className='analysis__subtitle'>
+                                {market === 'even_odd' && 'E = even, O = odd'}
+                                {market === 'rise_fall' && 'R = rise, F = fall, = = unchanged'}
+                                {market === 'over_under' && `U = under ${digit}, O = over ${digit}, = = equal`}
+                            </span>
                         </div>
-                    ) : (
-                        <div className='analysis__empty'>Waiting for data…</div>
+                    </header>
+                    <div className='analysis__chips'>
+                        {chips.length > 0 ? (
+                            chips.map((c, i) => (
+                                <div
+                                    key={i}
+                                    className={`analysis__chip ${c.cls}${c.newest ? ' is-newest' : ''}`}
+                                    title={`${c.price.toFixed(2)} @ ${fmtTime(c.time)}`}
+                                >
+                                    {c.label}
+                                </div>
+                            ))
+                        ) : (
+                            <div className='analysis__empty'>Waiting for ticks…</div>
+                        )}
+                    </div>
+                    {stats?.kind === 'rise_fall' && (
+                        <div className='analysis__streaks'>
+                            <span>Longest rise run: {stats.longestRise}</span>
+                            <span>Longest fall run: {stats.longestFall}</span>
+                        </div>
                     )}
                 </section>
-
-                {distribution && (
-                    <section className={`analysis__card analysis__distribution has-market-${theme}`}>
-                        <header className='analysis__card-head'>
-                            <h3>Digit distribution 0–9</h3>
-                            <span className='analysis__hint'>last digit of price</span>
-                        </header>
-                        <div className='analysis__dist-bars'>
-                            {distribution.map(dd => (
-                                <div
-                                    key={dd.digit}
-                                    className='analysis__dist-col'
-                                    title={`${dd.count} ticks (${dd.pct.toFixed(1)}%)`}
-                                >
-                                    <span className='analysis__dist-count'>{dd.count}</span>
-                                    <div className='analysis__dist-track'>
-                                        <div className='analysis__dist-fill' style={{ height: `${Math.max(4, dd.barPct)}%` }} />
-                                    </div>
-                                    <span className='analysis__dist-digit'>{dd.digit}</span>
-                                </div>
-                            ))}
-                        </div>
-                    </section>
-                )}
             </div>
-
-            <section className='analysis__card analysis__ticks'>
-                <header className='analysis__card-head'>
-                    <h3>Last 20 ticks</h3>
-                    <span className='analysis__hint'>
-                        {market === 'even_odd' && 'E = even digit, O = odd digit'}
-                        {market === 'rise_fall' && 'R = rise, F = fall, = = unchanged'}
-                        {market === 'over_under' && `U = under ${digit}, O = over ${digit}, = = equal`}
-                    </span>
-                </header>
-                <div className='analysis__chips'>
-                    {chips.length > 0 ? (
-                        chips.map((c, i) => (
-                            <div
-                                key={i}
-                                className={`analysis__chip ${c.cls}${c.newest ? ' is-newest' : ''}`}
-                                title={`${c.price.toFixed(2)} @ ${fmtTime(c.time)}`}
-                            >
-                                {c.label}
-                            </div>
-                        ))
-                    ) : (
-                        <div className='analysis__empty'>Waiting for ticks…</div>
-                    )}
-                </div>
-            </section>
         </div>
     );
 };
 
-interface Chip {
-    label: string;
-    cls: string;
-    price: number;
-    time: number;
-    newest: boolean;
-}
-
-const StatRow = ({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) => (
-    <div className={`analysis__stat ${highlight ? 'is-highlight' : ''}`}>
-        <span className='analysis__stat-label'>{label}</span>
-        <span className='analysis__stat-value'>{value}</span>
-    </div>
-);
-
-function barsFor(stats: any) {
-    if (stats.kind === 'even_odd') {
-        return [
-            { key: 'even', label: 'Even', count: stats.counts.even, pct: stats.pcts.even, cls: 'even' },
-            { key: 'odd', label: 'Odd', count: stats.counts.odd, pct: stats.pcts.odd, cls: 'odd' },
-        ];
-    }
-    if (stats.kind === 'rise_fall') {
-        return [
-            { key: 'rise', label: 'Rise', count: stats.counts.rise, pct: stats.pcts.rise, cls: 'rise' },
-            { key: 'fall', label: 'Fall', count: stats.counts.fall, pct: stats.pcts.fall, cls: 'fall' },
-        ];
-    }
-    return [
-        { key: 'under', label: `Under ${stats.target}`, count: stats.counts.under, pct: stats.pcts.under, cls: 'under' },
-        { key: 'over', label: `Over ${stats.target}`, count: stats.counts.over, pct: stats.pcts.over, cls: 'over' },
-    ];
-}
+const DEFAULTS = { symbol: 'R_100', market: 'even_odd' as Market, tickCount: 100, digit: 5 };
 
 export default Analysis;
