@@ -509,7 +509,7 @@ const AppWrapper = observer(() => {
                     </div>
                 </div>
             </div>
-            {active_tab !== MANUAL_TRADE && active_tab !== ANALYSIS && (
+            {active_tab !== MANUAL_TRADE && (
                 <DesktopWrapper>
                     <div className='main__run-strategy-wrapper'>
                         <RunStrategy />
@@ -519,7 +519,7 @@ const AppWrapper = observer(() => {
                     <TradingViewModal />
                 </DesktopWrapper>
             )}
-            {active_tab !== MANUAL_TRADE && active_tab !== ANALYSIS && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
+            {active_tab !== MANUAL_TRADE && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
             <Dialog
                 cancel_button_text={cancel_button_text || localize('Cancel')}
                 className='dc-dialog__wrapper--fixed'
