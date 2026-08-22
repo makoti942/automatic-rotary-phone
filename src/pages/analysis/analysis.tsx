@@ -37,9 +37,9 @@ const STORAGE_KEY = 'analysis_settings';
 
 const DEFAULTS = { symbol: 'R_100', market: 'even_odd' as Market, tickCount: 100, digit: 5 };
 
-// Read once at module load so remounting the tab (navigate away and back)
-// restores the last-used settings instead of clobbering them with defaults.
-const SAVED: Partial<typeof DEFAULTS> = (() => {
+// Read on every mount (NOT once per page load): SPA tab navigation remounts
+// this component, so the initializer must see the latest saved values.
+const readSaved = (): Partial<typeof DEFAULTS> => {
     try {
         const raw = localStorage.getItem(STORAGE_KEY);
         const parsed = raw ? JSON.parse(raw) : {};
@@ -47,19 +47,21 @@ const SAVED: Partial<typeof DEFAULTS> = (() => {
     } catch {
         return {};
     }
-})();
+};
 
 const Analysis = () => {
     // Initialize directly from the saved settings: a mount-time save effect must
     // never run before restore, or it overwrites storage with defaults.
-    const [symbol, setSymbol] = useState<string>(() =>
-        SAVED.symbol && ALL_SYMBOLS.includes(SAVED.symbol) ? SAVED.symbol : DEFAULTS.symbol
-    );
-    const [market, setMarket] = useState<Market>(SAVED.market ?? DEFAULTS.market);
-    const [tickCount, setTickCount] = useState<number>(Number(SAVED.tickCount) || DEFAULTS.tickCount);
-    const [digit, setDigit] = useState<number>(
-        Number.isFinite(Number(SAVED.digit)) ? Number(SAVED.digit) : DEFAULTS.digit
-    );
+    const [symbol, setSymbol] = useState<string>(() => {
+        const saved = readSaved();
+        return saved.symbol && ALL_SYMBOLS.includes(saved.symbol) ? saved.symbol : DEFAULTS.symbol;
+    });
+    const [market, setMarket] = useState<Market>(() => readSaved().market ?? DEFAULTS.market);
+    const [tickCount, setTickCount] = useState<number>(() => Number(readSaved().tickCount) || DEFAULTS.tickCount);
+    const [digit, setDigit] = useState<number>(() => {
+        const n = Number(readSaved().digit);
+        return Number.isFinite(n) ? n : DEFAULTS.digit;
+    });
     const [ticks, setTicks] = useState<Tick[]>([]);
     const [status, setStatus] = useState<string>('Pick a volatility and press Refresh.');
     const [live, setLive] = useState<boolean>(false);

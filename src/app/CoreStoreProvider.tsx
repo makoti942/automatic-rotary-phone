@@ -166,6 +166,46 @@ const CoreStoreProvider: React.FC<{ children: React.ReactNode }> = observer(({ c
         };
     }, [connectionStatus, handleMessages, isAuthorizing, isAuthorized, client]);
 
+    // Keep the displayed balance alive: (re)establish the live balance stream
+    // and periodically pull a fresh snapshot, so a dropped/forgotten stream
+    // can never freeze the balance until a page reload.
+    useEffect(() => {
+        if (isAuthorizing || !client || !api_base?.api) return undefined;
+
+        interface ApiWithSend {
+            send(request: Record<string, unknown>): Promise<unknown>;
+        }
+        const api = api_base.api as unknown as ApiWithSend;
+
+        let stopped = false;
+        const refreshSnapshot = () => {
+            if (stopped) return;
+            try {
+                api.send({ balance: 1 }).catch(() => {});
+            } catch {
+                /* noop */
+            }
+        };
+        const resubscribeStream = () => {
+            if (stopped) return;
+            try {
+                // AlreadySubscribed errors are harmless and ignored.
+                api.send({ balance: 1, subscribe: 1 }).catch(() => {});
+            } catch {
+                /* noop */
+            }
+        };
+
+        resubscribeStream();
+        refreshSnapshot();
+        const interval = setInterval(refreshSnapshot, 15000);
+
+        return () => {
+            stopped = true;
+            clearInterval(interval);
+        };
+    }, [isAuthorizing, isAuthorized, client]);
+
     useEffect(() => {
         if (!isAuthorizing && isAuthorized && !accountInitialization.current && client) {
             accountInitialization.current = true;

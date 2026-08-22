@@ -26,6 +26,7 @@ export default Engine =>
                     if (this.isSold) {
                         this.contractId = '';
                         clearTimeout(this.transaction_recovery_timeout);
+                        this.stopSettlementPolling();
                         this.updateTotals(contract);
                         contractStatus({
                             id: 'contract.sold',
@@ -41,11 +42,37 @@ export default Engine =>
 
                         this.store.dispatch(sell());
                     } else {
+                        this.startSettlementPolling();
                         this.store.dispatch(openContractReceived());
                     }
                 }
             });
             api_base.pushSubscription(subscription);
+        }
+
+        // Actively poll the open contract so a missed or delayed
+        // proposal_open_contract push can never stall the bot between trades
+        // (waitForAfter would otherwise hang until the sold push arrives).
+        startSettlementPolling() {
+            this.stopSettlementPolling();
+            this.settlement_poll_interval = setInterval(() => {
+                if (!this.contractId || this.isSold) {
+                    this.stopSettlementPolling();
+                    return;
+                }
+                try {
+                    api_base.api.send({ proposal_open_contract: 1, contract_id: this.contractId });
+                } catch (e) {
+                    /* noop */
+                }
+            }, 5000);
+        }
+
+        stopSettlementPolling() {
+            if (this.settlement_poll_interval) {
+                clearInterval(this.settlement_poll_interval);
+                this.settlement_poll_interval = null;
+            }
         }
 
         waitForAfter() {
