@@ -119,7 +119,6 @@ export function useManualTrade() {
     const [isBuying, setIsBuying] = useState(false);
     const [buyResult, setBuyResult] = useState<BuyResult | null>(null);
     const [buyError, setBuyError] = useState<string | null>(null);
-    const [positions, setPositions] = useState<ContractPosition[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error] = useState<string | null>(null);
@@ -138,6 +137,8 @@ export function useManualTrade() {
     const pocLoadedRef = useRef(false);
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isBuyingRef = useRef(false);
+    const pocSubReqIdRef = useRef(0);
+    const pocSubIdRef = useRef<string | null>(null);
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
@@ -156,6 +157,19 @@ export function useManualTrade() {
                     if (data.echo_req?.req_id === subReqIdRef.current) {
                         subReqIdRef.current = 0;
                     }
+                    // Same for the contract-settlement stream: if someone else
+                    // already subscribes to proposal_open_contract, their pushes
+                    // still reach us through the shared bus (passive mode).
+                    if (data.echo_req?.req_id === pocSubReqIdRef.current) {
+                        pocSubReqIdRef.current = 0;
+                    }
+                    return;
+                }
+                // Capture the contract-stream subscription id we own, so
+                // cleanup never forgets another component's subscription.
+                if (data.subscription?.id && data.echo_req?.req_id === pocSubReqIdRef.current) {
+                    pocSubIdRef.current = data.subscription.id;
+                    pocSubReqIdRef.current = 0;
                     return;
                 }
                 if (data.msg_type === 'tick' && data.tick) {
@@ -224,42 +238,27 @@ export function useManualTrade() {
                     const list = Array.isArray(data.proposal_open_contract)
                         ? data.proposal_open_contract
                         : [data.proposal_open_contract];
-                    const mapped = list.map((poc: any) => ({
-                        contract_id: poc.contract_id,
-                        symbol: poc.underlying_symbol ?? poc.symbol,
-                        contract_type: poc.contract_type,
-                        buy_price: Number(poc.buy_price),
-                        payout: Number(poc.payout),
-                        is_sold: poc.is_sold,
-                        sell_price: poc.sell_price ? Number(poc.sell_price) : null,
-                        profit: poc.profit !== undefined && poc.profit !== null ? Number(poc.profit) : null,
-                        entry_tick: poc.entry_tick ?? null,
-                        exit_tick: poc.exit_tick ?? null,
-                        date_start: poc.date_start,
-                    }));
 
                     // The instant a tracked contract settles, flash its EXIT
                     // digit green (win) / red (loss). Contracts already sold on
                     // first load are recorded silently — only fresh settlements
                     // flash.
                     let freshFlash: TradeFlash | null = null;
-                    mapped.forEach(p => {
-                        if (!p.is_sold || p.exit_tick === null) return;
-                        const key = String(p.contract_id);
+                    list.forEach((poc: any) => {
+                        if (!poc.is_sold || poc.exit_tick == null) return;
+                        const key = String(poc.contract_id);
                         if (seenSoldRef.current.has(key)) return;
                         seenSoldRef.current.add(key);
-                        if (pocLoadedRef.current && p.profit !== null && mountedRef.current) {
+                        if (pocLoadedRef.current && mountedRef.current) {
                             freshFlash = {
-                                digit: lastDigitOfPrice(p.exit_tick),
-                                win: p.profit > 0,
+                                digit: lastDigitOfPrice(poc.exit_tick),
+                                win: Number(poc.profit ?? 0) > 0,
                                 key: Date.now(),
                             };
                         }
                     });
                     if (seenSoldRef.current.size > 500) seenSoldRef.current = new Set();
                     pocLoadedRef.current = true;
-
-                    setPositions(mapped);
 
                     if (freshFlash) {
                         setTradeFlash(freshFlash);
@@ -271,7 +270,6 @@ export function useManualTrade() {
                     return;
                 }
                 if (data.msg_type === 'sell') {
-                    sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
                     return;
                 }
                 if (data.msg_type === 'active_symbols' && data.active_symbols) {
@@ -304,17 +302,27 @@ export function useManualTrade() {
         return () => clearInterval(check);
     }, []);
 
-    // Fetch symbols + positions on mount
+    // Fetch symbols on mount + subscribe to the account-wide contract stream
+    // (pushes every proposal_open_contract update — this is what powers the
+    // instant win/loss exit-digit flash; a one-shot fetch never pushes).
     useEffect(() => {
         sendViaNewSystem({ active_symbols: 'brief' });
-        sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
+        const pocId = ++reqIdRef.current;
+        pocSubReqIdRef.current = pocId;
+        sendViaNewSystem({ proposal_open_contract: 1, subscribe: 1, req_id: pocId });
         const t = setTimeout(() => {
             if (mountedRef.current) {
                 setSymbols(prev => prev.length > 0 ? prev : FALLBACK_SYMBOLS);
                 setIsLoading(false);
             }
         }, 10000);
-        return () => clearTimeout(t);
+        return () => {
+            clearTimeout(t);
+            if (pocSubIdRef.current) {
+                sendViaNewSystem({ forget: pocSubIdRef.current });
+                pocSubIdRef.current = null;
+            }
+        };
     }, []);
 
     // Subscribe/Unsubscribe ticks on symbol change
@@ -412,14 +420,6 @@ export function useManualTrade() {
         }
     }, []);
 
-    const buyContract = useCallback(() => {
-        if (!proposal || isBuying) return;
-        setIsBuying(true);
-        setBuyError(null);
-        sendViaNewSystem({ buy: proposal.id, price: proposal.askPrice });
-        setTimeout(() => { if (mountedRef.current) setIsBuying(false); }, 10000);
-    }, [proposal, isBuying]);
-
     // One-click execution: fetch a fresh proposal for THIS mode and buy it
     // immediately — no separate mode-selection step.
     const buyWithMode = useCallback(async (mode: ContractMode) => {
@@ -465,7 +465,13 @@ export function useManualTrade() {
                     balanceAfter: Number(buyRes.buy.balance_after),
                 });
                 setBuyError(null);
-                sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
+                // Make sure a settlement stream exists so the win/loss flash
+                // fires even if our subscribe was passively shared earlier.
+                if (!pocSubIdRef.current && !pocSubReqIdRef.current) {
+                    const pocId = ++reqIdRef.current;
+                    pocSubReqIdRef.current = pocId;
+                    sendViaNewSystem({ proposal_open_contract: 1, subscribe: 1, req_id: pocId });
+                }
             } else {
                 throw new Error(buyRes?.error?.message ?? 'Buy failed.');
             }
@@ -477,14 +483,6 @@ export function useManualTrade() {
             if (mountedRef.current) setIsBuying(false);
         }
     }, [stake, duration, activeSymbol, selectedDigit]);
-
-    const fetchPositions = useCallback(() => {
-        sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
-    }, []);
-
-    const sellContract = useCallback((contractId: number) => {
-        sendViaNewSystem({ sell: contractId, price: 0 });
-    }, []);
 
     const clearBuyResult = useCallback(() => {
         setBuyResult(null);
@@ -498,9 +496,7 @@ export function useManualTrade() {
         contractMode, setContractMode,
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
-        proposal, isProposalLoading,
-        buyContract, buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
-        positions, sellContract, fetchPositions,
+        buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
     };
 }

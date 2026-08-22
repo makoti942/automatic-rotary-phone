@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useManualTrade, TradeType, ContractMode } from './use-manual-trade';
+import { AiPanel } from './ai-panel';
 import { SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
 import './manual-trade.scss';
 
@@ -33,7 +34,6 @@ const ManualTrade = observer(() => {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
-        positions, sellContract,
         isConnected, isLoading, tradeFlash,
     } = useManualTrade();
 
@@ -254,34 +254,7 @@ const ManualTrade = observer(() => {
                 </div>
             </div>
 
-            {/* Positions */}
-            {positions.length > 0 && (
-                <div className='mt-positions'>
-                    <div className='mt-positions-header'>Recent Positions</div>
-                    <div className='mt-positions-list'>
-                        {positions.slice(0, 10).map(pos => (
-                            <div key={pos.contract_id} className='mt-pos-row'>
-                                <span className='mt-pos-sym'>{pos.symbol}</span>
-                                <span className='mt-pos-type'>{pos.contract_type}</span>
-                                <span className='mt-pos-price'>${pos.buy_price.toFixed(2)}</span>
-                                <span className={`mt-pos-status ${pos.is_sold ? 'mt-pos-status--sold' : 'mt-pos-status--open'}`}>
-                                    {pos.is_sold ? 'Closed' : 'Open'}
-                                </span>
-                                {pos.profit !== null && (
-                                    <span className={`mt-pos-profit ${pos.profit >= 0 ? 'mt-pos-profit--win' : 'mt-pos-profit--loss'}`}>
-                                        {pos.profit >= 0 ? '+' : ''}{pos.profit.toFixed(2)}
-                                    </span>
-                                )}
-                                {!pos.is_sold && (
-                                    <button className='mt-sell-btn' onClick={() => sellContract(pos.contract_id)}>
-                                        Sell
-                                    </button>
-                                )}
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            <AiPanel />
         </div>
     );
 });
