@@ -146,7 +146,7 @@ $radius:   10px;
     background: $bg2;
     border: 1px solid $border;
     border-radius: $radius;
-    padding: 12px;
+    padding: 16px 18px 14px;
 
     @include mobile-or-tablet-screen {
         overflow-x: auto;
@@ -155,23 +155,24 @@ $radius:   10px;
 }
 
 .mt-stats-header {
-    font-size: 12px;
+    font-size: 13px;
     color: $muted;
-    margin-bottom: 8px;
+    margin-bottom: 14px;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.6px;
     white-space: nowrap;
 }
 
 .mt-bars {
     display: flex;
-    align-items: flex-end;
-    gap: 4px;
-    height: 120px;
+    align-items: stretch;
+    gap: 12px;
+    height: 200px;
 
     @include mobile-or-tablet-screen {
-        height: 100px;
-        min-width: 320px;
+        height: 160px;
+        min-width: 460px;
+        gap: 8px;
     }
 }
 
@@ -179,66 +180,97 @@ $radius:   10px;
     flex: 1;
     display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: flex-end;
     cursor: pointer;
     position: relative;
-    padding-top: 38px;
+    min-width: 0;
+    border-radius: 6px;
+    transition: background 0.15s;
 
-    &:hover .mt-bar-fill {
-        opacity: 0.8;
+    &:hover {
+        background: rgba($text, 0.04);
     }
 
-    &--sel .mt-bar-fill {
-        background: linear-gradient(180deg, $accent, $accent2) !important;
-        box-shadow: 0 0 8px rgba($accent, 0.5);
+    &--sel {
+        background: rgba($accent, 0.08);
+
+        .mt-bar-fill {
+            background: linear-gradient(180deg, $accent, $accent2) !important;
+            box-shadow: 0 0 10px rgba($accent, 0.45);
+        }
     }
 }
 
-.mt-bar-fill {
-    width: 100%;
-    background: $bg3;
-    border-radius: 3px 3px 0 0;
-    min-height: 2px;
-    transition: height 0.3s, opacity 0.2s;
-}
-
-.mt-badge {
-    position: absolute;
-    top: 0;
-    font-size: 7px;
-    font-weight: 800;
-    letter-spacing: 0.3px;
-    padding: 1px 3px;
-    border-radius: 3px;
-    line-height: 1.2;
-    &--hot { background: rgba($win, 0.2); color: $win; }
-    &--low { background: rgba($loss, 0.2); color: $loss; }
+.mt-bar-top {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 2px;
+    height: 42px;
+    padding-bottom: 4px;
 }
 
 .mt-bar-pct {
-    font-size: 11px;
+    font-size: 13px;
     color: $text;
-    font-weight: 700;
-    position: absolute;
-    top: 11px;
+    font-weight: 800;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .mt-growth {
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1;
-    position: absolute;
-    top: 24px;
     &--up  { color: $win; }
     &--dn  { color: $loss; }
     &--flat { color: $muted; }
 }
 
+/* Plot area — bars grow from a shared baseline */
+.mt-bar-track {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    border-bottom: 1px solid $border;
+}
+
+.mt-bar-fill {
+    width: 62%;
+    max-width: 34px;
+    background: linear-gradient(180deg, rgba($accent, 0.85), rgba($accent, 0.35));
+    border-radius: 5px 5px 0 0;
+    min-height: 3px;
+    transition: height 0.3s, opacity 0.2s, background 0.2s;
+}
+
+.mt-bar-col:hover .mt-bar-fill {
+    opacity: 0.85;
+}
+
+.mt-badge {
+    position: absolute;
+    top: -6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    line-height: 1.2;
+    white-space: nowrap;
+    &--hot { background: rgba($win, 0.18); color: $win; border: 1px solid rgba($win, 0.4); }
+    &--low { background: rgba($loss, 0.18); color: $loss; border: 1px solid rgba($loss, 0.4); }
+}
+
 .mt-bar-lbl {
-    font-size: 10px;
+    font-size: 14px;
     color: $text;
-    margin-top: 2px;
-    font-weight: 600;
+    text-align: center;
+    padding: 7px 0 2px;
+    font-weight: 700;
     &--hi { color: $accent; }
 }
 

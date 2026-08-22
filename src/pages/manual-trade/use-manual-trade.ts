@@ -70,24 +70,22 @@ function calcDigitPcts(ticks: number[]): number[] {
     return total > 0 ? counts.map(c => (c / total) * 100) : counts;
 }
 
-// Standard digit-stats formula: pct(digit) = occurrences / sample_size * 100,
-// computed over the LAST 100 ticks (the familiar Deriv digit-stats window —
-// large samples converge to ~10% everywhere and the chart looks flat).
-const STATS_WINDOW = 100;
+// Standard digit-stats formula: pct(digit) = occurrences / sample_size * 100.
+// Sample = ALL loaded ticks (last 1000).
+const STATS_WINDOW = 1000;
 
-/** Returns counts (from the last-100 window), growth (recent-30 vs all), and total digits. */
+/** Returns counts (from all loaded prices), growth (recent-30 vs all), and total digits. */
 function computeDigitGrowth(prices: number[], pipSize: number): { counts: number[]; growth: number[]; total: number } {
     const allDigits = prices.map(p => getDigit(p, pipSize)).filter(d => d >= 0 && d <= 9);
-    const windowDigits = allDigits.slice(-STATS_WINDOW);
     const recentDigits = prices.slice(-30).map(p => getDigit(p, pipSize)).filter(d => d >= 0 && d <= 9);
     const allPcts = calcDigitPcts(allDigits);
     const recentPcts = calcDigitPcts(recentDigits);
     const growth = allPcts.map((p, i) => parseFloat((recentPcts[i] - p).toFixed(1)));
     const counts = Array(10).fill(0);
-    windowDigits.forEach(d => {
+    allDigits.slice(-STATS_WINDOW).forEach(d => {
         counts[d]++;
     });
-    return { counts, growth, total: windowDigits.length };
+    return { counts, growth, total: Math.min(allDigits.length, STATS_WINDOW) };
 }
 
 export function useManualTrade() {

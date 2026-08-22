@@ -137,11 +137,15 @@ const ManualTrade = observer(() => {
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
-                                        <div className='mt-bar-fill' style={{ height: `${fillHeight}%` }} />
                                         {isHot && <span className='mt-badge mt-badge--hot'>HOT</span>}
                                         {isLow && <span className='mt-badge mt-badge--low'>LOW</span>}
-                                        <span className='mt-bar-pct'>{pct.toFixed(1)}%</span>
-                                        <span className={`mt-growth ${growthClass}`}>{growthIcon}</span>
+                                        <div className='mt-bar-top'>
+                                            <span className='mt-bar-pct'>{pct.toFixed(1)}%</span>
+                                            <span className={`mt-growth ${growthClass}`}>{growthIcon}</span>
+                                        </div>
+                                        <div className='mt-bar-track'>
+                                            <div className='mt-bar-fill' style={{ height: `${fillHeight}%` }} />
+                                        </div>
                                         <span className={`mt-bar-lbl ${isHi && isSelected ? 'mt-bar-lbl--hi' : ''}`}>{label}</span>
                                     </div>
                                 );
