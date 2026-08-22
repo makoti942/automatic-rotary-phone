@@ -70,15 +70,24 @@ function calcDigitPcts(ticks: number[]): number[] {
     return total > 0 ? counts.map(c => (c / total) * 100) : counts;
 }
 
-/** Returns counts (from all prices), growth (recent-30 vs all), and total digits. */
+// Standard digit-stats formula: pct(digit) = occurrences / sample_size * 100,
+// computed over the LAST 100 ticks (the familiar Deriv digit-stats window —
+// large samples converge to ~10% everywhere and the chart looks flat).
+const STATS_WINDOW = 100;
+
+/** Returns counts (from the last-100 window), growth (recent-30 vs all), and total digits. */
 function computeDigitGrowth(prices: number[], pipSize: number): { counts: number[]; growth: number[]; total: number } {
     const allDigits = prices.map(p => getDigit(p, pipSize)).filter(d => d >= 0 && d <= 9);
+    const windowDigits = allDigits.slice(-STATS_WINDOW);
     const recentDigits = prices.slice(-30).map(p => getDigit(p, pipSize)).filter(d => d >= 0 && d <= 9);
     const allPcts = calcDigitPcts(allDigits);
     const recentPcts = calcDigitPcts(recentDigits);
     const growth = allPcts.map((p, i) => parseFloat((recentPcts[i] - p).toFixed(1)));
-    const counts = computeDigitCounts(prices, pipSize);
-    return { counts, growth, total: allDigits.length };
+    const counts = Array(10).fill(0);
+    windowDigits.forEach(d => {
+        counts[d]++;
+    });
+    return { counts, growth, total: windowDigits.length };
 }
 
 export function useManualTrade() {
@@ -110,8 +119,13 @@ export function useManualTrade() {
     const mountedRef = useRef(true);
     const pipRef = useRef(pipSize);
     const pricesRef = useRef<number[]>([]);
+    const symbolRef = useRef(activeSymbol);
+    const reqIdRef = useRef(0);
+    const fetchReqIdRef = useRef(0);
+    const subReqIdRef = useRef(0);
 
     pipRef.current = pipSize;
+    symbolRef.current = activeSymbol;
 
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
@@ -120,7 +134,19 @@ export function useManualTrade() {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data);
+                if (data.error) {
+                    // Our live subscribe was rejected because another component
+                    // (bot / analysis tab) already streams this symbol on the
+                    // shared socket — fall back to sharing its stream.
+                    if (data.echo_req?.req_id === subReqIdRef.current) {
+                        subReqIdRef.current = 0;
+                    }
+                    return;
+                }
                 if (data.msg_type === 'tick' && data.tick) {
+                    // Only accept ticks for OUR symbol, whichever subscription
+                    // (ours or a shared one) delivered them.
+                    if (data.tick.symbol !== symbolRef.current) return;
                     const quote = Number(data.tick.quote);
                     if (!isNaN(quote)) {
                         setCurrentTick({ quote, epoch: data.tick.epoch });
@@ -136,6 +162,9 @@ export function useManualTrade() {
                     return;
                 }
                 if (data.msg_type === 'history' && data.history?.prices) {
+                    // Only accept the bulk seed from our own plain history fetch
+                    // (the subscribe request also answers with history — ignore it).
+                    if (data.echo_req?.req_id !== fetchReqIdRef.current) return;
                     const p = data.history.prices.map(Number).filter((v: number) => !isNaN(v));
                     if (p.length > 0) {
                         pricesRef.current = p;
@@ -143,9 +172,13 @@ export function useManualTrade() {
                         setDigitCounts(stats.counts);
                         setDigitGrowth(stats.growth);
                         setDigitTotal(stats.total);
-                        const sid = data.subscription?.id;
-                        if (sid) subIdRef.current = sid;
                     }
+                    return;
+                }
+                // Capture the subscription id ONLY for a subscription we own,
+                // so cleanup never forgets another component's stream.
+                if (data.subscription?.id && data.echo_req?.req_id === subReqIdRef.current && !subIdRef.current) {
+                    subIdRef.current = data.subscription.id;
                     return;
                 }
                 if (data.msg_type === 'proposal') {
@@ -243,6 +276,7 @@ export function useManualTrade() {
             sendViaNewSystem({ forget: subIdRef.current });
             subIdRef.current = null;
         }
+        subReqIdRef.current = 0;
 
         setCurrentTick(null);
         setLastDigit(null);
@@ -253,12 +287,29 @@ export function useManualTrade() {
         const sym = symbols.find(s => s.symbol === activeSymbol);
         if (sym) setPipSize(sym.pip_size ?? 2);
 
+        // 1) Bulk seed: plain history fetch (no subscribe) — can never collide
+        //    with another component's subscription, so all ticks arrive at once.
+        const fetchId = ++reqIdRef.current;
+        fetchReqIdRef.current = fetchId;
         sendViaNewSystem({
             ticks_history: activeSymbol,
             count: 1000,
             end: 'latest',
             style: 'ticks',
+            req_id: fetchId,
+        });
+
+        // 2) Own live stream; on AlreadySubscribed we passively share the
+        //    existing one (ticks are accepted by symbol regardless of source).
+        const subId = ++reqIdRef.current;
+        subReqIdRef.current = subId;
+        sendViaNewSystem({
+            ticks_history: activeSymbol,
+            count: 1,
+            end: 'latest',
+            style: 'ticks',
             subscribe: 1,
+            req_id: subId,
         });
 
         return () => {
@@ -268,6 +319,16 @@ export function useManualTrade() {
             }
         };
     }, [activeSymbol]);
+
+    // The bulk seed may land before active_symbols delivers the real pip size —
+    // recompute stats whenever it changes so digits are never mis-parsed.
+    useEffect(() => {
+        if (pricesRef.current.length === 0) return;
+        const stats = computeDigitGrowth(pricesRef.current, pipSize);
+        setDigitCounts(stats.counts);
+        setDigitGrowth(stats.growth);
+        setDigitTotal(stats.total);
+    }, [pipSize]);
 
     // Request proposal when trade params change
     useEffect(() => {

@@ -113,7 +113,7 @@ const ManualTrade = observer(() => {
 
                     <div className='mt-stats'>
                         <div className='mt-stats-header'>
-                            Digit Distribution ({digitTotal} ticks)
+                            Digit Distribution (last {digitTotal} ticks)
                         </div>
                         <div className='mt-bars'>
                             {digitLabels.map((label, i) => {
@@ -123,6 +123,11 @@ const ManualTrade = observer(() => {
                                 const isHi = i >= 7;
                                 const isHot = i === hotIdx && digitTotal > 0;
                                 const isLow = i === lowIdx && digitTotal > 0;
+                                // Scale bars relative to the hottest digit (baseline
+                                // 10%): with near-uniform distributions all bars at
+                                // pct*4 looked identical, so differences were invisible.
+                                const maxPct = Math.max(10, ...digitPcts);
+                                const fillHeight = pct > 0 ? Math.max(6, (pct / maxPct) * 100) : 0;
                                 const growthIcon = growth > 2 ? '▲' : growth > 0.5 ? '△' : growth < -2 ? '▼' : growth < -0.5 ? '▽' : '–';
                                 const growthClass = growth > 0.5 ? 'mt-growth--up' : growth < -0.5 ? 'mt-growth--dn' : 'mt-growth--flat';
                                 return (
@@ -132,7 +137,7 @@ const ManualTrade = observer(() => {
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
-                                        <div className='mt-bar-fill' style={{ height: `${Math.min(100, pct * 4)}%` }} />
+                                        <div className='mt-bar-fill' style={{ height: `${fillHeight}%` }} />
                                         {isHot && <span className='mt-badge mt-badge--hot'>HOT</span>}
                                         {isLow && <span className='mt-badge mt-badge--low'>LOW</span>}
                                         <span className='mt-bar-pct'>{pct.toFixed(1)}%</span>
