@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useManualTrade, TradeType, ContractMode } from './use-manual-trade';
 import { SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
@@ -19,23 +19,29 @@ const CONTRACT_MODE_OPTIONS: Record<TradeType, { value: ContractMode; label: str
     ],
 };
 
+const TRADE_TYPE_LABELS: Record<TradeType, string> = {
+    'matches-differs': 'Matches / Differs',
+    'over-under': 'Over / Under',
+    'even-odd': 'Even / Odd',
+};
+
 const ManualTrade = observer(() => {
     const {
         symbols, activeSymbol, setActiveSymbol,
         currentTick, lastDigit, digitCounts, digitGrowth, digitTotal, pipSize,
         tradeType, setTradeType,
-        contractMode, setContractMode,
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
-        proposal, isProposalLoading,
-        buyContract, isBuying, buyResult, buyError, clearBuyResult,
+        buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         positions, sellContract,
-        isConnected, isLoading,
+        isConnected, isLoading, tradeFlash,
     } = useManualTrade();
 
+    const [ddOpen, setDdOpen] = useState(false);
+
     const digitLabels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-    const maxCount = Math.max(1, ...digitCounts);
     const modeOptions = CONTRACT_MODE_OPTIONS[tradeType];
+    const needsTarget = tradeType === 'matches-differs' || tradeType === 'over-under';
 
     const digitPcts = useMemo(() => {
         if (digitTotal === 0) return Array(10).fill(0);
@@ -55,17 +61,6 @@ const ManualTrade = observer(() => {
         digitPcts.forEach((p, i) => { if (p < minPct) { minPct = p; idx = i; } });
         return idx;
     }, [digitPcts, digitTotal]);
-
-    const predictionText = useMemo(() => {
-        switch (contractMode) {
-            case 'DIGITMATCH': return `match ${selectedDigit}`;
-            case 'DIGITDIFF': return `differ from ${selectedDigit}`;
-            case 'DIGITOVER': return `be over ${selectedDigit}`;
-            case 'DIGITUNDER': return `be under ${selectedDigit}`;
-            case 'DIGITEVEN': return 'be even';
-            case 'DIGITODD': return 'be odd';
-        }
-    }, [contractMode, selectedDigit]);
 
     const currentPrice = currentTick?.quote.toFixed(pipSize) ?? '—';
 
@@ -119,8 +114,14 @@ const ManualTrade = observer(() => {
                             {digitLabels.map((label, i) => {
                                 const pct = digitPcts[i];
                                 const growth = digitGrowth[i] ?? 0;
-                                const isSelected = i === selectedDigit && contractMode !== 'DIGITEVEN' && contractMode !== 'DIGITODD';
-                                const isHi = i >= 7;
+                                const isSelected = i === selectedDigit && needsTarget;
+                                const isLive = i === lastDigit;
+                                const flashCls =
+                                    tradeFlash && tradeFlash.digit === i
+                                        ? tradeFlash.win
+                                            ? 'mt-bar-col--win'
+                                            : 'mt-bar-col--loss'
+                                        : '';
                                 const isHot = i === hotIdx && digitTotal > 0;
                                 const isLow = i === lowIdx && digitTotal > 0;
                                 // Scale bars relative to the hottest digit (baseline
@@ -133,7 +134,7 @@ const ManualTrade = observer(() => {
                                 return (
                                     <div
                                         key={i}
-                                        className={`mt-bar-col ${isSelected ? 'mt-bar-col--sel' : ''}`}
+                                        className={`mt-bar-col ${isSelected ? 'mt-bar-col--sel' : ''} ${isLive ? 'mt-bar-col--live' : ''} ${flashCls}`}
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
@@ -146,7 +147,7 @@ const ManualTrade = observer(() => {
                                         <div className='mt-bar-track'>
                                             <div className='mt-bar-fill' style={{ height: `${fillHeight}%` }} />
                                         </div>
-                                        <span className={`mt-bar-lbl ${isHi && isSelected ? 'mt-bar-lbl--hi' : ''}`}>{label}</span>
+                                        <span className={`mt-bar-lbl ${isSelected ? 'mt-bar-lbl--hi' : ''}`}>{label}</span>
                                     </div>
                                 );
                             })}
@@ -156,34 +157,39 @@ const ManualTrade = observer(() => {
 
                 {/* Right column: trade controls */}
                 <div className='mt-trade-section'>
-                    {/* Trade type chips */}
-                    <div className='mt-chips'>
-                        {(['matches-differs', 'over-under', 'even-odd'] as TradeType[]).map(t => (
-                            <button
-                                key={t}
-                                className={`mt-chip ${tradeType === t ? 'mt-chip--on' : ''}`}
-                                onClick={() => setTradeType(t)}
-                            >
-                                {t === 'matches-differs' ? 'Matches / Differs'
-                                    : t === 'over-under' ? 'Over / Under'
-                                    : 'Even / Odd'}
-                            </button>
-                        ))}
+                    {/* Contract type — custom dropdown (no native select) */}
+                    <div className='mt-dd'>
+                        <button
+                            type='button'
+                            className={`mt-dd-btn ${ddOpen ? 'is-open' : ''}`}
+                            onClick={() => setDdOpen(o => !o)}
+                        >
+                            <span>{TRADE_TYPE_LABELS[tradeType]}</span>
+                            <span className='mt-dd-caret'>▾</span>
+                        </button>
+                        {ddOpen && (
+                            <>
+                                <div className='mt-dd-backdrop' onClick={() => setDdOpen(false)} />
+                                <div className='mt-dd-panel'>
+                                    {(Object.keys(TRADE_TYPE_LABELS) as TradeType[]).map(t => (
+                                        <button
+                                            key={t}
+                                            type='button'
+                                            className={`mt-dd-opt ${t === tradeType ? 'is-active' : ''}`}
+                                            onClick={() => {
+                                                setTradeType(t);
+                                                setDdOpen(false);
+                                            }}
+                                        >
+                                            {TRADE_TYPE_LABELS[t]}
+                                        </button>
+                                    ))}
+                                </div>
+                            </>
+                        )}
                     </div>
 
-                    {/* Contract mode toggle */}
-                    <div className='mt-mode-group'>
-                        {modeOptions.map(opt => (
-                            <button
-                                key={opt.value}
-                                className={`mt-mode-btn ${contractMode === opt.value ? 'mt-mode-btn--on' : ''}`}
-                                onClick={() => setContractMode(opt.value)}
-                            >
-                                {opt.label}
-                            </button>
-                        ))}
-                    </div>
-
+                    {/* Target digit hint for types that need one */}
                     {/* Stake + Duration */}
                     <div className='mt-input-row'>
                         <div className='mt-field'>
@@ -211,24 +217,27 @@ const ManualTrade = observer(() => {
                         </div>
                     </div>
 
-                    {/* Prediction */}
-                    <div className='mt-prediction'>
-                        Last digit will <strong>{predictionText}</strong>
+                    {/* Two direct execution buttons — click = instant buy */}
+                    <div className='mt-exec-row'>
+                        {modeOptions.map((opt, idx) => {
+                            const showDigit =
+                                opt.value === 'DIGITOVER' ||
+                                opt.value === 'DIGITUNDER' ||
+                                opt.value === 'DIGITMATCH' ||
+                                opt.value === 'DIGITDIFF';
+                            const label = opt.label + (showDigit ? ` ${selectedDigit}` : '');
+                            return (
+                                <button
+                                    key={opt.value}
+                                    className={`mt-exec ${idx === 0 ? 'mt-exec--first' : 'mt-exec--second'}`}
+                                    disabled={isBuying || !isConnected || (showDigit && selectedDigit < 0)}
+                                    onClick={() => buyWithMode(opt.value)}
+                                >
+                                    {isBuying ? '…' : label}
+                                </button>
+                            );
+                        })}
                     </div>
-
-                    {/* Buy button + proposal */}
-                    <button
-                        className='mt-buy-btn'
-                        disabled={!isConnected || !proposal || isBuying}
-                        onClick={buyContract}
-                    >
-                        {isBuying ? 'Purchasing…'
-                            : proposal ? `Buy @ $${proposal.askPrice.toFixed(2)}`
-                            : isProposalLoading ? 'Getting price…'
-                            : 'Buy Contract'}
-                    </button>
-
-                    {isProposalLoading && <div className='mt-hint'>Fetching proposal…</div>}
 
                     {buyResult && (
                         <div className='mt-result mt-result--ok'>

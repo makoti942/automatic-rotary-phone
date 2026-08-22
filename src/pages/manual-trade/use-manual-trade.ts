@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { onNewSystemMessage, sendViaNewSystem } from '@/auth/NewDerivAuth';
+import { onNewSystemMessage, sendViaNewSystem, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 
 export interface SymbolInfo {
     display_name: string;
@@ -35,7 +35,19 @@ export interface ContractPosition {
     sell_price: number | null;
     profit: number | null;
     entry_tick: number | null;
+    exit_tick: number | null;
     date_start: number;
+}
+
+export interface TradeFlash {
+    digit: number;
+    win: boolean;
+    key: number;
+}
+
+function lastDigitOfPrice(v: number | string): number {
+    const digits = String(v).match(/\d/g);
+    return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
 }
 
 export type TradeType = 'matches-differs' | 'over-under' | 'even-odd';
@@ -101,7 +113,7 @@ export function useManualTrade() {
     const [contractMode, setContractMode] = useState<ContractMode>('DIGITMATCH');
     const [selectedDigit, setSelectedDigit] = useState(5);
     const [stake, setStake] = useState('10');
-    const [duration, setDuration] = useState(5);
+    const [duration, setDuration] = useState(1);
     const [proposal, setProposal] = useState<ProposalInfo | null>(null);
     const [isProposalLoading, setIsProposalLoading] = useState(false);
     const [isBuying, setIsBuying] = useState(false);
@@ -111,6 +123,7 @@ export function useManualTrade() {
     const [isConnected, setIsConnected] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [error] = useState<string | null>(null);
+    const [tradeFlash, setTradeFlash] = useState<TradeFlash | null>(null);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -121,6 +134,10 @@ export function useManualTrade() {
     const reqIdRef = useRef(0);
     const fetchReqIdRef = useRef(0);
     const subReqIdRef = useRef(0);
+    const seenSoldRef = useRef<Set<string>>(new Set());
+    const pocLoadedRef = useRef(false);
+    const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const isBuyingRef = useRef(false);
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
@@ -207,7 +224,7 @@ export function useManualTrade() {
                     const list = Array.isArray(data.proposal_open_contract)
                         ? data.proposal_open_contract
                         : [data.proposal_open_contract];
-                    setPositions(list.map((poc: any) => ({
+                    const mapped = list.map((poc: any) => ({
                         contract_id: poc.contract_id,
                         symbol: poc.underlying_symbol ?? poc.symbol,
                         contract_type: poc.contract_type,
@@ -215,10 +232,42 @@ export function useManualTrade() {
                         payout: Number(poc.payout),
                         is_sold: poc.is_sold,
                         sell_price: poc.sell_price ? Number(poc.sell_price) : null,
-                        profit: poc.profit ? Number(poc.profit) : null,
+                        profit: poc.profit !== undefined && poc.profit !== null ? Number(poc.profit) : null,
                         entry_tick: poc.entry_tick ?? null,
+                        exit_tick: poc.exit_tick ?? null,
                         date_start: poc.date_start,
-                    })));
+                    }));
+
+                    // The instant a tracked contract settles, flash its EXIT
+                    // digit green (win) / red (loss). Contracts already sold on
+                    // first load are recorded silently — only fresh settlements
+                    // flash.
+                    let freshFlash: TradeFlash | null = null;
+                    mapped.forEach(p => {
+                        if (!p.is_sold || p.exit_tick === null) return;
+                        const key = String(p.contract_id);
+                        if (seenSoldRef.current.has(key)) return;
+                        seenSoldRef.current.add(key);
+                        if (pocLoadedRef.current && p.profit !== null && mountedRef.current) {
+                            freshFlash = {
+                                digit: lastDigitOfPrice(p.exit_tick),
+                                win: p.profit > 0,
+                                key: Date.now(),
+                            };
+                        }
+                    });
+                    if (seenSoldRef.current.size > 500) seenSoldRef.current = new Set();
+                    pocLoadedRef.current = true;
+
+                    setPositions(mapped);
+
+                    if (freshFlash) {
+                        setTradeFlash(freshFlash);
+                        if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+                        flashTimerRef.current = setTimeout(() => {
+                            if (mountedRef.current) setTradeFlash(null);
+                        }, 4000);
+                    }
                     return;
                 }
                 if (data.msg_type === 'sell') {
@@ -371,6 +420,64 @@ export function useManualTrade() {
         setTimeout(() => { if (mountedRef.current) setIsBuying(false); }, 10000);
     }, [proposal, isBuying]);
 
+    // One-click execution: fetch a fresh proposal for THIS mode and buy it
+    // immediately — no separate mode-selection step.
+    const buyWithMode = useCallback(async (mode: ContractMode) => {
+        if (isBuyingRef.current) return;
+        const amount = parseFloat(stake);
+        if (!amount || amount <= 0 || !duration) {
+            setBuyError('Enter a valid stake and duration first.');
+            return;
+        }
+        isBuyingRef.current = true;
+        setIsBuying(true);
+        setBuyError(null);
+        try {
+            const params: any = {
+                proposal: 1,
+                amount,
+                basis: 'stake',
+                contract_type: mode,
+                currency: 'USD',
+                duration,
+                duration_unit: 't',
+                symbol: activeSymbol,
+            };
+            if (mode !== 'DIGITEVEN' && mode !== 'DIGITODD') params.barrier = selectedDigit;
+
+            const propRes: any = await sendViaNewSystemWithPromise(params);
+            const prop = propRes?.proposal;
+            if (!prop?.id) {
+                throw new Error(propRes?.error?.message ?? 'Could not get price.');
+            }
+            setProposal({
+                askPrice: Number(prop.ask_price),
+                payout: Number(prop.payout),
+                id: prop.id,
+            });
+
+            const buyRes: any = await sendViaNewSystemWithPromise({ buy: prop.id, price: prop.ask_price });
+            if (buyRes?.buy) {
+                setBuyResult({
+                    contract_id: buyRes.buy.contract_id,
+                    buyPrice: Number(buyRes.buy.buy_price),
+                    payout: Number(buyRes.buy.payout),
+                    balanceAfter: Number(buyRes.buy.balance_after),
+                });
+                setBuyError(null);
+                sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
+            } else {
+                throw new Error(buyRes?.error?.message ?? 'Buy failed.');
+            }
+        } catch (e: any) {
+            const msg = e?.error?.message ?? e?.message ?? 'Trade failed.';
+            setBuyError(msg);
+        } finally {
+            isBuyingRef.current = false;
+            if (mountedRef.current) setIsBuying(false);
+        }
+    }, [stake, duration, activeSymbol, selectedDigit]);
+
     const fetchPositions = useCallback(() => {
         sendViaNewSystem({ proposal_open_contract: 1, limit: 20 });
     }, []);
@@ -392,8 +499,8 @@ export function useManualTrade() {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         proposal, isProposalLoading,
-        buyContract, isBuying, buyResult, buyError, clearBuyResult,
+        buyContract, buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         positions, sellContract, fetchPositions,
-        isConnected, isLoading, error,
+        isConnected, isLoading, error, tradeFlash,
     };
 }
