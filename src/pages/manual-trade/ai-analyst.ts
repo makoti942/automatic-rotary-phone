@@ -49,6 +49,9 @@ export interface SymbolStats {
     symbol: string;
     total_ticks: number;
     digits: DigitStat[];
+    /** Frequency % of each digit across four consecutive quarters of the
+     *  1000-tick window (oldest → newest) — reveals evolving behaviour. */
+    quarters: number[][];
     transitions: { from: number; to: number; pct: number }[]; // strongest next-digit influences
     streak_repeat_pct: { digit: number; pct: number }[];      // P(repeat | current run of that digit >= 2)
     even_pct: number;
@@ -160,10 +163,24 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
     const evenCount = digits.filter(d => d % 2 === 0).length;
     const hiCount = digits.filter(d => d >= 5).length;
 
+    // Quarterly evolution: split the window into 4 equal slices, oldest →
+    // newest, and measure each digit's frequency inside every slice.
+    const qSize = Math.floor(n / 4);
+    const quarters: number[][] = Array.from({ length: 10 }, () => new Array(4).fill(0));
+    for (let q = 0; q < 4; q++) {
+        const start = q * qSize;
+        const end = q === 3 ? n : start + qSize;
+        const sliceLen = end - start;
+        if (sliceLen <= 0) continue;
+        for (let i = start; i < end; i++) quarters[digits[i]][q]++;
+        for (let d = 0; d < 10; d++) quarters[d][q] = r1((quarters[d][q] / sliceLen) * 100);
+    }
+
     return {
         symbol,
         total_ticks: n,
         digits: digitStats,
+        quarters,
         transitions: transitions.slice(0, 8),
         streak_repeat_pct: streak_repeat_pct.sort((a, b) => b.pct - a.pct).slice(0, 4),
         even_pct: r1((evenCount / n) * 100),
@@ -175,17 +192,21 @@ const SYS_PROMPT =
     'You are an elite quantitative analyst for Deriv volatility indices — synthetic RNG price ' +
     'series producing one tick per second with a final decimal digit 0-9. You receive EXACT ' +
     'statistics computed from the most recent 1000 ticks of all 10 markets: per-digit frequency%, ' +
-    'mean/median/p90 reappearance gap, CURRENT drought length (cur_gap), recent-50 drift, the 8 ' +
-    'strongest digit→next-digit transition probabilities, streak-repeat probabilities, and parity/high-low skews. ' +
-    'Uniform baseline is exactly 10.00% per digit and ~50% parity. Hunt EVERY exploitable trick in the data: ' +
-    '(1) hot/cold digit extremes vs 10%; (2) mean-reversion on droughts — cur_gap far beyond mean/p90 gap ' +
-    'suggests overdue digits for DIGITMATCH or gap-timed entries; (3) transition clustering — after digit X, ' +
-    'certain digits follow well above 10% (cite exact %); (4) streak behaviour — repeat probabilities above/below ' +
-    'the ~9% random-run expectation; (5) parity and high/low skews for EVEN/ODD/OVER/UNDER edges. ' +
-    'Cross-reference patterns BETWEEN metrics before concluding; reject any market whose edge is noise-level. ' +
-    'Choose ONE market + ONE contract + precise entry trigger + duration 1-5 ticks justified by the numbers. ' +
-    'confidence must honestly reflect evidence strength. rationale must cite specific percentages as proof. ' +
-    'Respond ONLY with minified JSON matching the schema given. No prose outside JSON.';
+    'mean/median/p90 reappearance gap, CURRENT drought length (cur_gap), the 8 ' +
+    'strongest digit→next-digit transition probabilities, streak-repeat probabilities, parity/high-low skews, ' +
+    'and QUARTERS — each digit\'s frequency across four consecutive 250-tick slices from the START of the ' +
+    'window to NOW. Read quarters as a trajectory: a digit whose share RISES quarter over quarter is gaining ' +
+    'momentum (its neighbours are being suppressed — cross-check transitions to see which digits it displaces); ' +
+    'a falling trajectory is fading even if its total is still high. Differences between quarters reveal ' +
+    'regime shifts that static totals hide. Uniform baseline is exactly 10.00% per digit and ~50% parity. ' +
+    'Hunt EVERY exploitable trick: (1) hot/cold extremes vs 10% AND their direction of travel across quarters; ' +
+    '(2) mean-reversion on droughts — cur_gap far beyond mean/p90 suggests overdue digits; (3) transition ' +
+    'clustering — after digit X, followers well above 10% (cite exact %); (4) streak-repeat behaviour vs the ' +
+    '~9% random expectation; (5) parity and high/low skews and whether they are strengthening in recent quarters. ' +
+    'Cross-reference metrics BEFORE concluding; reject noise-level edges. Choose ONE market + ONE contract + ' +
+    'precise entry trigger + duration 1-5 ticks justified by the numbers. confidence must honestly reflect ' +
+    'evidence strength. rationale must cite specific percentages as proof. Respond ONLY with minified JSON ' +
+    'matching the schema given. No prose outside JSON.';
 
 function buildDigest(stats: SymbolStats[]): string {
     return JSON.stringify({

@@ -83,26 +83,43 @@ export function useAiAnalyst() {
         if (phase === 'collecting' || phase === 'analyzing') return;
         try {
             setPhase('collecting');
-            setProgress('Loading 1000 ticks × 10 markets in parallel…');
-            log('Collecting 10 × 1000 ticks concurrently…');
+            setProgress('Loading 1000 ticks × 10 markets…');
+            log('Collecting 10 × 1000 ticks (batches of 5, auto-retry)…');
             const t0 = Date.now();
 
-            // All history fetches fire simultaneously — each resolves on its own
-            // strict req_id, so the shared socket can never cross-match them.
-            const results = await Promise.all(VOLATILITY_LIST.map(sym =>
-                request({
-                    ticks_history: sym, count: 1000, end: 'latest', style: 'ticks',
-                }).catch(e => ({ _sym: sym, _err: e }))
-            ));
+            const fetchWithRetry = async (sym: VolatilitySymbol): Promise<any> => {
+                let lastErr: any;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        return await request(
+                            { ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' },
+                            12000,
+                        );
+                    } catch (e: any) {
+                        lastErr = e;
+                        if (attempt < 3) {
+                            log(`${sym} attempt ${attempt} failed (${e?.message ?? 'error'}) — retrying…`);
+                            await new Promise(r => setTimeout(r, 400));
+                        }
+                    }
+                }
+                throw new Error(`${sym}: ${lastErr?.message ?? 'fetch failed'}`);
+            };
 
+            // Deriv throttles large concurrent bursts, so fetch in two waves of
+            // five with per-symbol retries — still finishes in a few seconds.
             const stats: SymbolStats[] = [];
-            results.forEach((res: any, i) => {
-                const sym = VOLATILITY_LIST[i];
-                if (res?._err) throw new Error(`${sym}: ${res._err?.message ?? 'fetch failed'}`);
-                const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
-                if (prices.length < 100) throw new Error(`${sym}: only ${prices.length} ticks returned`);
-                stats.push(computeSymbolStats(sym, prices));
-            });
+            const BATCH = 5;
+            for (let i = 0; i < VOLATILITY_LIST.length; i += BATCH) {
+                const slice = VOLATILITY_LIST.slice(i, i + BATCH);
+                setProgress(`Loading ${slice.join(', ')}…`);
+                const results = await Promise.all(slice.map(sym => fetchWithRetry(sym)));
+                results.forEach((res: any, j: number) => {
+                    const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
+                    if (prices.length < 100) throw new Error(`${slice[j]}: only ${prices.length} ticks returned`);
+                    stats.push(computeSymbolStats(slice[j], prices));
+                });
+            }
             log(`All 10 markets analysed in ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
 
             setPhase('analyzing');
