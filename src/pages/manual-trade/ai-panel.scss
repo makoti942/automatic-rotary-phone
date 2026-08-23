@@ -12,7 +12,7 @@ $ai-loss: #dc2626;
 .ai-fab {
     position: fixed;
     right: clamp(14px, 3vw, 28px);
-    bottom: clamp(14px, 3vw, 28px);
+    bottom: clamp(80px, 10vw, 130px);
     z-index: 300;
     width: 56px;
     height: 56px;
@@ -26,9 +26,10 @@ $ai-loss: #dc2626;
     cursor: pointer;
     box-shadow: 0 8px 24px rgba(124, 58, 237, 0.45);
     transition: transform 0.15s, box-shadow 0.15s;
+    transform: translate(var(--fdx, 0px), var(--fdy, 0px));
 
     &:hover {
-        transform: translateY(-2px);
+        transform: translate(var(--fdx, 0px), var(--fdy, 0px)) translateY(-2px);
         box-shadow: 0 12px 30px rgba(124, 58, 237, 0.6);
     }
 }

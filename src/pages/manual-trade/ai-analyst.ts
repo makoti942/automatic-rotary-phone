@@ -53,7 +53,13 @@ export interface SymbolStats {
      *  1000-tick window (oldest → newest) — reveals evolving behaviour. */
     quarters: number[][];
     transitions: { from: number; to: number; pct: number }[]; // strongest next-digit influences
-    streak_repeat_pct: { digit: number; pct: number }[];      // P(repeat | current run of that digit >= 2)
+    /** After digit d, probability vector of the NEXT digit (0-9). */
+    next_dist: number[][];
+    /** After digit d, probability of each digit within the next 3 ticks. */
+    next_3_dist: number[][];
+    /** Shannon entropy per quarter — rising = more random, falling = more predictable. */
+    entropy_trend: number[];
+    streak_repeat_pct: { digit: number; pct: number }[];
     even_pct: number;
     hi_pct: number; // digits 5-9
 }
@@ -163,6 +169,39 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
     const evenCount = digits.filter(d => d % 2 === 0).length;
     const hiCount = digits.filter(d => d >= 5).length;
 
+    // ── Sequential pattern analysis ──────────────────────────────────
+    // next_dist[d][t] = P(next digit = t | current digit = d)
+    const nextCount: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
+    for (let i = 0; i < n - 1; i++) nextCount[digits[i]][digits[i + 1]]++;
+    const nextDist: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
+    for (let d = 0; d < 10; d++) {
+        const total = nextCount[d].reduce((a, v) => a + v, 0);
+        if (total > 0) for (let t = 0; t < 10; t++) nextDist[d][t] = r1((nextCount[d][t] / total) * 100);
+    }
+
+    // next_3_dist[d][t] = P(digit t appears within the next 3 ticks after d)
+    const next3Count: number[] = new Array(10).fill(0);
+    const next3Hit: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
+    for (let i = 0; i < n; i++) {
+        next3Count[digits[i]]++;
+        for (let j = 1; j <= 3 && i + j < n; j++) next3Hit[digits[i]][digits[i + j]]++;
+    }
+    const next3Dist: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
+    for (let d = 0; d < 10; d++) {
+        if (next3Count[d] > 0) for (let t = 0; t < 10; t++) next3Dist[d][t] = r1((next3Hit[d][t] / next3Count[d]) * 100);
+    }
+
+    // Shannon entropy per quarter — measures predictability
+    const entropyTrend: number[] = [];
+    for (let q = 0; q < 4; q++) {
+        let H = 0;
+        for (let d = 0; d < 10; d++) {
+            const p = quarters[d][q] / 100;
+            if (p > 0) H -= p * Math.log2(p);
+        }
+        entropyTrend.push(Math.round(H * 100) / 100); // max = 3.32 (uniform), lower = more predictable
+    }
+
     // Quarterly evolution: split the window into 4 equal slices, oldest →
     // newest, and measure each digit's frequency inside every slice.
     const qSize = Math.floor(n / 4);
@@ -182,6 +221,9 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
         digits: digitStats,
         quarters,
         transitions: transitions.slice(0, 8),
+        next_dist: nextDist,
+        next_3_dist: next3Dist,
+        entropy_trend: entropyTrend,
         streak_repeat_pct: streak_repeat_pct.sort((a, b) => b.pct - a.pct).slice(0, 4),
         even_pct: r1((evenCount / n) * 100),
         hi_pct: r1((hiCount / n) * 100),

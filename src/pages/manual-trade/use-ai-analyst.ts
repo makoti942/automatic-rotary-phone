@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { onNewSystemMessage, sendViaNewSystem } from '@/auth/NewDerivAuth';
-import DBotStore from '@/external/bot-skeleton/scratch/dbot-store';
+import { observer } from '@/external/bot-skeleton/utils/observer';
 import {
     VOLATILITY_LIST, computeSymbolStats, requestAiPlan,
     AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
@@ -56,9 +56,8 @@ export function useAiAnalyst() {
         if (!mountedRef.current) return;
         const ts = new Date().toLocaleTimeString([], { hour12: false });
         setLogs(prev => [...prev.slice(-(MAX_LOGS - 1)), `[${ts}] ${msg}`]);
-        // Also push to the app-wide Journal so results appear in the
-        // main RunPanel regardless of which tab is active.
-        try { DBotStore.instance.journal?.pushMessage(msg, 'info'); } catch (_) {}
+        // Push to the app-wide Journal via the established event bus.
+        try { observer.emit('ui.log.notify', { message: `[AI] ${msg}`, sound: undefined }); } catch (_) {}
     }, []);
 
     /**

@@ -26,7 +26,9 @@ export const AiPanel = observer(() => {
     const [minimized, setMinimized] = useState(false);
     const [pos, setPos] = useState({ x: 0, y: 0 });
     const [dragging, setDragging] = useState(false);
+    const [fabDrag, setFabDrag] = useState({ x: 0, y: 0 });
     const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
+    const fabDragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
     const logRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -46,6 +48,18 @@ export const AiPanel = observer(() => {
     };
     const onHeaderUp = () => { dragRef.current = null; setDragging(false); };
 
+    // FAB drag
+    const onFabDown = (e: React.PointerEvent) => {
+        fabDragRef.current = { px: e.clientX, py: e.clientY, ox: fabDrag.x, oy: fabDrag.y };
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    };
+    const onFabMove = (e: React.PointerEvent) => {
+        const d = fabDragRef.current;
+        if (!d) return;
+        setFabDrag({ x: d.ox + (e.clientX - d.px), y: d.oy + (e.clientY - d.py) });
+    };
+    const onFabUp = () => { fabDragRef.current = null; };
+
     const plan = ai.plan;
     const isBusy = ai.phase === 'collecting' || ai.phase === 'analyzing';
     const running = ai.phase === 'running';
@@ -57,6 +71,11 @@ export const AiPanel = observer(() => {
                     type='button'
                     className='ai-fab'
                     title='AI Analyst'
+                    style={{ '--fdx': `${fabDrag.x}px`, '--fdy': `${fabDrag.y}px` } as React.CSSProperties}
+                    onPointerDown={onFabDown}
+                    onPointerMove={onFabMove}
+                    onPointerUp={onFabUp}
+                    onPointerCancel={onFabUp}
                     onClick={() => ai.setOpen(true)}
                 >
                     AI
