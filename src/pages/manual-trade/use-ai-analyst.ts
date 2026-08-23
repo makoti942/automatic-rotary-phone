@@ -46,6 +46,10 @@ export function useAiAnalyst() {
     const tradesSinceRefresh = useRef(0);
     const consecutiveLosses = useRef(0);
     const lastRefreshAt = useRef(0);
+    const lastAiCallAt = useRef(0);
+    // Groq free tier: keep ≥15s between AI calls so repeated Analyze runs
+    // never trip the per-minute token/request limits.
+    const AI_COOLDOWN_MS = 15000;
 
     const log = useCallback((msg: string) => {
         if (!mountedRef.current) return;
@@ -126,6 +130,13 @@ export function useAiAnalyst() {
 
     const analyze = useCallback(async () => {
         if (phase === 'collecting' || phase === 'analyzing') return;
+        const since = Date.now() - lastAiCallAt.current;
+        if (since < AI_COOLDOWN_MS) {
+            const wait = Math.ceil((AI_COOLDOWN_MS - since) / 1000);
+            setProgress(`AI rate-limit cooldown — try again in ${wait}s.`);
+            log(`Rate-limit guard: next AI call available in ${wait}s.`);
+            return;
+        }
         focusRef.current = focusType;
         try {
             // Clean slate: forget the previous plan and evidence entirely.
@@ -144,6 +155,7 @@ export function useAiAnalyst() {
             setPhase('analyzing');
             setProgress('AI is cross-checking every pattern…');
             log('Sending full evidence digest to the AI backend…');
+            lastAiCallAt.current = Date.now();
             const p = await requestAiPlan(stats, focusRef.current);
             planRef.current = p;
             setPlan(p);
@@ -187,6 +199,8 @@ export function useAiAnalyst() {
 
     const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
         const rs = runStateRef.current;
+        // De-dupe: the sold push AND the poller may both report the same trade.
+        if (rs.openId !== contractId) return;
         rs.openId = null;
         rs.pnl += profit;
         rs.trades += 1;
@@ -213,6 +227,42 @@ export function useAiAnalyst() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
+    /**
+     * Active settlement polling — the socket's single "sold" push can be
+     * missed, leaving a 3-tick trade hanging forever. Poll every 3s until the
+     * contract confirms as sold (or 2min give-up). Pushes still settle faster
+     * when they arrive; this is the safety net.
+     */
+    const pollSettlement = useCallback((contractId: number) => {
+        const started = Date.now();
+        const timer = setInterval(async () => {
+            if (!mountedRef.current || runStateRef.current.openId !== contractId) {
+                clearInterval(timer);
+                return;
+            }
+            if (Date.now() - started > 120000) {
+                clearInterval(timer);
+                if (runStateRef.current.openId === contractId) {
+                    runStateRef.current.openId = null;
+                    setRun({ ...runStateRef.current });
+                    log(`#${contractId}: no settlement confirmation in 2 min — released tracking.`);
+                    void maybeFire();
+                }
+                return;
+            }
+            try {
+                const res: any = await request({ proposal_open_contract: 1, contract_id: contractId }, 8000);
+                const poc = res?.proposal_open_contract;
+                if (poc?.is_sold && runStateRef.current.openId === contractId) {
+                    clearInterval(timer);
+                    log(`#${contractId} settled via polling (${(Number(poc.profit) >= 0 ? '+' : '')}${Number(poc.profit).toFixed(2)}).`);
+                    void settleAndContinue(contractId, Number(poc.profit ?? 0));
+                }
+            } catch (_) { /* transient — keep polling */ }
+        }, 3000);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [request]);
+
     const executeTrade = useCallback(async () => {
         const p = planRef.current;
         const rs = runStateRef.current;
@@ -234,13 +284,14 @@ export function useAiAnalyst() {
             rs.openId = buyRes.buy.contract_id;
             setRun({ ...rs });
             log(`TRADE #${rs.openId} · ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · $${amount.toFixed(2)} · ${p.duration_ticks}t`);
+            pollSettlement(rs.openId);
         } catch (e: any) {
             log(`Trade error: ${e?.message ?? 'unknown'} — retrying on next signal.`);
         } finally {
             busyTrade.current = false;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [request, log]);
+    }, [request, log, pollSettlement]);
 
     /** Checks the current live digit stream against the plan's entry trigger. */
     const maybeFire = useCallback(() => {
