@@ -2,10 +2,8 @@
  * Pure analysis engine for the AI Analyst panel.
  * Computes REAL statistics from raw tick series (no guessing) and asks a
  * fast Groq LLM to select a strategy strictly grounded in those numbers.
- * The key lives in gitignored ./ai-key.local.ts — never committed.
+ * The key lives server-side (api/groq.js + Vercel env var) — never committed.
  */
-
-import { GROQ_API_KEY } from './ai-key';
 
 export const VOLATILITY_LIST = [
     'R_10', 'R_25', 'R_50', 'R_75', 'R_100',
@@ -258,39 +256,63 @@ export function normalizePlan(raw: any): AiPlan {
 }
 
 /**
- * Calls Groq (OpenAI-compatible endpoint) and returns a validated plan.
- * llama-3.3-70b on Groq streams hundreds of tokens/sec — the whole call
- * typically lands in 2-4s, keeping Analyze well under the 10s budget.
+ * Calls the AI backend and returns a validated plan.
+ * Primary path: /api/groq serverless proxy (key lives in Vercel env var —
+ * never in the repo or bundle). If no function exists (local static preview),
+ * falls back to a direct Groq call with an optional localStorage key.
  */
+async function callGroq(payload: any): Promise<any> {
+    // 1) Serverless proxy (production)
+    try {
+        const res = await fetch('/api/groq', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        const text = await res.text();
+        let j: any;
+        try { j = JSON.parse(text); } catch (_) {
+            // Static-only deploy rewrites /api/groq to index.html → no proxy
+            j = null;
+        }
+        if (j) {
+            if (!res.ok || j?.error) throw new Error(j?.error?.message ?? `Proxy HTTP ${res.status}`);
+            return j;
+        }
+    } catch (e: any) {
+        if (!(e instanceof TypeError)) throw e; // network failure → try fallback
+    }
+
+    // 2) Direct fallback for local dev (key stashed by developer, no UI field)
+    const key = localStorage.getItem('makoti_groq_key') ?? '';
+    if (!key) {
+        throw new Error('AI backend unavailable. On Vercel: add GROQ_API_KEY env var and redeploy.');
+    }
+    const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+        body: JSON.stringify(payload),
+    });
+    const j = await res.json().catch(() => null);
+    if (!res.ok || !j) throw new Error(j?.error?.message ?? `Groq HTTP ${res.status}`);
+    return j;
+}
+
 export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
-    if (!GROQ_API_KEY) throw new Error('Groq key missing — create src/pages/manual-trade/ai-key.local.ts');
+    const payload = {
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.15,
+        max_tokens: 900,
+        response_format: { type: 'json_object' },
+        messages: [
+            { role: 'system', content: SYS_PROMPT },
+            { role: 'user', content: buildUserPrompt(buildDigest(stats)) },
+        ],
+    };
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 25000);
     try {
-        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
-            signal: controller.signal,
-            body: JSON.stringify({
-                model: 'llama-3.3-70b-versatile',
-                temperature: 0.15,
-                max_tokens: 900,
-                response_format: { type: 'json_object' },
-                messages: [
-                    { role: 'system', content: SYS_PROMPT },
-                    { role: 'user', content: buildUserPrompt(buildDigest(stats)) },
-                ],
-            }),
-        });
-        if (!res.ok) {
-            let msg = `Groq HTTP ${res.status}`;
-            try {
-                const j = await res.json();
-                msg = j?.error?.message ?? msg;
-            } catch (_) { /* keep status message */ }
-            throw new Error(msg);
-        }
-        const j = await res.json();
+        const j = await callGroq({ ...payload, signal: undefined });
         let text: string = j?.choices?.[0]?.message?.content ?? '';
         text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
         const start = text.indexOf('{');
