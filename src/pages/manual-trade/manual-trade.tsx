@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useManualTrade, TradeType, ContractMode } from './use-manual-trade';
-import { AiPanel } from './ai-panel';
 import { SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
 import './manual-trade.scss';
 
@@ -253,8 +252,6 @@ const ManualTrade = observer(() => {
                     )}
                 </div>
             </div>
-
-            <AiPanel />
         </div>
     );
 });

@@ -23,6 +23,7 @@ const FOCUS_LABELS: Record<AiFocus, string> = {
 export const AiPanel = observer(() => {
     const ai = useAiAnalyst();
     const [ddOpen, setDdOpen] = useState(false);
+    const [minimized, setMinimized] = useState(false);
     const [pos, setPos] = useState({ x: 0, y: 0 });
     const [dragging, setDragging] = useState(false);
     const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
@@ -62,7 +63,7 @@ export const AiPanel = observer(() => {
                 </button>
             )}
 
-            {ai.open && (
+            {ai.open && !minimized && (
                 <div
                     className={`ai-panel ${dragging ? 'is-dragging' : ''}`}
                     style={{ '--dx': `${pos.x}px`, '--dy': `${pos.y}px` } as React.CSSProperties}
@@ -77,6 +78,7 @@ export const AiPanel = observer(() => {
                         <span className='ai-grip'>⠿</span>
                         <span className='ai-panel-title'>AI Analyst</span>
                         <span className={`ai-phase ai-phase--${ai.phase}`}>{PHASE_LABEL[ai.phase] ?? ai.phase}</span>
+                        <button className='ai-minimize' title='Minimize' onClick={() => setMinimized(true)}>—</button>
                         <button className='ai-close' onClick={() => ai.setOpen(false)}>×</button>
                     </div>
 
@@ -194,6 +196,20 @@ export const AiPanel = observer(() => {
                                 : ai.logs.map((l, i) => <div key={i} className='ai-log-line'>{l}</div>)}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {ai.open && minimized && (
+                <div
+                    className='ai-pill'
+                    style={{ '--dx': `${pos.x}px`, '--dy': `${pos.y}px` } as React.CSSProperties}
+                >
+                    <span className='ai-pill-phase' />
+                    <button className='ai-pill-btn' onClick={() => setMinimized(false)}>
+                        <span className='ai-pill-title'>AI Analyst</span>
+                        <span className='ai-pill-phase-dot' />
+                    </button>
+                    <button className='ai-close' onClick={() => ai.setOpen(false)}>×</button>
                 </div>
             )}
         </>
