@@ -1,8 +1,11 @@
 /**
  * Pure analysis engine for the AI Analyst panel.
- * Computes REAL statistics from raw tick series (no guessing) and asks
- * Gemini to select a strategy strictly grounded in those numbers.
+ * Computes REAL statistics from raw tick series (no guessing) and asks a
+ * fast Groq LLM to select a strategy strictly grounded in those numbers.
+ * The key lives in gitignored ./ai-key.local.ts — never committed.
  */
+
+import { GROQ_API_KEY } from './ai-key';
 
 export const VOLATILITY_LIST = [
     'R_10', 'R_25', 'R_50', 'R_75', 'R_100',
@@ -33,14 +36,23 @@ export interface AiPlan {
     risk_notes: string;
 }
 
+export interface DigitStat {
+    pct: number;        // frequency % over full window (baseline 10)
+    mean_gap: number;   // avg tick distance between appearances (-1 if <2 seen)
+    med_gap: number;    // median gap
+    p90_gap: number;    // 90th percentile gap — long-drought threshold
+    cur_gap: number;    // ticks since last appearance at window end
+    drift: number;      // recent-50 % minus overall %
+}
+
 export interface SymbolStats {
     symbol: string;
     total_ticks: number;
-    digit_pct: number[];
-    transitions: { from: number; to: number; pct: number }[];
-    mean_gap: number[];
-    max_streaks: { digit: number; length: number }[];
-    recent_drift: number[];
+    digits: DigitStat[];
+    transitions: { from: number; to: number; pct: number }[]; // strongest next-digit influences
+    streak_repeat_pct: { digit: number; pct: number }[];      // P(repeat | current run of that digit >= 2)
+    even_pct: number;
+    hi_pct: number; // digits 5-9
 }
 
 /** Default pip sizes for volatility indices (matches Deriv values). */
@@ -61,17 +73,53 @@ function getDigit(price: number, pip: number): number {
 
 const r1 = (v: number) => Math.round(v * 10) / 10;
 
+function percentile(sorted: number[], p: number): number {
+    if (!sorted.length) return -1;
+    const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
+    return sorted[idx];
+}
+
 export function computeSymbolStats(symbol: string, prices: number[]): SymbolStats {
     const pip = volPipSize(symbol);
     const digits = prices.map(p => getDigit(p, pip)).filter(d => d >= 0 && d <= 9);
     const n = digits.length;
 
-    // Digit percentages across the full window
     const counts = new Array(10).fill(0);
     digits.forEach(d => counts[d]++);
-    const pct = counts.map(c => r1((c / n) * 100));
 
-    // Transition matrix: P(next | current) — keep strongest pairs
+    // Gap distributions per digit
+    const gapsPerDigit: number[][] = Array.from({ length: 10 }, () => []);
+    const lastIndex = new Array(10).fill(-1);
+    digits.forEach((d, i) => {
+        if (lastIndex[d] !== -1) gapsPerDigit[d].push(i - lastIndex[d]);
+        lastIndex[d] = i;
+    });
+
+    const digitStats: DigitStat[] = [];
+    for (let d = 0; d < 10; d++) {
+        const g = [...gapsPerDigit[d]].sort((a, b) => a - b);
+        const mean = g.length ? r1(g.reduce((a, v) => a + v, 0) / g.length) : -1;
+        const med = percentile(g, 50);
+        const p90 = percentile(g, 90);
+        digitStats.push({
+            pct: r1((counts[d] / n) * 100),
+            mean_gap: mean,
+            med_gap: med,
+            p90_gap: p90,
+            cur_gap: lastIndex[d] === -1 ? n : n - 1 - lastIndex[d],
+            drift: 0, // filled below
+        });
+    }
+
+    // Recent drift
+    const recent = digits.slice(-50);
+    const rc = new Array(10).fill(0);
+    recent.forEach(d => rc[d]++);
+    for (let d = 0; d < 10; d++) {
+        digitStats[d].drift = r1(r1((rc[d] / Math.max(1, recent.length)) * 100) - digitStats[d].pct);
+    }
+
+    // Transition matrix: P(next | current), keep strongest pairs
     const transCount: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
     for (let i = 0; i < n - 1; i++) transCount[digits[i]][digits[i + 1]]++;
     const rowTotals = transCount.map(row => row.reduce((a, v) => a + v, 0));
@@ -85,86 +133,76 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
     }
     transitions.sort((a, b) => b.pct - a.pct);
 
-    // Gap analysis: average spacing between appearances of each digit
-    const meanGap = new Array(10).fill(-1);
-    for (let d = 0; d < 10; d++) {
-        const idxs: number[] = [];
-        digits.forEach((v, i) => { if (v === d) idxs.push(i); });
-        if (idxs.length >= 2) {
-            let sum = 0;
-            for (let i = 1; i < idxs.length; i++) sum += idxs[i] - idxs[i - 1];
-            meanGap[d] = r1(sum / (idxs.length - 1));
+    // Streak-repeat behaviour: P(next == same | run of that digit >= 2 just ended... measured live):
+    // count occurrences where a digit appeared >=2 times consecutively and appeared again right after.
+    const runStartCount = new Array(10).fill(0);
+    const runRepeatCount = new Array(10).fill(0);
+    let runLen = 1;
+    for (let i = 1; i < n; i++) {
+        if (digits[i] === digits[i - 1]) {
+            runLen++;
+        } else {
+            if (runLen >= 2) {
+                runStartCount[digits[i - 1]]++;
+                // did the digit reappear within the next 2 ticks?
+                if ((i < n && digits[i] === digits[i - 1]) || (i + 1 < n && digits[i + 1] === digits[i - 1])) {
+                    runRepeatCount[digits[i - 1]]++;
+                }
+            }
+            runLen = 1;
         }
     }
+    const streak_repeat_pct = runStartCount.map((c, d) => ({
+        digit: d,
+        pct: c > 0 ? r1((runRepeatCount[d] / c) * 100) : 0,
+    })).filter(s => s.pct > 0);
 
-    // Streaks: longest consecutive runs per digit
-    const bestStreak = new Array(10).fill(0);
-    let cur = 1;
-    for (let i = 1; i <= n; i++) {
-        if (i < n && digits[i] === digits[i - 1]) cur++;
-        else {
-            if (cur > bestStreak[digits[i - 1]]) bestStreak[digits[i - 1]] = cur;
-            cur = 1;
-        }
-    }
-    const max_streaks = bestStreak
-        .map((length, digit) => ({ digit, length }))
-        .filter(s => s.length > 0)
-        .sort((a, b) => b.length - a.length)
-        .slice(0, 3);
-
-    // Recent drift: last-50 percentage minus overall percentage per digit
-    const recent = digits.slice(-50);
-    const rc = new Array(10).fill(0);
-    recent.forEach(d => rc[d]++);
-    const rpct = rc.map(c => r1((c / Math.max(1, recent.length)) * 100));
-    const recent_drift = rpct.map((p, i) => r1(p - pct[i]));
+    const evenCount = digits.filter(d => d % 2 === 0).length;
+    const hiCount = digits.filter(d => d >= 5).length;
 
     return {
         symbol,
         total_ticks: n,
-        digit_pct: pct,
+        digits: digitStats,
         transitions: transitions.slice(0, 8),
-        mean_gap: meanGap,
-        max_streaks,
-        recent_drift,
+        streak_repeat_pct: streak_repeat_pct.sort((a, b) => b.pct - a.pct).slice(0, 4),
+        even_pct: r1((evenCount / n) * 100),
+        hi_pct: r1((hiCount / n) * 100),
     };
 }
 
 const SYS_PROMPT =
-    'You are a rigorous quantitative analyst specialising in digit statistics of Deriv ' +
-    'volatility indices (synthetic random 1-tick-per-second price series). You receive EXACT ' +
-    'statistics computed over the most recent 1000 ticks of 10 markets: per-digit frequency %, ' +
-    'strongest digit-to-digit transition probabilities, mean gap (average tick distance between ' +
-    'reappearances of a digit), longest streaks, and recent-50 drift vs baseline. ' +
-    'RULES: Base every claim ONLY on the supplied numbers — zero speculation about hidden ' +
-    'mechanics. A useful edge is small: uniform expectation is 10.00% per digit, so flag digits ' +
-    'materially above/below that and transitions far above ~10%. Prefer DIGITDIFF when one digit ' +
-    'is clearly hot (its absence is rare), DIGITMATCH only for an unusually cold digit with high ' +
-    'mean gap, OVER/UNDER around extreme digits (0 or 9 edges), EVEN/ODD only on a real skew. ' +
-    'Pick exactly ONE market and ONE contract. Set entry_trigger to maximise statistical sense: ' +
-    '"gap_reached" waits until the chosen digit has been absent >= min_gap ticks (use its ' +
-    'mean_gap as guide), "last_digit_equals" fires when the newest tick ends in your digit, ' +
-    '"immediate" enters right away. duration_ticks must be 1-5 and justified by transition or ' +
-    'streak data. confidence 0-100 must reflect how strong the numbers really are — be honest, ' +
-    'weak edges get low confidence. Write rationale, monitoring and risk_notes as concrete, ' +
-    'number-citing sentences. Respond ONLY with minified JSON matching the schema given.';
+    'You are an elite quantitative analyst for Deriv volatility indices — synthetic RNG price ' +
+    'series producing one tick per second with a final decimal digit 0-9. You receive EXACT ' +
+    'statistics computed from the most recent 1000 ticks of all 10 markets: per-digit frequency%, ' +
+    'mean/median/p90 reappearance gap, CURRENT drought length (cur_gap), recent-50 drift, the 8 ' +
+    'strongest digit→next-digit transition probabilities, streak-repeat probabilities, and parity/high-low skews. ' +
+    'Uniform baseline is exactly 10.00% per digit and ~50% parity. Hunt EVERY exploitable trick in the data: ' +
+    '(1) hot/cold digit extremes vs 10%; (2) mean-reversion on droughts — cur_gap far beyond mean/p90 gap ' +
+    'suggests overdue digits for DIGITMATCH or gap-timed entries; (3) transition clustering — after digit X, ' +
+    'certain digits follow well above 10% (cite exact %); (4) streak behaviour — repeat probabilities above/below ' +
+    'the ~9% random-run expectation; (5) parity and high/low skews for EVEN/ODD/OVER/UNDER edges. ' +
+    'Cross-reference patterns BETWEEN metrics before concluding; reject any market whose edge is noise-level. ' +
+    'Choose ONE market + ONE contract + precise entry trigger + duration 1-5 ticks justified by the numbers. ' +
+    'confidence must honestly reflect evidence strength. rationale must cite specific percentages as proof. ' +
+    'Respond ONLY with minified JSON matching the schema given. No prose outside JSON.';
 
-export function buildDigest(stats: SymbolStats[]): string {
+function buildDigest(stats: SymbolStats[]): string {
     return JSON.stringify({
-        note: 'uniform baseline = 10.00% per digit; drift = recent50% minus overall%',
+        note: 'baseline: every digit=10.00%, parity=50%. cur_gap=ticks since digit last seen.',
         markets: stats,
     });
 }
 
-export function buildUserPrompt(digest: string): string {
+function buildUserPrompt(digest: string): string {
     return (
-        'Statistics (exact, last 1000 ticks):\n' + digest +
-        '\n\nDecide the single best tradable setup. Respond ONLY with minified JSON: {' +
-        '"market":"<one of the symbols>","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
-        '"barrier_digit":<0-9 or null>,"duration_ticks":<1-5>,' +
+        'Exact statistics (last 1000 ticks, all 10 markets):\n' + digest +
+        '\n\nIdentify every real pattern/trick above, cross-check them, then commit to the single best setup. ' +
+        'Respond ONLY minified JSON: {"market":"<symbol>","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
+        '"barrier_digit":<0-9|null>,"duration_ticks":<1-5>,' +
         '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":<0-9>,"min_gap":<int>=0},' +
-        '"confidence":<0-100>,"rationale":"...","monitoring":"...","risk_notes":"..."}'
+        '"confidence":<0-100>,"rationale":"<cite exact stats>","monitoring":"<exact watch instructions>",' +
+        '"risk_notes":"<when this fails>"}'
     );
 }
 
@@ -198,28 +236,47 @@ export function normalizePlan(raw: any): AiPlan {
     };
 }
 
-/** Calls Gemini and returns a validated trading plan. Throws on HTTP/parse errors. */
-export async function requestAiPlan(apiKey: string, stats: SymbolStats[]): Promise<AiPlan> {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const body = {
-        systemInstruction: { parts: [{ text: SYS_PROMPT }] },
-        contents: [{ role: 'user', parts: [{ text: buildUserPrompt(buildDigest(stats)) }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json' },
-    };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) {
-        let msg = `Gemini HTTP ${res.status}`;
-        try {
-            const j = await res.json();
-            msg = j?.error?.message ?? msg;
-        } catch (_) { /* keep status message */ }
-        throw new Error(msg);
+/**
+ * Calls Groq (OpenAI-compatible endpoint) and returns a validated plan.
+ * llama-3.3-70b on Groq streams hundreds of tokens/sec — the whole call
+ * typically lands in 2-4s, keeping Analyze well under the 10s budget.
+ */
+export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
+    if (!GROQ_API_KEY) throw new Error('Groq key missing — create src/pages/manual-trade/ai-key.local.ts');
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 25000);
+    try {
+        const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_API_KEY}` },
+            signal: controller.signal,
+            body: JSON.stringify({
+                model: 'llama-3.3-70b-versatile',
+                temperature: 0.15,
+                max_tokens: 900,
+                response_format: { type: 'json_object' },
+                messages: [
+                    { role: 'system', content: SYS_PROMPT },
+                    { role: 'user', content: buildUserPrompt(buildDigest(stats)) },
+                ],
+            }),
+        });
+        if (!res.ok) {
+            let msg = `Groq HTTP ${res.status}`;
+            try {
+                const j = await res.json();
+                msg = j?.error?.message ?? msg;
+            } catch (_) { /* keep status message */ }
+            throw new Error(msg);
+        }
+        const j = await res.json();
+        let text: string = j?.choices?.[0]?.message?.content ?? '';
+        text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start === -1 || end === -1) throw new Error('AI returned no JSON plan.');
+        return normalizePlan(JSON.parse(text.slice(start, end + 1)));
+    } finally {
+        clearTimeout(timer);
     }
-    const j = await res.json();
-    let text: string = j?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-    const start = text.indexOf('{');
-    const end = text.lastIndexOf('}');
-    if (start === -1 || end === -1) throw new Error('AI returned no JSON plan.');
-    return normalizePlan(JSON.parse(text.slice(start, end + 1)));
 }

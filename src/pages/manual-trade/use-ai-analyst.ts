@@ -19,7 +19,6 @@ const MAX_LOGS = 250;
 
 export function useAiAnalyst() {
     const [open, setOpen] = useState(false);
-    const [apiKey, setApiKeyState] = useState(() => localStorage.getItem('makoti_ai_key') ?? '');
     const [stake, setStake] = useState('1');
     const [takeProfit, setTakeProfit] = useState('5');
     const [stopLoss, setStopLoss] = useState('5');
@@ -46,11 +45,6 @@ export function useAiAnalyst() {
         if (!mountedRef.current) return;
         const ts = new Date().toLocaleTimeString([], { hour12: false });
         setLogs(prev => [...prev.slice(-(MAX_LOGS - 1)), `[${ts}] ${msg}`]);
-    }, []);
-
-    const setApiKey = useCallback((key: string) => {
-        setApiKeyState(key);
-        localStorage.setItem('makoti_ai_key', key);
     }, []);
 
     /**
@@ -87,36 +81,39 @@ export function useAiAnalyst() {
     // ── ANALYZE ─────────────────────────────────────────────────────────
     const analyze = useCallback(async () => {
         if (phase === 'collecting' || phase === 'analyzing') return;
-        if (!apiKey.trim()) {
-            setPhase('error');
-            setProgress('Add your Gemini API key first.');
-            return;
-        }
         try {
             setPhase('collecting');
-            setProgress('Loading 1000 ticks per market…');
-            log(`Collecting ${VOLATILITY_LIST.length} × 1000 ticks…`);
-            const stats: SymbolStats[] = [];
-            for (let i = 0; i < VOLATILITY_LIST.length; i++) {
-                const sym = VOLATILITY_LIST[i];
-                setProgress(`Loading ${sym} (${i + 1}/${VOLATILITY_LIST.length})…`);
-                const res: any = await request({
+            setProgress('Loading 1000 ticks × 10 markets in parallel…');
+            log('Collecting 10 × 1000 ticks concurrently…');
+            const t0 = Date.now();
+
+            // All history fetches fire simultaneously — each resolves on its own
+            // strict req_id, so the shared socket can never cross-match them.
+            const results = await Promise.all(VOLATILITY_LIST.map(sym =>
+                request({
                     ticks_history: sym, count: 1000, end: 'latest', style: 'ticks',
-                });
+                }).catch(e => ({ _sym: sym, _err: e }))
+            ));
+
+            const stats: SymbolStats[] = [];
+            results.forEach((res: any, i) => {
+                const sym = VOLATILITY_LIST[i];
+                if (res?._err) throw new Error(`${sym}: ${res._err?.message ?? 'fetch failed'}`);
                 const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
                 if (prices.length < 100) throw new Error(`${sym}: only ${prices.length} ticks returned`);
                 stats.push(computeSymbolStats(sym, prices));
-                log(`${sym}: ${prices.length} ticks analysed.`);
-            }
+            });
+            log(`All 10 markets analysed in ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
+
             setPhase('analyzing');
-            setProgress('Gemini is breaking down the data…');
-            log('Sending digest to Gemini for strategy selection…');
-            const p = await requestAiPlan(apiKey.trim(), stats);
+            setProgress('AI is cross-checking every pattern…');
+            log('Sending full evidence digest to Groq llama-3.3-70b…');
+            const p = await requestAiPlan(stats);
             planRef.current = p;
             setPlan(p);
             setPhase('ready');
             setProgress('');
-            log(`PLAN → ${p.market} ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · ${p.duration_ticks}t · trigger=${p.entry_trigger.type}:${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `+gap${p.entry_trigger.min_gap}` : ''} · confidence ${p.confidence}%`);
+            log(`DONE in ${((Date.now() - t0) / 1000).toFixed(1)}s → PLAN: ${p.market} ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · ${p.duration_ticks}t · trigger=${p.entry_trigger.type}:${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `+gap${p.entry_trigger.min_gap}` : ''} · confidence ${p.confidence}%`);
             log(p.rationale);
         } catch (e: any) {
             if (!mountedRef.current) return;
@@ -124,7 +121,7 @@ export function useAiAnalyst() {
             setProgress(e?.message ?? 'Analysis failed.');
             log(`ERROR: ${e?.message ?? 'Analysis failed.'}`);
         }
-    }, [apiKey, phase, request, log]);
+    }, [phase, request, log]);
 
     // ── RUN ENGINE ──────────────────────────────────────────────────────
     const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
@@ -291,7 +288,6 @@ export function useAiAnalyst() {
 
     return {
         open, setOpen,
-        apiKey, setApiKey,
         stake, setStake, takeProfit, setTakeProfit, stopLoss, setStopLoss,
         phase, progress, logs, plan, run,
         analyze, startRun, stopRun: () => stopRun(),

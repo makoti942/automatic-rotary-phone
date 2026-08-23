@@ -44,17 +44,8 @@ export const AiPanel = observer(() => {
                         <button className='ai-close' onClick={() => ai.setOpen(false)}>×</button>
                     </div>
 
-                    {/* Credentials + risk inputs */}
+                    {/* Risk inputs — key is built in, nothing to configure */}
                     <div className='ai-grid'>
-                        <div className='ai-field ai-field--wide'>
-                            <label>Gemini API key</label>
-                            <input
-                                type='password'
-                                placeholder='Paste your Google AI Studio key'
-                                value={ai.apiKey}
-                                onChange={e => ai.setApiKey(e.target.value)}
-                            />
-                        </div>
                         <div className='ai-field'>
                             <label>Stake ($)</label>
                             <input type='number' min={0.35} step={0.01} value={ai.stake}
@@ -136,7 +127,7 @@ export const AiPanel = observer(() => {
                     {/* Log console */}
                     <div className='ai-log' ref={logRef}>
                         {ai.logs.length === 0
-                            ? <div className='ai-log-empty'>Press Analyze — I will load 1000 ticks from all 10 volatilities, compute digit frequencies, transitions, gaps and streaks, then hand the evidence to Gemini for a no-guesswork plan.</div>
+                            ? <div className='ai-log-empty'>Press Analyze — I will load 1000 ticks from all 10 volatilities in parallel, compute digit frequencies, transitions, drought gaps, streak behaviour and parity skews, then hand every number to the AI to commit to one precise, executable plan.</div>
                             : ai.logs.map((l, i) => <div key={i} className='ai-log-line'>{l}</div>)}
                     </div>
                 </div>

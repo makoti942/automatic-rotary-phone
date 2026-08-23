@@ -1,1 +1,4 @@
 node_modules
+
+# Gemini key - local only, never commit
+src/pages/manual-trade/ai-key.local.ts
