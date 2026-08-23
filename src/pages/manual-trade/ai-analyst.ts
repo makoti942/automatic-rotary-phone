@@ -299,10 +299,12 @@ async function callGroq(payload: any): Promise<any> {
 }
 
 export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
+    // model + reasoning_effort are chosen server-side (api/groq.js) so
+    // deprecations never break the client.
     const payload = {
-        model: 'llama-3.3-70b-versatile',
         temperature: 0.15,
-        max_tokens: 900,
+        max_tokens: 1400,
+        reasoning_effort: 'medium',
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
