@@ -57,9 +57,11 @@ export function useAiAnalyst() {
         return new Promise((resolve, reject) => {
             const reqId = Date.now() * 100 + (++reqCounter.current % 100);
             let done = false;
-            const handler = (event: MessageEvent) => {
+            const handler = (event: any) => {
                 try {
-                    const data = JSON.parse(event.data);
+                    // The relay dispatches CustomEvent({detail: <raw MessageEvent>}),
+                    // so the payload string lives at event.detail.data.
+                    const data = JSON.parse(event.detail.data);
                     const echoed = data?.echo_req?.req_id ?? data?.req_id;
                     if (echoed !== reqId || done) return;
                     done = true;
