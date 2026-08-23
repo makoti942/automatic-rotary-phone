@@ -48,9 +48,10 @@ export function useAiAnalyst() {
     }, []);
 
     /**
-     * Strict request helper: resolves ONLY on exact req_id match (never on
-     * msg_type), so concurrent/foreign traffic on the shared socket can never
-     * cross-resolve. Times out after `timeoutMs`.
+     * Strict request helper — resolves ONLY when the response echoes OUR
+     * req_id back via echo_req (the same field the manual-trade bulk loader
+     * matches on; the relay does not reliably return a top-level req_id).
+     * Never matches on msg_type, so concurrent fetches can't cross-resolve.
      */
     const request = useCallback(<T = any,>(msg: Record<string, unknown>, timeoutMs = 20000): Promise<T> => {
         return new Promise((resolve, reject) => {
@@ -59,7 +60,8 @@ export function useAiAnalyst() {
             const handler = (event: MessageEvent) => {
                 try {
                     const data = JSON.parse(event.data);
-                    if (data.req_id !== reqId || done) return;
+                    const echoed = data?.echo_req?.req_id ?? data?.req_id;
+                    if (echoed !== reqId || done) return;
                     done = true;
                     window.removeEventListener('newSystemMessage', handler);
                     if (data.error) reject(new Error(data.error.message ?? 'Request failed'));
