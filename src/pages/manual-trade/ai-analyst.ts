@@ -29,6 +29,8 @@ export interface AiPlan {
     duration_ticks: number;
     entry_trigger: AiEntryTrigger;
     confidence: number;
+    /** One-sentence plain-language takeaway (≤180 chars) */
+    summary: string;
     rationale: string;
     monitoring: string;
     risk_notes: string;
@@ -188,40 +190,62 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
 
 const SYS_PROMPT =
     'Elite quant analyst for Deriv volatility indices (synthetic RNG, 1 tick/sec, final decimal digit 0-9). ' +
-    'You get EXACT stats over the last 1000 ticks of 10 markets. Baseline: every digit=10%, parity=50%. ' +
-    'Read quarters as trajectory: rising digit = gaining momentum (check tr to see which digits it displaces); ' +
-    'falling = fading even if total is high. Hunt every trick: hot/cold extremes AND their direction; droughts ' +
-    '(curDrought far beyond p90Gap = overdue); transition clustering (X>Y far above 10% — cite %); streak repeats ' +
-    'vs ~9% random expectation; parity/hi-lo skews and whether recent quarters strengthen them. Cross-check metrics; ' +
-    'reject noise-level edges. Commit to ONE market + ONE contract + precise trigger + duration 1-5 justified by numbers. ' +
-    'confidence must be honest. rationale cites exact percentages. Respond ONLY minified JSON per schema.';
+    'CONTRACT RULES (Deriv digits, exit tick decides): DIGITMATCH wins iff exit digit == barrier (barrier 0-9, high payout). ' +
+    'DIGITDIFF wins iff exit != barrier (0-9). DIGITOVER wins iff exit > barrier — barrier MUST be 0-8 (over 9 is impossible). ' +
+    'DIGITUNDER wins iff exit < barrier — barrier MUST be 1-9 (under 0 is impossible). DIGITEVEN/DIGITODD: parity of exit digit. ' +
+    'Duration is 1-5 ticks; every tick is an independent RNG draw, so edges come ONLY from the supplied statistics. ' +
+    'STRATEGY ARCHETYPES — rotate between them and NAME the one used at the start of rationale, e.g. [drought-reversion], ' +
+    '[momentum-quarters], [transition-cluster], [streak-fade], [parity-skew]: drought-reversion = enter when curDrought ' +
+    'exceeds p90Gap on a cold-ish digit; momentum-quarters = follow digits rising across quarters; transition-cluster = exploit ' +
+    'X>Y pairs far above 10%; streak-fade = bet against repeats when repeatPct is weak; parity-skew = EVEN/ODD when skew >2pp. ' +
+    'If a PREVIOUS PLAN is given and it lost, pick a DIFFERENT archetype and/or market unless the numbers overwhelmingly repeat. ' +
+    'Baseline: every digit=10%, parity=50%. Cross-check metrics; reject noise-level edges (<1.5pp). ' +
+    'confidence must be honest. BREVITY: summary<=180 chars plain words; rationale<=260 chars; monitoring<=140; risk_notes<=120. ' +
+    'Respond ONLY minified JSON per schema.';
+
+/** Objective local pre-score so the AI only sees the strongest candidates. */
+function scoreMarket(s: SymbolStats): number {
+    const dev = Math.max(...s.digits.map(d => Math.abs(d.pct - 10)));
+    const drought = Math.max(...s.digits.map(d => (d.mean_gap > 0 ? d.cur_gap / d.mean_gap : 0)));
+    const trans = Math.max(0, ...s.transitions.map(t => t.pct - 10));
+    const swing = Math.max(...s.digits.map(d => Math.abs(d.drift)));
+    return Math.round((dev * 1.5 + Math.min(drought, 4) * 12 + trans * 2 + swing * 2) * 10) / 10;
+}
 
 function buildDigest(stats: SymbolStats[]): string {
-    // Dense numeric encoding — free-tier Groq allows only ~8k tokens/min,
-    // so every market is packed into flat arrays with one legend line.
-    const markets = stats.map(s => [
-        s.symbol,
+    // Local comparison first: score every market, ship FULL detail for the
+    // top 4 and one-liners for the rest. Keeps requests ~2.5k tokens so
+    // repeated analyses never hit the free-tier token cap.
+    const scored = stats.map(s => ({ s, score: scoreMarket(s) })).sort((a, b) => b.score - a.score);
+    const full = scored.slice(0, 4).map(({ s, score }) => [
+        s.symbol, score,
         s.digits.map(d => [d.pct, Math.round(d.mean_gap), Math.round(d.med_gap), Math.round(d.p90_gap), d.cur_gap, d.drift]),
         s.quarters.map(q => q),
         s.transitions.map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
         s.streak_repeat_pct.map(x => `${x.digit}x2:${x.pct}`).join('|'),
-        s.even_pct,
-        s.hi_pct,
+        s.even_pct, s.hi_pct,
     ]);
+    const rest = scored.slice(4).map(({ s, score }) => {
+        let hot = 0, cold = 0;
+        s.digits.forEach((d, i) => { if (d.pct > s.digits[hot].pct) hot = i; if (d.pct < s.digits[cold].pct) cold = i; });
+        return `${s.symbol}(${score}) hot${hot}=${s.digits[hot].pct}% cold${cold}=${s.digits[cold].pct}% even=${s.even_pct}%`;
+    });
     return JSON.stringify({
-        L: 'per symbol: [digitRows(0..9): [freq%,meanGap,medGap,p90Gap,curDrought,recentDrift]], quarters[10x4]=freq% per digit across window oldest->newest, tr=strongest X>Y:nextPct%, st=digit x2:repeatAfterRun%, base=10% parity~50%',
-        M: markets,
+        L: 'rows=[freq%,meanGap,medGap,p90Gap,curDrought,recentDrift] quarters=10x4 freq% oldest->newest tr=X>Y:pct st=digit x2:repeatAfterRun% base=10%',
+        TOP: full,
+        REST: rest,
     });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
-        'Exact stats (last 1000 ticks, 10 markets):\n' + digest +
-        '\n\nFind every real pattern/trick, cross-check them, commit to ONE best setup. ' +
+        'Exact stats (last 1000 ticks). TOP = full detail for highest-scoring markets; REST = brief scan of the others:\n' + digest +
+        '\n\nFind every real pattern/trick, cross-check them, commit to ONE best setup from ANY market (TOP or REST). ' +
         'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
-        '"barrier_digit":0-9|null,"duration_ticks":1-5,' +
+        '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
         '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int>=0},' +
-        '"confidence":0-100,"rationale":"cite exact stats","monitoring":"exact watch steps","risk_notes":"when it fails"}'
+        '"confidence":0-100,"summary":"plain-language plan","rationale":"[archetype] cite exact stats",' +
+        '"monitoring":"exact watch steps","risk_notes":"when it fails"}'
     );
 }
 
@@ -237,13 +261,24 @@ export function normalizePlan(raw: any, focus?: AiFocus): AiPlan {
     }
     const needsBarrier = contract_type !== 'DIGITEVEN' && contract_type !== 'DIGITODD';
     let barrier = Number(raw?.barrier_digit);
-    const barrier_digit = needsBarrier
-        ? (Number.isFinite(barrier) ? Math.min(9, Math.max(0, Math.round(barrier))) : 5)
-        : null;
     const duration_ticks = Math.min(5, Math.max(1, Math.round(Number(raw?.duration_ticks)) || 1));
     const tTypes = ['gap_reached', 'last_digit_equals', 'immediate'];
     const trig = raw?.entry_trigger ?? {};
-    const digit = Math.min(9, Math.max(0, Math.round(Number(trig.digit)) || 0));
+    let digit = Math.min(9, Math.max(0, Math.round(Number(trig.digit)) || 0));
+
+    // ── Deriv contract validity enforcement ────────────────────────────
+    if (contract_type === 'DIGITOVER') {
+        barrier = Math.min(8, Math.max(0, Math.round(Number(raw?.barrier_digit))));
+        digit = Math.min(digit, 8);
+    } else if (contract_type === 'DIGITUNDER') {
+        barrier = Math.max(1, Math.min(9, Math.round(Number(raw?.barrier_digit))));
+        digit = Math.max(1, digit);
+    } else {
+        barrier = Math.round(Number(raw?.barrier_digit));
+    }
+    const barrier_digit = needsBarrier
+        ? (Number.isFinite(barrier) ? Math.min(9, Math.max(0, barrier)) : 5)
+        : null;
     const min_gap = Math.max(0, Math.round(Number(trig.min_gap)) || 0);
     const type = tTypes.includes(trig.type) ? trig.type : 'immediate';
     return {
@@ -253,9 +288,10 @@ export function normalizePlan(raw: any, focus?: AiFocus): AiPlan {
         duration_ticks,
         entry_trigger: { type, digit, min_gap },
         confidence: Math.min(100, Math.max(0, Math.round(Number(raw?.confidence)) || 0)),
-        rationale: String(raw?.rationale ?? '').slice(0, 1200),
-        monitoring: String(raw?.monitoring ?? '').slice(0, 800),
-        risk_notes: String(raw?.risk_notes ?? '').slice(0, 800),
+        summary: String(raw?.summary ?? '').slice(0, 200),
+        rationale: String(raw?.rationale ?? '').slice(0, 400),
+        monitoring: String(raw?.monitoring ?? '').slice(0, 220),
+        risk_notes: String(raw?.risk_notes ?? '').slice(0, 180),
     };
 }
 
@@ -310,12 +346,14 @@ async function callGroq(payload: any): Promise<any> {
     return j;
 }
 
-export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus): Promise<AiPlan> {
+export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus, prevPlan?: string): Promise<AiPlan> {
     // model + reasoning_effort are chosen server-side (api/groq.js) so
-    // deprecations never break the client. Token budget sized for the free
-    // tier's 8k TPM cap: compressed digest + prompt ≈ 4.5k, completion ≤ 1k.
+    // deprecations never break the client. Compact digest ≈ 2.5k tokens.
     const focusLine = focus && focus !== 'auto'
         ? `\nHARD CONSTRAINT: contract_type MUST be one of ${FOCUS_TYPES[focus].join(' or ')} — pick the stronger of the two from the data.`
+        : '';
+    const prevLine = prevPlan
+        ? `\nPREVIOUS PLAN: ${prevPlan}. If it lost more than it won, use a DIFFERENT archetype and/or market unless the fresh numbers overwhelmingly justify a repeat. Suggest a genuinely new idea when the data allows.`
         : '';
     const payload = {
         temperature: 0.15,
@@ -324,7 +362,7 @@ export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus): Prom
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
-            { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine },
+            { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine + prevLine },
         ],
     };
     const controller = new AbortController();
