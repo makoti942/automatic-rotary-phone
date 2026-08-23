@@ -42,6 +42,10 @@ export function useAiAnalyst() {
     const busyTrade = useRef(false);
     const stopRequested = useRef(false);
     const phaseRef = useRef<AiPhase>(phase);
+    const analyzingRef = useRef(false);
+    const tradesSinceRefresh = useRef(0);
+    const consecutiveLosses = useRef(0);
+    const lastRefreshAt = useRef(0);
 
     const log = useCallback((msg: string) => {
         if (!mountedRef.current) return;
@@ -85,6 +89,41 @@ export function useAiAnalyst() {
     }, []);
 
     // ── ANALYZE ─────────────────────────────────────────────────────────
+    /** Shared evidence collection used by both Analyze and live re-planning. */
+    const collectStats = useCallback(async (onProgress?: (s: string) => void): Promise<SymbolStats[]> => {
+        const fetchWithRetry = async (sym: VolatilitySymbol): Promise<any> => {
+            let lastErr: any;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    return await request(
+                        { ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' },
+                        12000,
+                    );
+                } catch (e: any) {
+                    lastErr = e;
+                    if (attempt < 3) {
+                        log(`${sym} attempt ${attempt} failed (${e?.message ?? 'error'}) — retrying…`);
+                        await new Promise(r => setTimeout(r, 400));
+                    }
+                }
+            }
+            throw new Error(`${sym}: ${lastErr?.message ?? 'fetch failed'}`);
+        };
+        const stats: SymbolStats[] = [];
+        const BATCH = 5;
+        for (let i = 0; i < VOLATILITY_LIST.length; i += BATCH) {
+            const slice = VOLATILITY_LIST.slice(i, i + BATCH);
+            onProgress?.(`Loading ${slice.join(', ')}…`);
+            const results = await Promise.all(slice.map(sym => fetchWithRetry(sym)));
+            results.forEach((res: any, j: number) => {
+                const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
+                if (prices.length < 100) throw new Error(`${slice[j]}: only ${prices.length} ticks returned`);
+                stats.push(computeSymbolStats(slice[j], prices));
+            });
+        }
+        return stats;
+    }, [request, log]);
+
     const analyze = useCallback(async () => {
         if (phase === 'collecting' || phase === 'analyzing') return;
         focusRef.current = focusType;
@@ -99,39 +138,7 @@ export function useAiAnalyst() {
                 : `Fresh collection — 10 × 1000 ticks… (focus: ${focusType})`);
             const t0 = Date.now();
 
-            const fetchWithRetry = async (sym: VolatilitySymbol): Promise<any> => {
-                let lastErr: any;
-                for (let attempt = 1; attempt <= 3; attempt++) {
-                    try {
-                        return await request(
-                            { ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' },
-                            12000,
-                        );
-                    } catch (e: any) {
-                        lastErr = e;
-                        if (attempt < 3) {
-                            log(`${sym} attempt ${attempt} failed (${e?.message ?? 'error'}) — retrying…`);
-                            await new Promise(r => setTimeout(r, 400));
-                        }
-                    }
-                }
-                throw new Error(`${sym}: ${lastErr?.message ?? 'fetch failed'}`);
-            };
-
-            // Deriv throttles large concurrent bursts, so fetch in two waves of
-            // five with per-symbol retries — still finishes in a few seconds.
-            const stats: SymbolStats[] = [];
-            const BATCH = 5;
-            for (let i = 0; i < VOLATILITY_LIST.length; i += BATCH) {
-                const slice = VOLATILITY_LIST.slice(i, i + BATCH);
-                setProgress(`Loading ${slice.join(', ')}…`);
-                const results = await Promise.all(slice.map(sym => fetchWithRetry(sym)));
-                results.forEach((res: any, j: number) => {
-                    const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
-                    if (prices.length < 100) throw new Error(`${slice[j]}: only ${prices.length} ticks returned`);
-                    stats.push(computeSymbolStats(slice[j], prices));
-                });
-            }
+            const stats = await collectStats(s => mountedRef.current && setProgress(s));
             log(`All 10 markets analysed in ${((Date.now() - t0) / 1000).toFixed(1)}s.`);
 
             setPhase('analyzing');
@@ -150,21 +157,57 @@ export function useAiAnalyst() {
             setProgress(e?.message ?? 'Analysis failed.');
             log(`ERROR: ${e?.message ?? 'Analysis failed.'}`);
         }
-    }, [phase, focusType, request, log]);
+    }, [phase, focusType, request, log, collectStats]);
 
     // ── RUN ENGINE ──────────────────────────────────────────────────────
+    /**
+     * Live re-plan: after every few trades, after consecutive losses, or on a
+     * timer, refetch fresh ticks and ask the AI for an updated strategy — the
+     * runner never sticks to one stale signal.
+     */
+    const refreshPlan = useCallback(async (reason: string) => {
+        if (analyzingRef.current || stopRequested.current) return;
+        analyzingRef.current = true;
+        try {
+            log(`Re-planning (${reason}) — refreshing evidence…`);
+            const stats = await collectStats();
+            const p = await requestAiPlan(stats, focusRef.current);
+            planRef.current = p;
+            setPlan(p);
+            tradesSinceRefresh.current = 0;
+            lastRefreshAt.current = Date.now();
+            log(`NEW PLAN → ${p.market} ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · ${p.duration_ticks}t · trigger=${p.entry_trigger.type}:${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `+gap${p.entry_trigger.min_gap}` : ''} · confidence ${p.confidence}%`);
+            log(p.rationale);
+        } catch (e: any) {
+            log(`Re-plan failed (${e?.message ?? 'unknown'}) — keeping current plan.`);
+        } finally {
+            analyzingRef.current = false;
+        }
+    }, [collectStats, log]);
+
     const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
         const rs = runStateRef.current;
         rs.openId = null;
         rs.pnl += profit;
         rs.trades += 1;
-        if (profit >= 0) rs.wins += 1; else rs.losses += 1;
+        tradesSinceRefresh.current += 1;
+        if (profit >= 0) { rs.wins += 1; consecutiveLosses.current = 0; }
+        else { rs.losses += 1; consecutiveLosses.current += 1; }
         setRun({ ...rs });
         log(`Settled #${contractId}: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD · session ${rs.pnl >= 0 ? '+' : ''}${rs.pnl.toFixed(2)} (${rs.wins}W/${rs.losses}L)`);
 
         if (stopRequested.current) { stopRun('Stopped by user.'); return; }
         if (tpRef.current > 0 && rs.pnl >= tpRef.current) { stopRun(`Take profit reached (+${rs.pnl.toFixed(2)}).`); return; }
         if (slRef.current > 0 && rs.pnl <= -slRef.current) { stopRun(`Stop loss hit (${rs.pnl.toFixed(2)}).`); return; }
+
+        // Adaptive loop: rotate signals based on fresh live data.
+        if (consecutiveLosses.current >= 2) {
+            void refreshPlan('2 losses in a row — signal may be exhausted');
+        } else if (tradesSinceRefresh.current >= 3) {
+            void refreshPlan('3 trades on this plan');
+        } else if (Date.now() - lastRefreshAt.current > 5 * 60 * 1000) {
+            void refreshPlan('5 minutes elapsed');
+        }
 
         void maybeFire(); // look for the next entry right away
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -247,6 +290,10 @@ export function useAiAnalyst() {
 
         stopRequested.current = false;
         busyTrade.current = false;
+        analyzingRef.current = false;
+        tradesSinceRefresh.current = 0;
+        consecutiveLosses.current = 0;
+        lastRefreshAt.current = Date.now();
         runStateRef.current = { pnl: 0, trades: 0, wins: 0, losses: 0, openId: null };
         setRun({ ...runStateRef.current });
 
@@ -254,15 +301,31 @@ export function useAiAnalyst() {
             setPhase('running');
             log(`RUN started → watching ${p.market} for trigger "${p.entry_trigger.type}" (digit ${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `, min gap ${p.entry_trigger.min_gap}` : ''}). TP ${tpRef.current || '∞'} / SL ${slRef.current || '∞'}.`);
 
-            // Seed gaps + own live stream for the chosen market
+            // Seed gaps from a plain history fetch (can never conflict with
+            // another tab/component's subscription).
             const res: any = await request({
-                ticks_history: p.market, count: 1500, end: 'latest', style: 'ticks', subscribe: 1,
+                ticks_history: p.market, count: 1500, end: 'latest', style: 'ticks',
             });
             const pip = volPipSize(p.market);
             const digitsOf = (v: number) => Number(Number(v).toFixed(pip).slice(-1));
             const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
             liveDigits.current = prices.map(digitsOf);
-            if (res?.subscription?.id) tickSubId.current = res.subscription.id;
+
+            // Own live stream on top; if something already streams this symbol,
+            // share it passively instead of failing — pushes reach us anyway.
+            try {
+                const sub: any = await request(
+                    { ticks_history: p.market, count: 1, end: 'latest', style: 'ticks', subscribe: 1 },
+                    8000,
+                );
+                if (sub?.subscription?.id) tickSubId.current = sub.subscription.id;
+            } catch (e: any) {
+                if (/already/i.test(e?.message ?? '')) {
+                    log(`${p.market}: sharing an existing live stream (already subscribed).`);
+                } else {
+                    throw e;
+                }
+            }
             log(`${p.market} stream armed with ${liveDigits.current.length} seeded ticks.`);
 
             void maybeFire();
