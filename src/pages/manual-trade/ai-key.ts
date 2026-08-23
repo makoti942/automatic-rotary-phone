@@ -1,13 +1,9 @@
 /**
- * Resolves the Groq API key without ever committing it:
- * the real key lives in ./ai-key.local.ts which is gitignored.
- * Fresh clones build fine with an empty key (AI panel will say so).
+ * Re-exports the Groq API key from ./ai-key.local.ts which is GITIGNORED,
+ * so your key never reaches GitHub. A static import is required — dynamic
+ * require() gets stripped by the bundler in the browser.
+ *
+ * Fresh clone? Copy ai-key.local.sample.ts to ai-key.local.ts and paste
+ * your Groq key inside.
  */
-let key = '';
-try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    key = require('./ai-key.local').GROQ_API_KEY ?? '';
-} catch (_) {
-    key = '';
-}
-export const GROQ_API_KEY: string = key;
+export { GROQ_API_KEY } from './ai-key.local';
