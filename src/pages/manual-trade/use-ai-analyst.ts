@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { onNewSystemMessage, sendViaNewSystem } from '@/auth/NewDerivAuth';
 import {
     VOLATILITY_LIST, computeSymbolStats, requestAiPlan,
-    AiPlan, SymbolStats, volPipSize, VolatilitySymbol,
+    AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
 } from './ai-analyst';
 
 export type AiPhase = 'idle' | 'collecting' | 'analyzing' | 'ready' | 'running' | 'error';
@@ -22,6 +22,8 @@ export function useAiAnalyst() {
     const [stake, setStake] = useState('1');
     const [takeProfit, setTakeProfit] = useState('5');
     const [stopLoss, setStopLoss] = useState('5');
+    const [focusType, setFocusType] = useState<AiFocus>('auto');
+    const focusRef = useRef<AiFocus>('auto');
     const [phase, setPhase] = useState<AiPhase>('idle');
     const [progress, setProgress] = useState('');
     const [logs, setLogs] = useState<string[]>([]);
@@ -85,10 +87,16 @@ export function useAiAnalyst() {
     // ── ANALYZE ─────────────────────────────────────────────────────────
     const analyze = useCallback(async () => {
         if (phase === 'collecting' || phase === 'analyzing') return;
+        focusRef.current = focusType;
         try {
+            // Clean slate: forget the previous plan and evidence entirely.
+            planRef.current = null;
+            setPlan(null);
             setPhase('collecting');
             setProgress('Loading 1000 ticks × 10 markets…');
-            log('Collecting 10 × 1000 ticks (batches of 5, auto-retry)…');
+            log(focusType === 'auto'
+                ? 'Fresh collection — 10 × 1000 ticks (batches of 5, auto-retry)…'
+                : `Fresh collection — 10 × 1000 ticks… (focus: ${focusType})`);
             const t0 = Date.now();
 
             const fetchWithRetry = async (sym: VolatilitySymbol): Promise<any> => {
@@ -128,8 +136,8 @@ export function useAiAnalyst() {
 
             setPhase('analyzing');
             setProgress('AI is cross-checking every pattern…');
-            log('Sending full evidence digest to Groq llama-3.3-70b…');
-            const p = await requestAiPlan(stats);
+            log('Sending full evidence digest to the AI backend…');
+            const p = await requestAiPlan(stats, focusRef.current);
             planRef.current = p;
             setPlan(p);
             setPhase('ready');
@@ -142,7 +150,7 @@ export function useAiAnalyst() {
             setProgress(e?.message ?? 'Analysis failed.');
             log(`ERROR: ${e?.message ?? 'Analysis failed.'}`);
         }
-    }, [phase, request, log]);
+    }, [phase, focusType, request, log]);
 
     // ── RUN ENGINE ──────────────────────────────────────────────────────
     const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
@@ -310,6 +318,7 @@ export function useAiAnalyst() {
     return {
         open, setOpen,
         stake, setStake, takeProfit, setTakeProfit, stopLoss, setStopLoss,
+        focusType, setFocusType,
         phase, progress, logs, plan, run,
         analyze, startRun, stopRun: () => stopRun(),
     };

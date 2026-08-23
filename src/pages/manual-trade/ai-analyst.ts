@@ -225,12 +225,16 @@ function buildUserPrompt(digest: string): string {
     );
 }
 
-export function normalizePlan(raw: any): AiPlan {
+export function normalizePlan(raw: any, focus?: AiFocus): AiPlan {
     const market = VOLATILITY_LIST.includes(raw?.market)
         ? raw.market
         : VOLATILITY_LIST[0];
     const TYPES: AiContractType[] = ['DIGITMATCH', 'DIGITDIFF', 'DIGITOVER', 'DIGITUNDER', 'DIGITEVEN', 'DIGITODD'];
-    const contract_type: AiContractType = TYPES.includes(raw?.contract_type) ? raw.contract_type : 'DIGITDIFF';
+    let contract_type: AiContractType = TYPES.includes(raw?.contract_type) ? raw.contract_type : 'DIGITDIFF';
+    // Hard family constraint from the focus dropdown
+    if (focus && focus !== 'auto' && !FOCUS_TYPES[focus].includes(contract_type)) {
+        contract_type = FOCUS_TYPES[focus][0];
+    }
     const needsBarrier = contract_type !== 'DIGITEVEN' && contract_type !== 'DIGITODD';
     let barrier = Number(raw?.barrier_digit);
     const barrier_digit = needsBarrier
@@ -254,6 +258,14 @@ export function normalizePlan(raw: any): AiPlan {
         risk_notes: String(raw?.risk_notes ?? '').slice(0, 800),
     };
 }
+
+export type AiFocus = 'auto' | 'matches-differs' | 'over-under' | 'even-odd';
+
+const FOCUS_TYPES: Record<Exclude<AiFocus, 'auto'>, AiContractType[]> = {
+    'matches-differs': ['DIGITMATCH', 'DIGITDIFF'],
+    'over-under': ['DIGITOVER', 'DIGITUNDER'],
+    'even-odd': ['DIGITEVEN', 'DIGITODD'],
+};
 
 /**
  * Calls the AI backend and returns a validated plan.
@@ -298,10 +310,13 @@ async function callGroq(payload: any): Promise<any> {
     return j;
 }
 
-export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
+export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus): Promise<AiPlan> {
     // model + reasoning_effort are chosen server-side (api/groq.js) so
     // deprecations never break the client. Token budget sized for the free
     // tier's 8k TPM cap: compressed digest + prompt ≈ 4.5k, completion ≤ 1k.
+    const focusLine = focus && focus !== 'auto'
+        ? `\nHARD CONSTRAINT: contract_type MUST be one of ${FOCUS_TYPES[focus].join(' or ')} — pick the stronger of the two from the data.`
+        : '';
     const payload = {
         temperature: 0.15,
         max_tokens: 1000,
@@ -309,7 +324,7 @@ export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
-            { role: 'user', content: buildUserPrompt(buildDigest(stats)) },
+            { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine },
         ],
     };
     const controller = new AbortController();
