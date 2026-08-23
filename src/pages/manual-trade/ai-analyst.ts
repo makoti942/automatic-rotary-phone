@@ -187,41 +187,41 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
 }
 
 const SYS_PROMPT =
-    'You are an elite quantitative analyst for Deriv volatility indices — synthetic RNG price ' +
-    'series producing one tick per second with a final decimal digit 0-9. You receive EXACT ' +
-    'statistics computed from the most recent 1000 ticks of all 10 markets: per-digit frequency%, ' +
-    'mean/median/p90 reappearance gap, CURRENT drought length (cur_gap), the 8 ' +
-    'strongest digit→next-digit transition probabilities, streak-repeat probabilities, parity/high-low skews, ' +
-    'and QUARTERS — each digit\'s frequency across four consecutive 250-tick slices from the START of the ' +
-    'window to NOW. Read quarters as a trajectory: a digit whose share RISES quarter over quarter is gaining ' +
-    'momentum (its neighbours are being suppressed — cross-check transitions to see which digits it displaces); ' +
-    'a falling trajectory is fading even if its total is still high. Differences between quarters reveal ' +
-    'regime shifts that static totals hide. Uniform baseline is exactly 10.00% per digit and ~50% parity. ' +
-    'Hunt EVERY exploitable trick: (1) hot/cold extremes vs 10% AND their direction of travel across quarters; ' +
-    '(2) mean-reversion on droughts — cur_gap far beyond mean/p90 suggests overdue digits; (3) transition ' +
-    'clustering — after digit X, followers well above 10% (cite exact %); (4) streak-repeat behaviour vs the ' +
-    '~9% random expectation; (5) parity and high/low skews and whether they are strengthening in recent quarters. ' +
-    'Cross-reference metrics BEFORE concluding; reject noise-level edges. Choose ONE market + ONE contract + ' +
-    'precise entry trigger + duration 1-5 ticks justified by the numbers. confidence must honestly reflect ' +
-    'evidence strength. rationale must cite specific percentages as proof. Respond ONLY with minified JSON ' +
-    'matching the schema given. No prose outside JSON.';
+    'Elite quant analyst for Deriv volatility indices (synthetic RNG, 1 tick/sec, final decimal digit 0-9). ' +
+    'You get EXACT stats over the last 1000 ticks of 10 markets. Baseline: every digit=10%, parity=50%. ' +
+    'Read quarters as trajectory: rising digit = gaining momentum (check tr to see which digits it displaces); ' +
+    'falling = fading even if total is high. Hunt every trick: hot/cold extremes AND their direction; droughts ' +
+    '(curDrought far beyond p90Gap = overdue); transition clustering (X>Y far above 10% — cite %); streak repeats ' +
+    'vs ~9% random expectation; parity/hi-lo skews and whether recent quarters strengthen them. Cross-check metrics; ' +
+    'reject noise-level edges. Commit to ONE market + ONE contract + precise trigger + duration 1-5 justified by numbers. ' +
+    'confidence must be honest. rationale cites exact percentages. Respond ONLY minified JSON per schema.';
 
 function buildDigest(stats: SymbolStats[]): string {
+    // Dense numeric encoding — free-tier Groq allows only ~8k tokens/min,
+    // so every market is packed into flat arrays with one legend line.
+    const markets = stats.map(s => [
+        s.symbol,
+        s.digits.map(d => [d.pct, Math.round(d.mean_gap), Math.round(d.med_gap), Math.round(d.p90_gap), d.cur_gap, d.drift]),
+        s.quarters.map(q => q),
+        s.transitions.map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
+        s.streak_repeat_pct.map(x => `${x.digit}x2:${x.pct}`).join('|'),
+        s.even_pct,
+        s.hi_pct,
+    ]);
     return JSON.stringify({
-        note: 'baseline: every digit=10.00%, parity=50%. cur_gap=ticks since digit last seen.',
-        markets: stats,
+        L: 'per symbol: [digitRows(0..9): [freq%,meanGap,medGap,p90Gap,curDrought,recentDrift]], quarters[10x4]=freq% per digit across window oldest->newest, tr=strongest X>Y:nextPct%, st=digit x2:repeatAfterRun%, base=10% parity~50%',
+        M: markets,
     });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
-        'Exact statistics (last 1000 ticks, all 10 markets):\n' + digest +
-        '\n\nIdentify every real pattern/trick above, cross-check them, then commit to the single best setup. ' +
-        'Respond ONLY minified JSON: {"market":"<symbol>","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
-        '"barrier_digit":<0-9|null>,"duration_ticks":<1-5>,' +
-        '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":<0-9>,"min_gap":<int>=0},' +
-        '"confidence":<0-100>,"rationale":"<cite exact stats>","monitoring":"<exact watch instructions>",' +
-        '"risk_notes":"<when this fails>"}'
+        'Exact stats (last 1000 ticks, 10 markets):\n' + digest +
+        '\n\nFind every real pattern/trick, cross-check them, commit to ONE best setup. ' +
+        'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
+        '"barrier_digit":0-9|null,"duration_ticks":1-5,' +
+        '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int>=0},' +
+        '"confidence":0-100,"rationale":"cite exact stats","monitoring":"exact watch steps","risk_notes":"when it fails"}'
     );
 }
 
@@ -300,11 +300,12 @@ async function callGroq(payload: any): Promise<any> {
 
 export async function requestAiPlan(stats: SymbolStats[]): Promise<AiPlan> {
     // model + reasoning_effort are chosen server-side (api/groq.js) so
-    // deprecations never break the client.
+    // deprecations never break the client. Token budget sized for the free
+    // tier's 8k TPM cap: compressed digest + prompt ≈ 4.5k, completion ≤ 1k.
     const payload = {
         temperature: 0.15,
-        max_tokens: 1400,
-        reasoning_effort: 'medium',
+        max_tokens: 1000,
+        reasoning_effort: 'low',
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
