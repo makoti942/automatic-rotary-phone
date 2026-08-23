@@ -231,19 +231,44 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
 }
 
 const SYS_PROMPT =
-    'Elite quant analyst for Deriv volatility indices (synthetic RNG, 1 tick/sec, final decimal digit 0-9). ' +
-    'CONTRACT RULES (Deriv digits, exit tick decides): DIGITMATCH wins iff exit digit == barrier (barrier 0-9, high payout). ' +
-    'DIGITDIFF wins iff exit != barrier (0-9). DIGITOVER wins iff exit > barrier — barrier MUST be 0-8 (over 9 is impossible). ' +
-    'DIGITUNDER wins iff exit < barrier — barrier MUST be 1-9 (under 0 is impossible). DIGITEVEN/DIGITODD: parity of exit digit. ' +
-    'Duration is 1-5 ticks; every tick is an independent RNG draw, so edges come ONLY from the supplied statistics. ' +
-    'STRATEGY ARCHETYPES — rotate between them and NAME the one used at the start of rationale, e.g. [drought-reversion], ' +
-    '[momentum-quarters], [transition-cluster], [streak-fade], [parity-skew]: drought-reversion = enter when curDrought ' +
-    'exceeds p90Gap on a cold-ish digit; momentum-quarters = follow digits rising across quarters; transition-cluster = exploit ' +
-    'X>Y pairs far above 10%; streak-fade = bet against repeats when repeatPct is weak; parity-skew = EVEN/ODD when skew >2pp. ' +
-    'If a PREVIOUS PLAN is given and it lost, pick a DIFFERENT archetype and/or market unless the numbers overwhelmingly repeat. ' +
-    'Baseline: every digit=10%, parity=50%. Cross-check metrics; reject noise-level edges (<1.5pp). ' +
-    'confidence must be honest. BREVITY: summary<=180 chars plain words; rationale<=260 chars; monitoring<=140; risk_notes<=120. ' +
-    'Respond ONLY minified JSON per schema.';
+    'You are an elite quant analyst for Deriv binary options on volatility indices. ' +
+    'Every tick is an independent synthetic RNG draw (1 tick/sec). The final decimal digit of each price is uniformly distributed 0-9 long-term, but ' +
+    'local clustering, streaks, and transition biases create exploitable micro-edges in 1000-tick windows.\n' +
+    'DERIV CONTRACT RULES (exit tick decides win/loss):\n' +
+    '- DIGITMATCH: win if exit digit == barrier (0-9). Highest payout ~9x.\n' +
+    '- DIGITDIFF: win if exit digit != barrier (0-9). Payout ~1.9x.\n' +
+    '- DIGITOVER: win if exit digit > barrier. barrier MUST be 0-8 (over 9 impossible). Payout ~2x.\n' +
+    '- DIGITUNDER: win if exit digit < barrier. barrier MUST be 1-9 (under 0 impossible). Payout ~2x.\n' +
+    '- DIGITEVEN / DIGITODD: win if parity matches. Payout ~2x.\n' +
+    '- Duration: 1-5 ticks. Entry_trigger determines WHEN to place the trade (see entry types below).\n\n' +
+    'ENTRY TRIGGER TYPES:\n' +
+    '- immediate: place trade right now.\n' +
+    '- last_digit_equals: wait until the last tick digit matches the trigger digit, then place.\n' +
+    '- gap_reached: wait until a digit\'s current drought (curDrought) reaches min_gap ticks, then trade that digit.\n' +
+    'CRITICAL: min_gap MUST be <= 10 ticks. We only trade if the edge appears within 10 ticks. Long waits destroy edge.\n\n' +
+    'DATA LEGEND (for each market\'s rows):\n' +
+    '- rows=[freq%, meanGap, medGap, p90Gap, curDrought, recentDrift]\n' +
+    '- quarters=10x4: each digit\'s frequency in 4 chronological quarters (oldest->newest)\n' +
+    '- tr=X>Y:pct: strongest transition pairs\n' +
+    '- nX=t0,t1..t9: P(next digit = t | current = X). E.g. n5=12,11,10,9,8,13,11,10,8,8 means after digit 5, next=5 has 13% chance.\n' +
+    '- n3X=t0,t1..t9: P(digit t appears within 3 ticks | current = X). Multi-step pattern detector.\n' +
+    '- ent=entropyQ1..Q4: Shannon entropy per quarter. 3.32=perfectly uniform. Lower values = more predictable. Falling entropy trend = AI can exploit.\n' +
+    '- st=digit x2:repeatAfterRun%: streak continuation rate\n\n' +
+    'STRATEGY ARCHETYPES — rotate and NAME the one used (e.g. [drought-reversion]):\n' +
+    '- [drought-reversion]: enter when curDrought exceeds p90Gap on a cold-ish digit (mean_gap biased toward that digit)\n' +
+    '- [momentum-quarters]: follow digits trending UP across quarters Q1->Q4\n' +
+    '- [transition-cluster]: exploit high X>Y transition pairs far above 10% baseline\n' +
+    '- [streak-fade]: bet against repeats when streak repeat % is below 15%\n' +
+    '- [parity-skew]: EVEN/ODD when skew > 2pp from 50%\n' +
+    '- [entropy-collapse]: trade when entropy is falling across quarters (system becoming more predictable)\n' +
+    '- [next3-pattern]: use n3X distributions to find digits that cluster in 3-tick windows\n\n' +
+    'RULES:\n' +
+    '- Baseline: every digit=10%, parity=50%, transitions=10% each. Edges must exceed noise (>1.5pp).\n' +
+    '- If a PREVIOUS PLAN lost, pick a DIFFERENT archetype and/or market.\n' +
+    '- Confidence must be honest (50-85 typical). Never claim certainty.\n' +
+    '- Always pick the market with the strongest verified edge — top-scoring market is NOT always best.\n' +
+    '- BREVITY: summary<=180 chars plain words; rationale<=260 chars; monitoring<=140; risk_notes<=120.\n' +
+    '- Respond ONLY minified JSON per schema.';
 
 /** Objective local pre-score so the AI only sees the strongest candidates. */
 function scoreMarket(s: SymbolStats): number {
@@ -264,6 +289,18 @@ function buildDigest(stats: SymbolStats[]): string {
         s.digits.map(d => [d.pct, Math.round(d.mean_gap), Math.round(d.med_gap), Math.round(d.p90_gap), d.cur_gap, d.drift]),
         s.quarters.map(q => q),
         s.transitions.map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
+        // Sequential patterns: after digit d, which next digits are above baseline?
+        s.next_dist.map((row, d) => {
+            const hot = row.map((v, t) => v > 12 ? `${t}:${v}` : '').filter(Boolean).join(',');
+            return hot ? `n${d}=${hot}` : '';
+        }).filter(Boolean).join('|'),
+        // 3-step lookahead: digits that cluster within 3 ticks
+        s.next_3_dist.map((row, d) => {
+            const hot = row.map((v, t) => v > 20 ? `${t}:${v}` : '').filter(Boolean).join(',');
+            return hot ? `n3${d}=${hot}` : '';
+        }).filter(Boolean).join('|'),
+        // Entropy trend: falling = more predictable = exploitable
+        s.entropy_trend.join(','),
         s.streak_repeat_pct.map(x => `${x.digit}x2:${x.pct}`).join('|'),
         s.even_pct, s.hi_pct,
     ]);
@@ -273,7 +310,7 @@ function buildDigest(stats: SymbolStats[]): string {
         return `${s.symbol}(${score}) hot${hot}=${s.digits[hot].pct}% cold${cold}=${s.digits[cold].pct}% even=${s.even_pct}%`;
     });
     return JSON.stringify({
-        L: 'rows=[freq%,meanGap,medGap,p90Gap,curDrought,recentDrift] quarters=10x4 freq% oldest->newest tr=X>Y:pct st=digit x2:repeatAfterRun% base=10%',
+        L: 'rows=[freq%,meanGap,medGap,p90Gap,curDrought,recentDrift] quarters=10x4 freq% oldest->newest tr=X>Y:pct nX=d:pct=P(next=d|cur=X) for d>12% only n3X=d:pct=P(d in next3|cur=X) for d>20% only ent=entropyQ1..Q4 (3.32=uniform,falling=predictable) st=digit x2:repeatAfterRun% base=10%',
         TOP: full,
         REST: rest,
     });
@@ -282,10 +319,13 @@ function buildDigest(stats: SymbolStats[]): string {
 function buildUserPrompt(digest: string): string {
     return (
         'Exact stats (last 1000 ticks). TOP = full detail for highest-scoring markets; REST = brief scan of the others:\n' + digest +
-        '\n\nFind every real pattern/trick, cross-check them, commit to ONE best setup from ANY market (TOP or REST). ' +
+        '\n\nUse nX (1-step transition) and n3X (3-step lookahead) to find sequential patterns. ' +
+        'Falling entropy = system becoming more predictable = stronger edge. ' +
+        'Find every real pattern, cross-check them, commit to ONE best setup from ANY market (TOP or REST). ' +
+        'min_gap MUST be <= 10 ticks — we only act on edges that appear within 10 ticks. ' +
         'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
         '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
-        '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int>=0},' +
+        '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int 0-10},' +
         '"confidence":0-100,"summary":"plain-language plan","rationale":"[archetype] cite exact stats",' +
         '"monitoring":"exact watch steps","risk_notes":"when it fails"}'
     );
@@ -321,7 +361,7 @@ export function normalizePlan(raw: any, focus?: AiFocus): AiPlan {
     const barrier_digit = needsBarrier
         ? (Number.isFinite(barrier) ? Math.min(9, Math.max(0, barrier)) : 5)
         : null;
-    const min_gap = Math.max(0, Math.round(Number(trig.min_gap)) || 0);
+    const min_gap = Math.min(10, Math.max(0, Math.round(Number(trig.min_gap)) || 0));
     const type = tTypes.includes(trig.type) ? trig.type : 'immediate';
     return {
         market,

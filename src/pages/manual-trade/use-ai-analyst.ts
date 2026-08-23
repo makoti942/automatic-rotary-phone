@@ -218,8 +218,11 @@ export function useAiAnalyst() {
         if (slRef.current > 0 && rs.pnl <= -slRef.current) { stopRun(`Stop loss hit (${rs.pnl.toFixed(2)}).`); return; }
 
         // Adaptive loop: rotate signals based on fresh live data.
-        if (consecutiveLosses.current >= 2) {
+        if (profit < 0 && consecutiveLosses.current >= 2) {
             void refreshPlan('2 losses in a row — signal may be exhausted');
+        } else if (profit >= 0) {
+            // Re-analyze after every win: market is evolving, find the next edge.
+            void refreshPlan('Win secured — finding next edge');
         } else if (tradesSinceRefresh.current >= 3) {
             void refreshPlan('3 trades on this plan');
         } else if (Date.now() - lastRefreshAt.current > 5 * 60 * 1000) {
@@ -431,6 +434,13 @@ export function useAiAnalyst() {
     useEffect(() => () => {
         if (tickSubId.current) sendViaNewSystem({ forget: tickSubId.current });
     }, []);
+
+    // Auto-analyze when the panel is first opened so a plan is always ready.
+    useEffect(() => {
+        if (open && !planRef.current && phase === 'idle') {
+            void analyze();
+        }
+    }, [open, phase, analyze]);
 
     return {
         open, setOpen,
