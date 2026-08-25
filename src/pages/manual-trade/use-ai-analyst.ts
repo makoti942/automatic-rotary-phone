@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { onNewSystemMessage, sendViaNewSystem } from '@/auth/NewDerivAuth';
-import { observer } from '@/external/bot-skeleton/utils/observer';
+import { useStore } from '@/hooks/useStore';
+import { LogTypes, MessageTypes } from '@/external/bot-skeleton';
 import {
     VOLATILITY_LIST, computeSymbolStats, requestAiPlan,
     AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
@@ -17,6 +18,7 @@ interface RunState {
 }
 
 const MAX_LOGS = 250;
+const AI_RUN_ID = 'ai-analyst';
 
 export function useAiAnalyst() {
     const [open, setOpen] = useState(false);
@@ -48,16 +50,37 @@ export function useAiAnalyst() {
     const consecutiveLosses = useRef(0);
     const lastRefreshAt = useRef(0);
     const lastAiCallAt = useRef(0);
-    // Groq free tier: keep ≥15s between AI calls so repeated Analyze runs
-    // never trip the per-minute token/request limits.
     const AI_COOLDOWN_MS = 30000;
+
+    // ── MobX store refs ────────────────────────────────────────────────
+    // The store may not be ready on the very first render (StoreProvider
+    // initializes asynchronously). Resolve lazily via refs so the hook
+    // never crashes with "Cannot destructure property ... of null".
+    const rootStore = useStore();
+    const storeRef = useRef<any>(null);
+    storeRef.current = (rootStore as any) ?? storeRef.current;
+
+    // ── Helpers ────────────────────────────────────────────────────────
+    /** Directly push a formatted log entry into the MobX journal store.
+     *  FormatMessage recognises LogTypes.PURCHASE / PROFIT / LOST and
+     *  renders them with the proper colours and currency formatting. */
+    const journalLog = useCallback((logType: string, extra: Record<string, any> = {}) => {
+        try { storeRef.current?.journal?.pushMessage(logType, MessageTypes.SUCCESS, '', extra); } catch (_) {}
+    }, []);
+
+    /** Push a contract-shaped object into the Summary card and the
+     *  Transactions list so it shows up in their respective tabs. */
+    const feedContractStores = useCallback((contractInfo: Record<string, any>) => {
+        try { storeRef.current?.summary_card?.onBotContractEvent(contractInfo); } catch (_) {}
+        try { storeRef.current?.transactions?.onBotContractEvent(contractInfo); } catch (_) {}
+    }, []);
 
     const log = useCallback((msg: string) => {
         if (!mountedRef.current) return;
         const ts = new Date().toLocaleTimeString([], { hour12: false });
         setLogs(prev => [...prev.slice(-(MAX_LOGS - 1)), `[${ts}] ${msg}`]);
         // Push to the app-wide Journal via the established event bus.
-        try { observer.emit('ui.log.notify', { message: `[AI] ${msg}`, sound: undefined }); } catch (_) {}
+        try { storeRef.current?.journal?.pushMessage(`[AI] ${msg}`, MessageTypes.NOTIFY); } catch (_) {}
     }, []);
 
     /**
@@ -72,8 +95,6 @@ export function useAiAnalyst() {
             let done = false;
             const handler = (event: any) => {
                 try {
-                    // The relay dispatches CustomEvent({detail: <raw MessageEvent>}),
-                    // so the payload string lives at event.detail.data.
                     const data = JSON.parse(event.detail.data);
                     const echoed = data?.echo_req?.req_id ?? data?.req_id;
                     if (echoed !== reqId || done) return;
@@ -96,7 +117,6 @@ export function useAiAnalyst() {
     }, []);
 
     // ── ANALYZE ─────────────────────────────────────────────────────────
-    /** Shared evidence collection used by both Analyze and live re-planning. */
     const collectStats = useCallback(async (onProgress?: (s: string) => void): Promise<SymbolStats[]> => {
         const fetchWithRetry = async (sym: VolatilitySymbol): Promise<any> => {
             let lastErr: any;
@@ -142,7 +162,6 @@ export function useAiAnalyst() {
         }
         focusRef.current = focusType;
         try {
-            // Clean slate: forget the previous plan and evidence entirely.
             planRef.current = null;
             setPlan(null);
             setPhase('collecting');
@@ -175,11 +194,6 @@ export function useAiAnalyst() {
     }, [phase, focusType, request, log, collectStats]);
 
     // ── RUN ENGINE ──────────────────────────────────────────────────────
-    /**
-     * Live re-plan: after every few trades, after consecutive losses, or on a
-     * timer, refetch fresh ticks and ask the AI for an updated strategy — the
-     * runner never sticks to one stale signal.
-     */
     const refreshPlan = useCallback(async (reason: string) => {
         if (analyzingRef.current || stopRequested.current) return;
         analyzingRef.current = true;
@@ -202,7 +216,6 @@ export function useAiAnalyst() {
 
     const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
         const rs = runStateRef.current;
-        // De-dupe: the sold push AND the poller may both report the same trade.
         if (rs.openId !== contractId) return;
         rs.openId = null;
         rs.pnl += profit;
@@ -211,17 +224,46 @@ export function useAiAnalyst() {
         if (profit >= 0) { rs.wins += 1; consecutiveLosses.current = 0; }
         else { rs.losses += 1; consecutiveLosses.current += 1; }
         setRun({ ...rs });
+
+        const p = planRef.current;
+
+        // ── Journal tab: PROFIT / LOST entry ──────────────────────────
+        journalLog(
+            profit >= 0 ? LogTypes.PROFIT : LogTypes.LOST,
+            { currency: 'USD', profit },
+        );
+
+        // ── Summary + Transactions tabs: update settled contract ──────
+        feedContractStores({
+            contract_id: contractId,
+            id: contractId,
+            contract_type: p?.contract_type ?? 'DIGITODD',
+            symbol: p?.market ?? 'R_100',
+            underlying: p?.market ?? 'R_100',
+            currency: 'USD',
+            buy_price: stakeRef.current,
+            payout: stakeRef.current + profit,
+            sell_price: stakeRef.current + profit,
+            profit,
+            is_sold: true,
+            is_completed: true,
+            entry_spot: 0,
+            exit_spot: 0,
+            entry_tick: 0,
+            exit_tick: 0,
+            date_start: new Date().toISOString(),
+            transaction_ids: { buy: contractId },
+        });
+
         log(`Settled #${contractId}: ${profit >= 0 ? '+' : ''}${profit.toFixed(2)} USD · session ${rs.pnl >= 0 ? '+' : ''}${rs.pnl.toFixed(2)} (${rs.wins}W/${rs.losses}L)`);
 
         if (stopRequested.current) { stopRun('Stopped by user.'); return; }
         if (tpRef.current > 0 && rs.pnl >= tpRef.current) { stopRun(`Take profit reached (+${rs.pnl.toFixed(2)}).`); return; }
         if (slRef.current > 0 && rs.pnl <= -slRef.current) { stopRun(`Stop loss hit (${rs.pnl.toFixed(2)}).`); return; }
 
-        // Adaptive loop: rotate signals based on fresh live data.
         if (profit < 0 && consecutiveLosses.current >= 2) {
             void refreshPlan('2 losses in a row — signal may be exhausted');
         } else if (profit >= 0) {
-            // Re-analyze after every win: market is evolving, find the next edge.
             void refreshPlan('Win secured — finding next edge');
         } else if (tradesSinceRefresh.current >= 3) {
             void refreshPlan('3 trades on this plan');
@@ -229,16 +271,10 @@ export function useAiAnalyst() {
             void refreshPlan('5 minutes elapsed');
         }
 
-        void maybeFire(); // look for the next entry right away
+        void maybeFire();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    /**
-     * Active settlement polling — the socket's single "sold" push can be
-     * missed, leaving a 3-tick trade hanging forever. Poll every 3s until the
-     * contract confirms as sold (or 2min give-up). Pushes still settle faster
-     * when they arrive; this is the safety net.
-     */
     const pollSettlement = useCallback((contractId: number) => {
         const started = Date.now();
         const timer = setInterval(async () => {
@@ -287,19 +323,44 @@ export function useAiAnalyst() {
             if (!prop?.id) throw new Error(propRes?.error?.message ?? 'No proposal');
             const buyRes: any = await request({ buy: prop.id, price: prop.ask_price });
             if (!buyRes?.buy) throw new Error(buyRes?.error?.message ?? 'Buy failed');
-            rs.openId = buyRes.buy.contract_id;
+            const contractId = buyRes.buy.contract_id;
+            rs.openId = contractId;
             setRun({ ...rs });
-            log(`TRADE #${rs.openId} · ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · $${amount.toFixed(2)} · ${p.duration_ticks}t`);
-            pollSettlement(rs.openId);
+
+            // ── Journal tab: PURCHASE entry ────────────────────────────
+            journalLog(LogTypes.PURCHASE, { transaction_id: contractId });
+
+            // ── Summary + Transactions tabs: new contract ──────────────
+            feedContractStores({
+                contract_id: contractId,
+                id: contractId,
+                contract_type: p.contract_type,
+                symbol: p.market,
+                underlying: p.market,
+                currency: 'USD',
+                buy_price: amount,
+                payout: Number(prop.payout) || amount,
+                profit: 0,
+                is_sold: false,
+                is_completed: false,
+                entry_spot: 0,
+                exit_spot: 0,
+                entry_tick: 0,
+                exit_tick: 0,
+                date_start: new Date().toISOString(),
+                transaction_ids: { buy: contractId },
+            });
+
+            log(`TRADE #${contractId} · ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · $${amount.toFixed(2)} · ${p.duration_ticks}t`);
+            pollSettlement(contractId);
         } catch (e: any) {
             log(`Trade error: ${e?.message ?? 'unknown'} — retrying on next signal.`);
         } finally {
             busyTrade.current = false;
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [request, log, pollSettlement]);
+    }, [request, log, pollSettlement, journalLog, feedContractStores]);
 
-    /** Checks the current live digit stream against the plan's entry trigger. */
     const maybeFire = useCallback(() => {
         const p = planRef.current;
         const rs = runStateRef.current;
@@ -311,7 +372,6 @@ export function useAiAnalyst() {
             if (liveDigits.current[liveDigits.current.length - 1] === t.digit) void executeTrade();
             return;
         }
-        // gap_reached: how many ticks since `digit` last appeared
         let gap = 0;
         for (let i = liveDigits.current.length - 1; i >= 0; i--) {
             if (liveDigits.current[i] === t.digit) break;
@@ -358,8 +418,6 @@ export function useAiAnalyst() {
             setPhase('running');
             log(`RUN started → watching ${p.market} for trigger "${p.entry_trigger.type}" (digit ${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `, min gap ${p.entry_trigger.min_gap}` : ''}). TP ${tpRef.current || '∞'} / SL ${slRef.current || '∞'}.`);
 
-            // Seed gaps from a plain history fetch (can never conflict with
-            // another tab/component's subscription).
             const res: any = await request({
                 ticks_history: p.market, count: 1500, end: 'latest', style: 'ticks',
             });
@@ -368,8 +426,6 @@ export function useAiAnalyst() {
             const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
             liveDigits.current = prices.map(digitsOf);
 
-            // Own live stream on top; if something already streams this symbol,
-            // share it passively instead of failing — pushes reach us anyway.
             try {
                 const sub: any = await request(
                     { ticks_history: p.market, count: 1, end: 'latest', style: 'ticks', subscribe: 1 },
@@ -392,7 +448,6 @@ export function useAiAnalyst() {
         }
     }, [phase, stake, takeProfit, stopLoss, request, log, maybeFire, stopRun]);
 
-    // Global listener: live ticks for the running market + settlements of OUR contracts
     useEffect(() => {
         mountedRef.current = true;
         const unsub = onNewSystemMessage((event: MessageEvent) => {
@@ -427,10 +482,8 @@ export function useAiAnalyst() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // phaseRef mirrors state for use inside stable listener
     useEffect(() => { phaseRef.current = phase; }, [phase]);
 
-    // Cleanup subscription on unmount
     useEffect(() => () => {
         if (tickSubId.current) sendViaNewSystem({ forget: tickSubId.current });
     }, []);
