@@ -191,17 +191,6 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
         if (next3Count[d] > 0) for (let t = 0; t < 10; t++) next3Dist[d][t] = r1((next3Hit[d][t] / next3Count[d]) * 100);
     }
 
-    // Shannon entropy per quarter — measures predictability
-    const entropyTrend: number[] = [];
-    for (let q = 0; q < 4; q++) {
-        let H = 0;
-        for (let d = 0; d < 10; d++) {
-            const p = quarters[d][q] / 100;
-            if (p > 0) H -= p * Math.log2(p);
-        }
-        entropyTrend.push(Math.round(H * 100) / 100); // max = 3.32 (uniform), lower = more predictable
-    }
-
     // Quarterly evolution: split the window into 4 equal slices, oldest →
     // newest, and measure each digit's frequency inside every slice.
     const qSize = Math.floor(n / 4);
@@ -213,6 +202,17 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
         if (sliceLen <= 0) continue;
         for (let i = start; i < end; i++) quarters[digits[i]][q]++;
         for (let d = 0; d < 10; d++) quarters[d][q] = r1((quarters[d][q] / sliceLen) * 100);
+    }
+
+    // Shannon entropy per quarter — measures predictability (MUST come after quarters)
+    const entropyTrend: number[] = [];
+    for (let q = 0; q < 4; q++) {
+        let H = 0;
+        for (let d = 0; d < 10; d++) {
+            const p = quarters[d][q] / 100;
+            if (p > 0) H -= p * Math.log2(p);
+        }
+        entropyTrend.push(Math.round(H * 100) / 100);
     }
 
     return {
@@ -241,11 +241,11 @@ const SYS_PROMPT =
     '- DIGITUNDER: win if exit digit < barrier. barrier MUST be 1-9 (under 0 impossible). Payout ~2x.\n' +
     '- DIGITEVEN / DIGITODD: win if parity matches. Payout ~2x.\n' +
     '- Duration: 1-5 ticks. Entry_trigger determines WHEN to place the trade (see entry types below).\n\n' +
-    'ENTRY TRIGGER TYPES:\n' +
-    '- immediate: place trade right now.\n' +
-    '- last_digit_equals: wait until the last tick digit matches the trigger digit, then place.\n' +
-    '- gap_reached: wait until a digit\'s current drought (curDrought) reaches min_gap ticks, then trade that digit.\n' +
-    'CRITICAL: min_gap MUST be <= 10 ticks. We only trade if the edge appears within 10 ticks. Long waits destroy edge.\n\n' +
+    'ENTRY TRIGGER TYPES (prefer immediate or last_digit_equals — gap_reached is last resort):\n' +
+    '- immediate: place trade right now. MOST RELIABLE — no timing risk.\n' +
+    '- last_digit_equals: wait until the last tick digit matches the trigger digit, then place. GOOD — precise entry.\n' +
+    '- gap_reached: wait until a digit\'s current drought reaches min_gap ticks. USE SPARINGLY — timing is unreliable.\n' +
+    'CRITICAL: ALWAYS prefer "immediate" or "last_digit_equals". gap_reached is LAST RESORT ONLY. Timing-based entries are unreliable on RNG.\n\n' +
     'DATA LEGEND (for each market\'s rows):\n' +
     '- rows=[freq%, meanGap, medGap, p90Gap, curDrought, recentDrift]\n' +
     '- quarters=10x4: each digit\'s frequency in 4 chronological quarters (oldest->newest)\n' +
@@ -322,7 +322,7 @@ function buildUserPrompt(digest: string): string {
         '\n\nUse nX (1-step transition) and n3X (3-step lookahead) to find sequential patterns. ' +
         'Falling entropy = system becoming more predictable = stronger edge. ' +
         'Find every real pattern, cross-check them, commit to ONE best setup from ANY market (TOP or REST). ' +
-        'min_gap MUST be <= 10 ticks — we only act on edges that appear within 10 ticks. ' +
+        'ALWAYS prefer entry_trigger type "immediate" or "last_digit_equals" — timing-based gap entries are unreliable. ' +
         'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
         '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
         '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int 0-10},' +

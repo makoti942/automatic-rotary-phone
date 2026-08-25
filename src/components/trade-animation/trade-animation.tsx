@@ -74,7 +74,7 @@ const TradeAnimation = observer(({ className, should_show_overlay }: TTradeAnima
         if (shouldDisable) {
             setTimeout(() => {
                 setShouldDisable(false);
-            }, 1000);
+            }, 100);
         }
     }, [shouldDisable, is_stop_button_visible]);
 
