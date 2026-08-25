@@ -49,6 +49,7 @@ import './main.scss';
 import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
+import TradingViewComponent from '@/components/trading-view-chart/trading-view';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
@@ -85,7 +86,7 @@ const AppWrapper = observer(() => {
     const { clear } = summary_card;
     const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -479,6 +480,23 @@ const AppWrapper = observer(() => {
                                 id='id-manual-trade'
                             >
                                 <ManualTrade />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedChartLineCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Trading View' />
+                                    </>
+                                }
+                                id='id-trading-view'
+                            >
+                                <div style={{ width: '100%', height: '100%' }}>
+                                    <TradingViewComponent />
+                                </div>
                             </div>
                             <div
                                 label={
