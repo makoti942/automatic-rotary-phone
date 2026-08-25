@@ -1,18 +1,20 @@
 const TradingViewComponent = () => {
     return (
-        <iframe
-            id='trading-view-iframe'
+        <div
+            className='trading-view-fullscreen'
             style={{
+                position: 'relative',
                 width: '100%',
-                height: '100%',
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                border: 'none',
+                height: 'var(--tab-content-height, calc(100vh - 9rem))',
                 backgroundColor: '#fff',
             }}
-            src='https://charts.deriv.com/deriv?hide-signup=true'
-        />
+        >
+            <iframe
+                id='trading-view-iframe'
+                style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                src='https://charts.deriv.com/deriv?hide-signup=true'
+            />
+        </div>
     );
 };
 
