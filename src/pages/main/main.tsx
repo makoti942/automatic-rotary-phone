@@ -494,9 +494,7 @@ const AppWrapper = observer(() => {
                                 }
                                 id='id-trading-view'
                             >
-                                <div style={{ width: '100%', height: '100%' }}>
-                                    <TradingViewComponent />
-                                </div>
+                                <TradingViewComponent />
                             </div>
                             <div
                                 label={

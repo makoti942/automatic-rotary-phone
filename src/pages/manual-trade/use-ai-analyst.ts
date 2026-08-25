@@ -50,7 +50,7 @@ export function useAiAnalyst() {
     const lastAiCallAt = useRef(0);
     // Groq free tier: keep ≥15s between AI calls so repeated Analyze runs
     // never trip the per-minute token/request limits.
-    const AI_COOLDOWN_MS = 15000;
+    const AI_COOLDOWN_MS = 30000;
 
     const log = useCallback((msg: string) => {
         if (!mountedRef.current) return;
@@ -434,13 +434,6 @@ export function useAiAnalyst() {
     useEffect(() => () => {
         if (tickSubId.current) sendViaNewSystem({ forget: tickSubId.current });
     }, []);
-
-    // Auto-analyze when the panel is first opened so a plan is always ready.
-    useEffect(() => {
-        if (open && !planRef.current && phase === 'idle') {
-            void analyze();
-        }
-    }, [open, phase, analyze]);
 
     return {
         open, setOpen,
