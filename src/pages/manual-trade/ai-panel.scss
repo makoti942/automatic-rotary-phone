@@ -45,7 +45,6 @@ $ai-loss: #dc2626;
     box-shadow: 0 16px 50px rgba(15, 23, 42, 0.28);
     overflow: hidden;
     transform: translate(-50%, -50%);
-    touch-action: none;
 
     @media (max-width: 420px) {
         width: calc(100vw - 12px);
@@ -63,6 +62,7 @@ $ai-loss: #dc2626;
     cursor: grab;
     user-select: none;
     flex-shrink: 0;
+    touch-action: none;
     &:active { cursor: grabbing; }
 }
 
