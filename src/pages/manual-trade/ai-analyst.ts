@@ -332,7 +332,7 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
 }
 
 /** Simulate a plan against collected tick prices. Returns { winRate, pnl, trades }.
- *  The `prices` array is the raw price series for the plan's market. */
+ *  Context-aware: only trades after the AI's specified context digit appears. */
 export function backtestPlan(
     plan: AiPlan,
     prices: number[],
@@ -341,21 +341,35 @@ export function backtestPlan(
     const digits = prices.map(p => getDigit(p, pip)).filter(d => d >= 0 && d <= 9);
     const t = plan.entry_trigger;
     const dur = plan.duration_ticks;
-    const stake = 1; // normalized
+    const stake = 1;
     const payouts: Record<AiContractType, number> = {
         DIGITMATCH: 9, DIGITDIFF: 1.9, DIGITOVER: 2,
         DIGITUNDER: 2, DIGITEVEN: 2, DIGITODD: 2,
     };
     const payout = payouts[plan.contract_type] ?? 2;
+    const barrier = plan.barrier_digit ?? 5;
+
+    // Context-aware: extract context digit from rationale if mentioned
+    // e.g. "after digit 3" → contextDigit = 3
+    let contextDigit = -1;
+    const ctxMatch = (plan.rationale + ' ' + plan.summary).match(/after digit (\d)/i);
+    if (ctxMatch) contextDigit = parseInt(ctxMatch[1]);
+
     let wins = 0, losses = 0, pnl = 0;
     let i = 0;
-    while (i < digits.length - dur) {
+    while (i < digits.length - dur - 1) {
+        // Entry: last_digit_equals
         if (t.type === 'last_digit_equals') {
+            // Must see trigger digit at position i
             if (digits[i] !== t.digit) { i++; continue; }
+            // If context digit specified, check the tick BEFORE the trigger
+            if (contextDigit >= 0 && i > 0 && digits[i - 1] !== contextDigit) {
+                i++; continue;
+            }
         }
         i++;
-        const exitDigit = digits[i + dur - 1] ?? digits[digits.length - 1];
-        const barrier = plan.barrier_digit ?? 5;
+        const exitIdx = Math.min(i + dur - 1, digits.length - 1);
+        const exitDigit = digits[exitIdx];
         let win = false;
         switch (plan.contract_type) {
             case 'DIGITMATCH': win = exitDigit === barrier; break;
@@ -367,7 +381,7 @@ export function backtestPlan(
         }
         if (win) { wins++; pnl += stake * (payout - 1); }
         else { losses++; pnl -= stake; }
-        i += dur; // skip past the trade
+        i += dur;
     }
     const total = wins + losses;
     return {
@@ -378,36 +392,60 @@ export function backtestPlan(
 }
 
 const SYS_PROMPT =
-    'You are an elite quant analyst for Deriv synthetic markets. Analyse digit sequences to find exploitable biases.\n\n' +
-    'CONTRACT RULES (exit digit decides win/loss):\n' +
-    '- DIGITMATCH: win if exit==barrier. Payout ~9x. Need >11.1%.\n' +
-    '- DIGITDIFF: win if exit!=barrier. Payout ~1.9x. Need >52.6%.\n' +
-    '- DIGITOVER: win if exit>barrier (0-8). Payout ~2x.\n' +
-    '- DIGITUNDER: win if exit<barrier (1-9). Payout ~2x.\n' +
-    '- DIGITEVEN/DIGITODD: win if parity matches. Payout ~2x.\n' +
+    'You are an elite quant analyst for Deriv synthetic markets. You crack the matrix of digit sequences.\n\n' +
+    '## CONTRACT RULES (exit digit decides win/loss)\n' +
+    '| Type | Win condition | Payout | Break-even |\n' +
+    '|------|---------------|--------|------------|\n' +
+    '| DIGITMATCH | exit==barrier | ~9x | >11.1% |\n' +
+    '| DIGITDIFF | exit!=barrier | ~1.9x | >52.6% |\n' +
+    '| DIGITOVER | exit>barrier (0-8) | ~2x | >50% |\n' +
+    '| DIGITUNDER | exit<barrier (1-9) | ~2x | >50% |\n' +
+    '| DIGITEVEN | exit%2==0 | ~2x | >50% |\n' +
+    '| DIGITODD | exit%2==1 | ~2x | >50% |\n' +
     'Duration: 1-5 ticks.\n\n' +
-    'ENTRY: ALWAYS use entry_trigger.type="last_digit_equals". NEVER use "immediate" or "gap_reached".\n' +
-    'You MUST predict a specific trigger digit (0-9) the user should watch for.\n' +
-    'The trigger digit is the MOST IMPORTANT part — it tells the user exactly what to watch.\n\n' +
-    'DATA: freq=frequency%, drought=ticks since last, drift=recent change,\n' +
-    'trans=top transitions, nX=1-step Markov, n3X=3-step lookahead,\n' +
-    'ent=entropy trend, auto=autocorrelation, chi2=randomness test,\n' +
-    'mom=momentum, pairs=top digit pairs, even=parity%.\n\n' +
-    'STRATEGIES (name in rationale):\n' +
-    '- [frequency-exploit]: DIGITMATCH on freq>11% digit (EV>99%)\n' +
-    '- [anti-frequency]: DIGITDIFF on freq<9% digit (EV>101%)\n' +
-    '- [reversion]: Bet on high-freq digit after long drought\n' +
-    '- [momentum]: Follow digit trending UP across quarters\n' +
-    '- [transition]: Exploit strong X>Y transition (>15%)\n' +
-    '- [entropy-collapse]: Trade when entropy falling\n' +
-    '- [pair-pattern]: Exploit frequent digit pairs\n' +
-    '- [chi2-exploit]: Trade when chi2>17 (non-random)\n\n' +
-    'RULES:\n' +
-    '- Cross-check with 2+ independent indicators. Edges must exceed 1.5pp from baseline.\n' +
-    '- If previous plan lost, use DIFFERENT archetype and/or market.\n' +
-    '- Confidence 50-85. Think step-by-step before deciding.\n' +
-    '- Summary MUST start with: "Watch for digit X on [market]" where X is your trigger digit.\n' +
-    '- BREVITY: summary<=180 chars; rationale<=260 chars; monitoring<=140; risk_notes<=120.\n' +
+    '## THE MATRIX: HOW DIGITS BEHAVE\n\n' +
+    'Digits are NOT random. They follow patterns:\n\n' +
+    '### 1. Markov Transitions (nX data)\n' +
+    'P(next digit = Y | current digit = X). This is the KEY insight.\n' +
+    'If digit 6 appears, what comes next? nX shows conditional probabilities.\n' +
+    'Example: nX "6>7:18" means after 6, digit 7 appears 18% (vs 10% baseline = 8pp edge!).\n\n' +
+    '### 2. Multi-Step Lookahead (n3X data)\n' +
+    'P(digit Y appears within next 3 ticks | current digit = X).\n' +
+    'Example: n3X "6>7:35" means within 3 ticks after 6, digit 7 appears 35%.\n\n' +
+    '### 3. Drought Analysis\n' +
+    'drought[X] = ticks since digit X last appeared. If drought > mean_gap, digit is overdue.\n\n' +
+    '### 4. Frequency Analysis\n' +
+    'freq[X] = overall frequency (baseline 10%). >11% = overrepresented. <9% = underrepresented.\n\n' +
+    '### 5. Entropy Trend\n' +
+    'ent=[Q1,Q2,Q3,Q4]. Falling = more predictable = exploitable. Rising = more random.\n\n' +
+    '### 6. Autocorrelation\n' +
+    'auto=[lag1,lag2,lag3]. Positive = momentum. Negative = oscillation.\n\n' +
+    '### 7. Statistical Significance\n' +
+    'chi2 > 17 = non-random distribution (p<0.05). Higher = stronger patterns.\n\n' +
+    '### 8. Digit Pairs\n' +
+    'pairs = top consecutive pairs X>Y. If (3,7) appears 15% vs 10% baseline, strong pattern.\n\n' +
+    '## YOUR STRATEGY PROCESS\n' +
+    '1. Find best market: highest chi2 + falling entropy + strong autocorrelation\n' +
+    '2. Find best digit: highest freq + overdue drought + strong transitions\n' +
+    '3. Find best entry: use nX/n3X to predict what comes after the current digit\n' +
+    '4. Cross-check: confirm with 2+ independent indicators\n' +
+    '5. Calculate EV: if positive, trade; if negative, skip\n\n' +
+    '## ENTRY RULE\n' +
+    'ALWAYS use entry_trigger.type="last_digit_equals". Wait for trigger digit, then trade.\n' +
+    'The trigger digit must be chosen based on Markov transitions (nX data).\n' +
+    'You MUST specify the context digit in rationale: "after digit X, digit Y appears Z%".\n\n' +
+    '## EXAMPLE THINKING\n' +
+    '"R_100: chi2=22.3 (significant!), ent falling 3.28→3.05, auto[0]=0.05 (momentum).\n' +
+    'Digit 7 freq=12.5% (2.5pp above baseline). After digit 3, digit 7 appears 18% (nX: 3>7:18) = 8pp edge!\n' +
+    'Digit 7 drought=12, mean_gap=8 → overdue. n3X: 3>7:35 → within 3 ticks, 35% chance.\n' +
+    'CONCLUSION: DIGITMATCH on digit 7, barrier 7, duration 1 tick.\n' +
+    'Wait for digit 3 to appear, then watch for digit 7."\n\n' +
+    '## RULES\n' +
+    '- Cross-check with 2+ indicators. Edges >1.5pp from baseline.\n' +
+    '- If previous plan lost, use DIFFERENT archetype/market.\n' +
+    '- Confidence 50-85.\n' +
+    '- Summary MUST start with: "Watch for digit X on [market]".\n' +
+    '- BREVITY: summary<=180, rationale<=260, monitoring<=140, risk_notes<=120.\n' +
     '- Respond ONLY minified JSON.';
 
 /** Objective local pre-score — higher = stronger exploitable edge. */
@@ -424,49 +462,66 @@ function scoreMarket(s: SymbolStats): number {
 }
 
 function buildDigest(stats: SymbolStats[]): string {
-    // Top 4 markets get full detail; the rest get compressed one-liners.
-    // Keeps total payload under the 8K TPM limit.
+    // ALL 10 markets — compact format focused on sequential patterns.
+    // ~2k tokens total. Only significant values shown.
     const scored = stats.map(s => ({ s, score: scoreMarket(s) })).sort((a, b) => b.score - a.score);
-    const full = scored.slice(0, 4).map(({ s, score }) => ({
-        sym: s.symbol, score,
-        freq: s.digits.map(d => d.pct),
-        drought: s.digits.map(d => d.cur_gap),
-        drift: s.digits.map(d => d.drift),
-        trans: s.transitions.slice(0, 3).map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
-        nX: s.next_dist.map((row, d) => {
+    return JSON.stringify(scored.map(({ s, score }) => {
+        // freq: only digits ≠ 10% baseline (±1pp)
+        const freq = s.digits.map((d, i) => d.pct > 11 || d.pct < 9 ? `${i}=${d.pct}` : '').filter(Boolean).join('|');
+        // drought: only digits where drought > mean_gap (overdue)
+        const drt = s.digits.map((d, i) => d.mean_gap > 0 && d.cur_gap > d.mean_gap ? `${i}=${d.cur_gap}t(>${Math.round(d.mean_gap)})` : '').filter(Boolean).join('|');
+        // drift: only digits with >2pp change
+        const drift = s.digits.map((d, i) => Math.abs(d.drift) > 2 ? `${i}:${d.drift > 0 ? '+' : ''}${d.drift}` : '').filter(Boolean).join('|');
+        // nX: Markov transitions with >12% (2pp above baseline)
+        const nX = s.next_dist.map((row, d) => {
             const hot = row.map((v, t) => v > 12 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `${d}=${hot}` : '';
-        }).filter(Boolean).join('|'),
-        n3X: s.next_3_dist.map((row, d) => {
+            return hot ? `${d}>${hot}` : '';
+        }).filter(Boolean).join('|');
+        // n3X: 3-step lookahead with >20%
+        const n3X = s.next_3_dist.map((row, d) => {
             const hot = row.map((v, t) => v > 20 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `${d}=${hot}` : '';
-        }).filter(Boolean).join('|'),
-        ent: s.entropy_trend,
-        auto: s.autocorr,
-        chi2: s.chi2,
-        mom: s.momentum,
-        pairs: s.top_pairs.slice(0, 3).map(p => `${p.from}>${p.to}:${p.pct}`).join('|'),
-        even: s.even_pct,
+            return hot ? `${d}>${hot}` : '';
+        }).filter(Boolean).join('|');
+        // pairs: top 3 digit pairs
+        const pairs = s.top_pairs.slice(0, 3).map(p => `${p.from}>${p.to}:${p.pct}`).join('|');
+        return {
+            s: s.symbol, sc: score,
+            f: freq || 'all~10%',
+            drt: drt || 'none overdue',
+            drift: drift || 'none',
+            nX, n3X,
+            e: s.entropy_trend.join(','),
+            c: s.chi2,
+            a: s.autocorr.join(','),
+            pairs,
+            ev: s.even_pct,
+        };
     }));
-    const rest = scored.slice(4).map(({ s, score }) => {
-        let hot = 0, cold = 0;
-        s.digits.forEach((d, i) => { if (d.pct > s.digits[hot].pct) hot = i; if (d.pct < s.digits[cold].pct) cold = i; });
-        const entDrop = s.entropy_trend[0] - s.entropy_trend[3];
-        return `${s.symbol}(${score}) f${hot}=${s.digits[hot].pct}% d${cold}=${s.digits[cold].cur_gap}t chi2=${s.chi2} mom=${s.momentum} entΔ=${entDrop > 0 ? '+' : ''}${entDrop}`;
-    });
-    return JSON.stringify({ TOP: full, REST: rest });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
-        'Tick statistics from last 1000 ticks. TOP=full detail for top 4, REST=summary for others:\n' + digest +
-        '\n\nAnalyse ALL markets. Cross-check with 2+ indicators (freq, nX, n3X, ent, auto, chi2, pairs).\n' +
-        'Commit to ONE best setup from ANY market. Pick the strongest VERIFIED edge.\n' +
-        'Think step-by-step before deciding. Consider multiple strategies then pick the highest EV.\n' +
+        'Tick statistics from last 1000 ticks across all 10 markets (sorted by edge score):\n' + digest +
+        '\n\n## KEY FIELDS\n' +
+        '- f: digit frequency (%). Only digits ≠10% shown. >11%=overrepresented, <9%=underrepresented.\n' +
+        '- drt: drought. Only overdue digits shown (cur_gap > mean_gap).\n' +
+        '- drift: recent-50 vs overall frequency change. >2pp = significant shift.\n' +
+        '- nX: Markov transitions. "3>7:18" = after digit 3, digit 7 appears 18% (vs 10% baseline = 8pp edge!).\n' +
+        '- n3X: 3-step lookahead. "3>7:35" = within 3 ticks after 3, digit 7 appears 35%.\n' +
+        '- e: entropy per quarter. Falling = more predictable.\n' +
+        '- c: chi-squared. >17 = statistically significant non-randomness.\n' +
+        '- a: autocorrelation lags 1,2,3. Positive = momentum, negative = oscillation.\n' +
+        '- pairs: top consecutive digit pairs. "3>7:15" = pair (3,7) appears 15%.\n\n' +
+        '## YOUR TASK\n' +
+        '1. Find the market with strongest sequential pattern (highest nX edge + significant chi2)\n' +
+        '2. Find the digit pair with strongest conditional probability (nX or n3X)\n' +
+        '3. Cross-check: confirm with entropy trend + autocorrelation + pairs\n' +
+        '4. Calculate expected value: if positive → trade, if negative → skip\n' +
+        '5. Specify the FULL sequence in rationale: "after digit X → digit Y appears Z% → trade DIGITMATCH on Y"\n\n' +
         'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
         '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
         '"entry_trigger":{"type":"last_digit_equals","digit":0-9,"min_gap":0},' +
-        '"confidence":50-85,"summary":"Watch for digit X on [market]","rationale":"[archetype] cite exact stats",' +
+        '"confidence":50-85,"summary":"Watch for digit X on [market]","rationale":"[archetype] after digit X, Y appears Z% (nX: X>Y:Z). cite chi2/ent/auto",' +
         '"monitoring":"<140 chars","risk_notes":"<120 chars"}'
     );
 }
