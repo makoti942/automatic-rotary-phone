@@ -3,7 +3,7 @@ import { onNewSystemMessage, sendViaNewSystem } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { LogTypes, MessageTypes } from '@/external/bot-skeleton';
 import {
-    VOLATILITY_LIST, computeSymbolStats, requestAiPlan,
+    VOLATILITY_LIST, computeSymbolStats, requestAiPlan, backtestPlan,
     AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
 } from './ai-analyst';
 
@@ -48,6 +48,8 @@ export function useAiAnalyst() {
     const tradesSinceRefresh = useRef(0);
     const consecutiveLosses = useRef(0);
     const lastRefreshAt = useRef(0);
+    const lastTickPrice = useRef(0);
+    const rawPricesMap = useRef<Map<string, number[]>>(new Map());
 
     // ── MobX store refs ────────────────────────────────────────────────
     // The store may not be ready on the very first render (StoreProvider
@@ -142,6 +144,7 @@ export function useAiAnalyst() {
             results.forEach((res: any, j: number) => {
                 const prices: number[] = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite);
                 if (prices.length < 100) throw new Error(`${slice[j]}: only ${prices.length} ticks returned`);
+                rawPricesMap.current.set(slice[j], prices);
                 stats.push(computeSymbolStats(slice[j], prices));
             });
         }
@@ -191,6 +194,29 @@ export function useAiAnalyst() {
             }
             if (!p) throw new Error('AI returned no plan after retries.');
 
+            // ── Backtest validation: simulate against collected ticks ──
+            const marketPrices = rawPricesMap.current.get(p.market);
+            if (marketPrices && marketPrices.length > 50) {
+                const bt = backtestPlan(p, marketPrices);
+                log(`Backtest: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl >= 0 ? '+' : ''}${bt.pnl.toFixed(2)}`);
+                if (bt.pnl < 0 && bt.trades >= 3) {
+                    log('Backtest negative — re-prompting with rejection feedback…');
+                    setProgress('Backtest failed — asking AI for a better setup…');
+                    try {
+                        const p2 = await requestAiPlan(stats, focusRef.current,
+                            `Previous plan backtested NEGATIVE: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl}. Use a completely different archetype and/or market.`);
+                        if (p2) {
+                            const bt2 = backtestPlan(p2, rawPricesMap.current.get(p2.market) ?? marketPrices);
+                            log(`Backtest #2: ${bt2.trades} trades, ${bt2.winRate}% win, P&L ${bt2.pnl >= 0 ? '+' : ''}${bt2.pnl.toFixed(2)}`);
+                            if (bt2.pnl > bt.pnl) { p = p2; log('Backtest #2 better — using new plan.'); }
+                            else { log('Backtest #2 worse — keeping original plan.'); }
+                        }
+                    } catch (e: any) {
+                        log(`Re-prompt failed (${e?.message}) — keeping original plan.`);
+                    }
+                }
+            }
+
             planRef.current = p;
             setPlan(p);
             setPhase('ready');
@@ -226,7 +252,7 @@ export function useAiAnalyst() {
         }
     }, [collectStats, log]);
 
-    const settleAndContinue = useCallback(async (contractId: number, profit: number) => {
+    const settleAndContinue = useCallback(async (contractId: number, profit: number, poc?: any) => {
         const rs = runStateRef.current;
         if (rs.openId !== contractId) return;
         rs.openId = null;
@@ -246,6 +272,8 @@ export function useAiAnalyst() {
         );
 
         // ── Summary + Transactions tabs: update settled contract ──────
+        const exitSpot = Number(poc?.exit_spot) || lastTickPrice.current || 0;
+        const entrySpot = Number(poc?.entry_spot) || lastTickPrice.current || 0;
         feedContractStores({
             contract_id: contractId,
             id: contractId,
@@ -259,10 +287,10 @@ export function useAiAnalyst() {
             profit,
             is_sold: true,
             is_completed: true,
-            entry_spot: 0,
-            exit_spot: 0,
-            entry_tick: 0,
-            exit_tick: 0,
+            entry_spot: entrySpot,
+            exit_spot: exitSpot,
+            entry_tick: entrySpot,
+            exit_tick: exitSpot,
             date_start: new Date().toISOString(),
             transaction_ids: { buy: contractId },
         });
@@ -310,7 +338,7 @@ export function useAiAnalyst() {
                 if (poc?.is_sold && runStateRef.current.openId === contractId) {
                     clearInterval(timer);
                     log(`#${contractId} settled via polling (${(Number(poc.profit) >= 0 ? '+' : '')}${Number(poc.profit).toFixed(2)}).`);
-                    void settleAndContinue(contractId, Number(poc.profit ?? 0));
+                    void settleAndContinue(contractId, Number(poc.profit ?? 0), poc);
                 }
             } catch (_) { /* transient — keep polling */ }
         }, 3000);
@@ -343,6 +371,7 @@ export function useAiAnalyst() {
             journalLog(LogTypes.PURCHASE, { transaction_id: contractId });
 
             // ── Summary + Transactions tabs: new contract ──────────────
+            const entryPrice = lastTickPrice.current || 0;
             feedContractStores({
                 contract_id: contractId,
                 id: contractId,
@@ -355,9 +384,9 @@ export function useAiAnalyst() {
                 profit: 0,
                 is_sold: false,
                 is_completed: false,
-                entry_spot: 0,
+                entry_spot: entryPrice,
                 exit_spot: 0,
-                entry_tick: 0,
+                entry_tick: entryPrice,
                 exit_tick: 0,
                 date_start: new Date().toISOString(),
                 transaction_ids: { buy: contractId },
@@ -469,9 +498,11 @@ export function useAiAnalyst() {
                 if (data.msg_type === 'tick' && data.tick && phaseRef.current === 'running' && p) {
                     if (data.tick.symbol !== p.market) return;
                     const pip = volPipSize(p.market as VolatilitySymbol);
-                    const d = Number(Number(data.tick.quote).toFixed(pip).slice(-1));
+                    const tickPrice = Number(data.tick.quote);
+                    const d = Number(tickPrice.toFixed(pip).slice(-1));
                     if (d >= 0 && d <= 9) {
                         liveDigits.current.push(d);
+                        lastTickPrice.current = tickPrice;
                         if (liveDigits.current.length > 3000) liveDigits.current.shift();
                         void maybeFire();
                     }
@@ -484,7 +515,7 @@ export function useAiAnalyst() {
                     list.forEach((poc: any) => {
                         const oid = runStateRef.current.openId;
                         if (oid && poc.contract_id === oid && poc.is_sold) {
-                            void settleAndContinue(Number(poc.contract_id), Number(poc.profit ?? 0));
+                            void settleAndContinue(Number(poc.contract_id), Number(poc.profit ?? 0), poc);
                         }
                     });
                 }
