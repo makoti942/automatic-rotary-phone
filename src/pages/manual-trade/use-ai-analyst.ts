@@ -4,7 +4,7 @@ import { useStore } from '@/hooks/useStore';
 import { LogTypes, MessageTypes } from '@/external/bot-skeleton';
 import {
     VOLATILITY_LIST, computeSymbolStats, requestAiPlan, backtestPlan,
-    AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus, AiContractType,
+    AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
 } from './ai-analyst';
 
 export type AiPhase = 'idle' | 'collecting' | 'analyzing' | 'ready' | 'running' | 'error';
@@ -33,9 +33,9 @@ export function useAiAnalyst() {
     const [run, setRun] = useState<RunState>({ pnl: 0, trades: 0, wins: 0, losses: 0, openId: null });
     const [autoRun, setAutoRun] = useState(false);
     const [stakeMultiplierEnabled, setStakeMultiplierEnabled] = useState(false);
-    const [allowedTypes, setAllowedTypes] = useState<Set<AiContractType>>(
-        new Set(['DIGITDIFF', 'DIGITMATCH', 'DIGITOVER', 'DIGITUNDER']),
-    );
+    const [allowedTypes, setAllowedTypes] = useState<Record<string, boolean>>({
+        DIGITDIFF: true, DIGITMATCH: true, DIGITOVER: true, DIGITUNDER: true,
+    });
     const autoRunRef = useRef(false);
     const stakeMultiplierRef = useRef(false);
     const currentStakeRef = useRef(0);
@@ -69,12 +69,11 @@ export function useAiAnalyst() {
     storeRef.current = (rootStore as any) ?? storeRef.current;
 
     // ── Helpers ────────────────────────────────────────────────────────
-    const toggleAllowedType = useCallback((t: AiContractType) => {
+    const toggleAllowedType = useCallback((t: string) => {
         setAllowedTypes(prev => {
-            const next = new Set(prev);
-            if (next.has(t)) { if (next.size > 1) next.delete(t); }
-            else next.add(t);
-            return next;
+            const count = Object.values(prev).filter(Boolean).length;
+            if (prev[t] && count <= 1) return prev;
+            return { ...prev, [t]: !prev[t] };
         });
     }, []);
 

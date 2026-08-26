@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useAiAnalyst } from './use-ai-analyst';
-import { AiFocus, AiContractType } from './ai-analyst';
+import { AiFocus } from './ai-analyst';
 import './ai-panel.scss';
 
 const PHASE_LABEL: Record<string, string> = {
@@ -20,7 +20,7 @@ const FOCUS_LABELS: Record<AiFocus, string> = {
     'even-odd': 'Even/Odd',
 };
 
-const TYPE_LABELS: { key: AiContractType; label: string }[] = [
+const TYPE_LABELS = [
     { key: 'DIGITMATCH', label: 'Match' },
     { key: 'DIGITDIFF', label: 'Differ' },
     { key: 'DIGITOVER', label: 'Over' },
@@ -172,7 +172,7 @@ export const AiPanel = observer(() => {
                                 <label key={t.key} className='ai-type-cb'>
                                     <input
                                         type='checkbox'
-                                        checked={ai.allowedTypes.has(t.key)}
+                                        checked={!!ai.allowedTypes[t.key]}
                                         onChange={() => ai.toggleAllowedType(t.key)}
                                     />
                                     <span>{t.label}</span>

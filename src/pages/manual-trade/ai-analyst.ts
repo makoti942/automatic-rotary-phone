@@ -585,13 +585,14 @@ export async function requestAiPlan(
     focus?: AiFocus,
     prevPlan?: string,
     logFn?: (msg: string) => void,
-    allowedTypes?: Set<AiContractType>,
+    allowedTypes?: Record<string, boolean>,
 ): Promise<AiPlan> {
     const focusLine = focus && focus !== 'auto'
         ? `\nHARD CONSTRAINT: contract_type MUST be one of ${FOCUS_TYPES[focus].join(' or ')} — pick the stronger of the two from the data.`
         : '';
-    const typesLine = allowedTypes && allowedTypes.size < 4
-        ? `\nALLOWED CONTRACT TYPES ONLY: ${[...allowedTypes].join(', ')}. Do NOT use any other type.`
+    const activeTypes = allowedTypes ? Object.entries(allowedTypes).filter(([, v]) => v).map(([k]) => k) : [];
+    const typesLine = activeTypes.length > 0 && activeTypes.length < 4
+        ? `\nALLOWED CONTRACT TYPES ONLY: ${activeTypes.join(', ')}. Do NOT use any other type.`
         : '';
     const prevLine = prevPlan
         ? `\nPREVIOUS PLAN: ${prevPlan}. If it lost more than it won, use a DIFFERENT archetype and/or market unless the fresh numbers overwhelmingly justify a repeat. Suggest a genuinely new idea when the data allows.`
