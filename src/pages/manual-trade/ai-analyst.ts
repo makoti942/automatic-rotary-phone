@@ -532,10 +532,10 @@ const FOCUS_TYPES: Record<Exclude<AiFocus, 'auto'>, AiContractType[]> = {
  * never in the repo or bundle). If no function exists (local static preview),
  * falls back to a direct Groq call with an optional localStorage key.
  */
-async function callGroq(payload: any): Promise<any> {
+async function callGroq(payload: any, endpoint = '/api/groq'): Promise<any> {
     // 1) Serverless proxy (production)
     try {
-        const res = await fetch('/api/groq', {
+        const res = await fetch(endpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -543,7 +543,6 @@ async function callGroq(payload: any): Promise<any> {
         const text = await res.text();
         let j: any;
         try { j = JSON.parse(text); } catch (_) {
-            // Static-only deploy rewrites /api/groq to index.html → no proxy
             j = null;
         }
         if (j) {
@@ -551,14 +550,13 @@ async function callGroq(payload: any): Promise<any> {
             return j;
         }
     } catch (e: any) {
-        if (!(e instanceof TypeError)) throw e; // network failure → try fallback
+        if (!(e instanceof TypeError)) throw e;
     }
 
-    // 2) Direct fallback for local dev (key stashed by developer, no UI field)
-    const key = localStorage.getItem('makoti_groq_key') ?? '';
-    if (!key) {
-        throw new Error('AI backend unavailable. On Vercel: add GROQ_API_KEY env var and redeploy.');
-    }
+    // 2) Direct fallback for local dev
+    const keyIdx = endpoint === '/api/groq2' ? 'makoti_groq_key_2' : 'makoti_groq_key';
+    const key = localStorage.getItem(keyIdx) ?? '';
+    if (!key) throw new Error('AI backend unavailable.');
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
@@ -569,9 +567,22 @@ async function callGroq(payload: any): Promise<any> {
     return j;
 }
 
-export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus, prevPlan?: string): Promise<AiPlan> {
-    // model + reasoning_effort are chosen server-side (api/groq.js) so
-    // deprecations never break the client. Compact digest ≈ 2.5k tokens.
+function parseAiPlan(j: any): AiPlan | null {
+    let text: string = j?.choices?.[0]?.message?.content ?? '';
+    text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start === -1 || end === -1) return null;
+    try { return normalizePlan(JSON.parse(text.slice(start, end + 1))); }
+    catch { return null; }
+}
+
+export async function requestAiPlan(
+    stats: SymbolStats[],
+    focus?: AiFocus,
+    prevPlan?: string,
+    logFn?: (msg: string) => void,
+): Promise<AiPlan> {
     const focusLine = focus && focus !== 'auto'
         ? `\nHARD CONSTRAINT: contract_type MUST be one of ${FOCUS_TYPES[focus].join(' or ')} — pick the stronger of the two from the data.`
         : '';
@@ -587,17 +598,43 @@ export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus, prevP
             { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine + prevLine },
         ],
     };
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 25000);
-    try {
-        const j = await callGroq({ ...payload, signal: undefined });
-        let text: string = j?.choices?.[0]?.message?.content ?? '';
-        text = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '');
-        const start = text.indexOf('{');
-        const end = text.lastIndexOf('}');
-        if (start === -1 || end === -1) throw new Error('AI returned no JSON plan.');
-        return normalizePlan(JSON.parse(text.slice(start, end + 1)));
-    } finally {
-        clearTimeout(timer);
+
+    // ── Try dual call: both keys in parallel, compare results ──────────
+    const [r1, r2] = await Promise.allSettled([
+        callGroq({ ...payload, signal: undefined }, '/api/groq'),
+        callGroq({ ...payload, signal: undefined }, '/api/groq2'),
+    ]);
+
+    const plan1 = r1.status === 'fulfilled' ? parseAiPlan(r1.value) : null;
+    const plan2 = r2.status === 'fulfilled' ? parseAiPlan(r2.value) : null;
+
+    if (plan1 && plan2) {
+        // Both models responded — compare
+        const agree = plan1.market === plan2.market
+            && plan1.contract_type === plan2.contract_type
+            && plan1.entry_trigger.digit === plan2.entry_trigger.digit;
+        if (agree) {
+            logFn?.(`Both models AGREE → ${plan1.market} ${plan1.contract_type} digit ${plan1.entry_trigger.digit} (dual-validated)`);
+            // Merge: take higher confidence, combine rationale
+            return {
+                ...plan1,
+                confidence: Math.min(95, Math.round((plan1.confidence + plan2.confidence) / 2) + 5),
+                rationale: `[DUAL-VALIDATED] ${plan1.rationale} | Model2: ${plan2.rationale}`.slice(0, 400),
+            };
+        }
+        logFn?.(`Models DISAGREE — primary: ${plan1.market}/${plan1.contract_type}/d${plan1.entry_trigger.digit}, secondary: ${plan2.market}/${plan2.contract_type}/d${plan2.entry_trigger.digit}. Using primary.`);
+        return plan1;
     }
+
+    // One or both failed — use whichever succeeded
+    if (plan1) return plan1;
+    if (plan2) {
+        logFn?.('Primary key failed — using secondary model result.');
+        return plan2;
+    }
+
+    // Both failed
+    const err1 = r1.status === 'rejected' ? r1.reason?.message : 'parse error';
+    const err2 = r2.status === 'rejected' ? r2.reason?.message : 'parse error';
+    throw new Error(`Both AI models failed: key1=${err1}, key2=${err2}`);
 }

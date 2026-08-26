@@ -176,7 +176,7 @@ export function useAiAnalyst() {
             let attempt = 0;
             while (attempt < 3 && !p) {
                 try {
-                    p = await requestAiPlan(stats, focusRef.current);
+                    p = await requestAiPlan(stats, focusRef.current, undefined, log);
                 } catch (err: any) {
                     attempt++;
                     const msg = err?.message ?? '';
@@ -204,7 +204,7 @@ export function useAiAnalyst() {
                     setProgress('Backtest failed — asking AI for a better setup…');
                     try {
                         const p2 = await requestAiPlan(stats, focusRef.current,
-                            `Previous plan backtested NEGATIVE: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl}. Use a completely different archetype and/or market.`);
+                            `Previous plan backtested NEGATIVE: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl}. Use a completely different archetype and/or market.`, log);
                         if (p2) {
                             const bt2 = backtestPlan(p2, rawPricesMap.current.get(p2.market) ?? marketPrices);
                             log(`Backtest #2: ${bt2.trades} trades, ${bt2.winRate}% win, P&L ${bt2.pnl >= 0 ? '+' : ''}${bt2.pnl.toFixed(2)}`);
@@ -238,7 +238,7 @@ export function useAiAnalyst() {
         try {
             log(`Re-planning (${reason}) — refreshing evidence…`);
             const stats = await collectStats();
-            const p = await requestAiPlan(stats, focusRef.current);
+            const p = await requestAiPlan(stats, focusRef.current, undefined, log);
             planRef.current = p;
             setPlan(p);
             tradesSinceRefresh.current = 0;
