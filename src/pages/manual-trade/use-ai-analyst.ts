@@ -59,6 +59,7 @@ export function useAiAnalyst() {
     const lastTickPrice = useRef(0);
     const rawPricesMap = useRef<Map<string, number[]>>(new Map());
     const baseStakeRef = useRef(0);
+    const maybeFireRef = useRef<() => void>(() => {});
 
     // ── MobX store refs ────────────────────────────────────────────────
     // The store may not be ready on the very first render (StoreProvider
@@ -291,7 +292,7 @@ export function useAiAnalyst() {
                     const sub: any = await request({ ticks_history: p.market, count: 1, end: 'latest', style: 'ticks', subscribe: 1 }, 8000);
                     if (sub?.subscription?.id) tickSubId.current = sub.subscription.id;
                     log(`Auto-run: watching ${p.market} with ${liveDigits.current.length} ticks.`);
-                    void maybeFire();
+                    void maybeFireRef.current();
                 } catch (e: any) {
                     log(`Auto-run stream error: ${e?.message}`);
                 }
@@ -301,7 +302,7 @@ export function useAiAnalyst() {
         } finally {
             analyzingRef.current = false;
         }
-    }, [collectStats, log, request, maybeFire, allowedTypes]);
+    }, [collectStats, log, request, allowedTypes]);
 
     const settleAndContinue = useCallback(async (contractId: number, profit: number, poc?: any) => {
         const rs = runStateRef.current;
@@ -489,6 +490,10 @@ export function useAiAnalyst() {
         if (gap >= t.min_gap && gap > 0) void executeTrade();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [executeTrade]);
+
+    // Keep maybeFireRef in sync for refreshPlan's async auto-run callback
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    useEffect(() => { maybeFireRef.current = maybeFire; });
 
     const stopRun = useCallback((reason?: string) => {
         stopRequested.current = true;
