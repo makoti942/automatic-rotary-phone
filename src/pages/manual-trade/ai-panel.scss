@@ -235,33 +235,79 @@ $ai-loss: #dc2626;
     font-weight: 600;
     color: $ai-muted;
     cursor: pointer;
-    padding: 3px 6px;
-    border-radius: 4px;
+    padding: 4px 8px;
+    border-radius: 6px;
     background: $ai-bg2;
     user-select: none;
+    border: 1px solid transparent;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
 
-    input { width: 11px; height: 11px; accent-color: $ai-accent; }
-    span { font-size: 10px; }
+    input { display: none; }
+    input:checked + span { color: #fff; }
+    input:checked ~ & { background: linear-gradient(135deg, $ai-accent, $ai-accent2); color: #fff; }
+
+    &:has(input:checked) {
+        background: linear-gradient(135deg, $ai-accent, $ai-accent2);
+        border-color: $ai-accent;
+        color: #fff;
+    }
+
+    &:active { transform: scale(0.95); }
 }
 
 .ai-toggles {
     display: flex;
-    gap: 10px;
+    gap: 12px;
     align-items: center;
 }
 
 .ai-toggle {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 5px;
     font-size: 10px;
     font-weight: 600;
     color: $ai-muted;
     cursor: pointer;
     user-select: none;
 
-    input { width: 11px; height: 11px; accent-color: $ai-accent; }
+    input[type="checkbox"] {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 30px;
+        height: 16px;
+        border-radius: 8px;
+        background: #d1d5db;
+        position: relative;
+        cursor: pointer;
+        transition: background 0.2s;
+        flex-shrink: 0;
+
+        &::after {
+            content: '';
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #fff;
+            top: 2px;
+            left: 2px;
+            transition: transform 0.2s;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+        }
+
+        &:checked {
+            background: linear-gradient(135deg, $ai-accent, $ai-accent2);
+        }
+
+        &:checked::after {
+            transform: translateX(14px);
+        }
+    }
+
+    &:has(input:checked) { color: $ai-accent; }
     span { font-size: 10px; }
+    &:active { opacity: 0.8; }
 }
 
 .ai-grid {
