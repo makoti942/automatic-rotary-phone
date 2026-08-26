@@ -18,7 +18,6 @@ interface RunState {
 }
 
 const MAX_LOGS = 250;
-const AI_RUN_ID = 'ai-analyst';
 
 export function useAiAnalyst() {
     const [open, setOpen] = useState(false);
@@ -49,8 +48,6 @@ export function useAiAnalyst() {
     const tradesSinceRefresh = useRef(0);
     const consecutiveLosses = useRef(0);
     const lastRefreshAt = useRef(0);
-    const lastAiCallAt = useRef(0);
-    const AI_COOLDOWN_MS = 30000;
 
     // ── MobX store refs ────────────────────────────────────────────────
     // The store may not be ready on the very first render (StoreProvider
@@ -153,13 +150,6 @@ export function useAiAnalyst() {
 
     const analyze = useCallback(async () => {
         if (phase === 'collecting' || phase === 'analyzing') return;
-        const since = Date.now() - lastAiCallAt.current;
-        if (since < AI_COOLDOWN_MS) {
-            const wait = Math.ceil((AI_COOLDOWN_MS - since) / 1000);
-            setProgress(`AI rate-limit cooldown — try again in ${wait}s.`);
-            log(`Rate-limit guard: next AI call available in ${wait}s.`);
-            return;
-        }
         focusRef.current = focusType;
         try {
             planRef.current = null;
@@ -177,8 +167,30 @@ export function useAiAnalyst() {
             setPhase('analyzing');
             setProgress('AI is cross-checking every pattern…');
             log('Sending full evidence digest to the AI backend…');
-            lastAiCallAt.current = Date.now();
-            const p = await requestAiPlan(stats, focusRef.current);
+
+            // Attempt AI call with automatic rate-limit retry
+            let p: AiPlan | null = null;
+            let attempt = 0;
+            while (attempt < 3 && !p) {
+                try {
+                    p = await requestAiPlan(stats, focusRef.current);
+                } catch (err: any) {
+                    attempt++;
+                    const msg = err?.message ?? '';
+                    // Parse Groq rate-limit message: "Please try again in 14.835s"
+                    const retryMatch = msg.match(/try again in ([\d.]+)s/);
+                    if (retryMatch && attempt < 3) {
+                        const waitSec = parseFloat(retryMatch[1]);
+                        log(`Rate limited (attempt ${attempt}) — waiting ${waitSec.toFixed(1)}s then retrying…`);
+                        setProgress(`Rate limited — retrying in ${Math.ceil(waitSec)}s…`);
+                        await new Promise(r => setTimeout(r, (waitSec + 0.5) * 1000));
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+            if (!p) throw new Error('AI returned no plan after retries.');
+
             planRef.current = p;
             setPlan(p);
             setPhase('ready');

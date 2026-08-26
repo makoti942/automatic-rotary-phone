@@ -62,6 +62,20 @@ export interface SymbolStats {
     streak_repeat_pct: { digit: number; pct: number }[];
     even_pct: number;
     hi_pct: number; // digits 5-9
+    /** Autocorrelation at lags 1,2,3 — positive = momentum, negative = oscillation */
+    autocorr: number[];
+    /** Chi-squared vs uniform (last 200 ticks). >17 = significant at p<0.05 */
+    chi2: number;
+    /** RSI-like momentum: recent avg vs older avg digit. Range -100 to +100 */
+    momentum: number;
+    /** Short MA(20) minus long MA(100) of digit values */
+    ma_signal: number;
+    /** Autocorrelation of |digit changes| — volatility clustering */
+    vol_cluster: number;
+    /** Mean consecutive same-digit run length */
+    run_mean: number;
+    /** Top 5 most frequent digit pairs */
+    top_pairs: { from: number; to: number; pct: number }[];
 }
 
 /** Default pip sizes for volatility indices (matches Deriv values). */
@@ -86,6 +100,77 @@ function percentile(sorted: number[], p: number): number {
     if (!sorted.length) return -1;
     const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
     return sorted[idx];
+}
+
+function autocorr(arr: number[], lag: number): number {
+    const n = arr.length;
+    if (n <= lag) return 0;
+    const mean = arr.reduce((a, b) => a + b, 0) / n;
+    let num = 0, den = 0;
+    for (let i = 0; i < n; i++) {
+        den += (arr[i] - mean) ** 2;
+        if (i >= lag) num += (arr[i] - mean) * (arr[i - lag] - mean);
+    }
+    return den === 0 ? 0 : Math.round((num / den) * 100) / 100;
+}
+
+function chiSquared(digits: number[]): number {
+    const recent = digits.slice(-200);
+    const n = recent.length;
+    if (n < 50) return 0;
+    const expected = n / 10;
+    let chi2 = 0;
+    for (let d = 0; d < 10; d++) {
+        const obs = recent.filter(x => x === d).length;
+        chi2 += ((obs - expected) ** 2) / expected;
+    }
+    return Math.round(chi2 * 10) / 10;
+}
+
+function momentum(digits: number[]): number {
+    const p = 14;
+    if (digits.length < p * 2) return 0;
+    const recent = digits.slice(-p);
+    const prev = digits.slice(-p * 2, -p);
+    const rAvg = recent.reduce((a, b) => a + b, 0) / p;
+    const pAvg = prev.reduce((a, b) => a + b, 0) / p;
+    return Math.round(Math.max(-100, Math.min(100, ((rAvg - pAvg) / 4.5) * 100)));
+}
+
+function maCross(digits: number[]): number {
+    const s = 20, l = 100;
+    if (digits.length < l) return 0;
+    const sMA = digits.slice(-s).reduce((a, b) => a + b, 0) / s;
+    const lMA = digits.slice(-l).reduce((a, b) => a + b, 0) / l;
+    return Math.round((sMA - lMA) * 100) / 100;
+}
+
+function volCluster(digits: number[]): number {
+    if (digits.length < 50) return 0;
+    const ch: number[] = [];
+    for (let i = 1; i < digits.length; i++) ch.push(Math.abs(digits[i] - digits[i - 1]));
+    return autocorr(ch, 1);
+}
+
+function meanRunLen(digits: number[]): number {
+    if (!digits.length) return 0;
+    let total = 0, count = 0, cur = 1;
+    for (let i = 1; i < digits.length; i++) {
+        if (digits[i] === digits[i - 1]) cur++;
+        else { total += cur; count++; cur = 1; }
+    }
+    total += cur; count++;
+    return Math.round((total / count) * 10) / 10;
+}
+
+function topPairs(digits: number[]): { from: number; to: number; pct: number }[] {
+    const c: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
+    for (let i = 0; i < digits.length - 1; i++) c[digits[i]][digits[i + 1]]++;
+    const pairs: { from: number; to: number; pct: number }[] = [];
+    for (let f = 0; f < 10; f++)
+        for (let t = 0; t < 10; t++)
+            if (c[f][t] > 0) pairs.push({ from: f, to: t, pct: r1((c[f][t] / (digits.length - 1)) * 100) });
+    return pairs.sort((a, b) => b.pct - a.pct).slice(0, 5);
 }
 
 export function computeSymbolStats(symbol: string, prices: number[]): SymbolStats {
@@ -169,6 +254,15 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
     const evenCount = digits.filter(d => d % 2 === 0).length;
     const hiCount = digits.filter(d => d >= 5).length;
 
+    // ── Advanced indicators ─────────────────────────────────────────
+    const ac = [autocorr(digits, 1), autocorr(digits, 2), autocorr(digits, 3)];
+    const chi2 = chiSquared(digits);
+    const mom = momentum(digits);
+    const ma = maCross(digits);
+    const vc = volCluster(digits);
+    const runM = meanRunLen(digits);
+    const pairs = topPairs(digits);
+
     // ── Sequential pattern analysis ──────────────────────────────────
     // next_dist[d][t] = P(next digit = t | current digit = d)
     const nextCount: number[][] = Array.from({ length: 10 }, () => new Array(10).fill(0));
@@ -227,107 +321,137 @@ export function computeSymbolStats(symbol: string, prices: number[]): SymbolStat
         streak_repeat_pct: streak_repeat_pct.sort((a, b) => b.pct - a.pct).slice(0, 4),
         even_pct: r1((evenCount / n) * 100),
         hi_pct: r1((hiCount / n) * 100),
+        autocorr: ac,
+        chi2,
+        momentum: mom,
+        ma_signal: ma,
+        vol_cluster: vc,
+        run_mean: runM,
+        top_pairs: pairs,
     };
 }
 
 const SYS_PROMPT =
-    'You are an elite quant analyst for Deriv binary options on volatility indices. ' +
-    'Every tick is an independent synthetic RNG draw (1 tick/sec). The final decimal digit of each price is uniformly distributed 0-9 long-term, but ' +
-    'local clustering, streaks, and transition biases create exploitable micro-edges in 1000-tick windows.\n' +
-    'DERIV CONTRACT RULES (exit tick decides win/loss):\n' +
-    '- DIGITMATCH: win if exit digit == barrier (0-9). Highest payout ~9x.\n' +
-    '- DIGITDIFF: win if exit digit != barrier (0-9). Payout ~1.9x.\n' +
-    '- DIGITOVER: win if exit digit > barrier. barrier MUST be 0-8 (over 9 impossible). Payout ~2x.\n' +
-    '- DIGITUNDER: win if exit digit < barrier. barrier MUST be 1-9 (under 0 impossible). Payout ~2x.\n' +
-    '- DIGITEVEN / DIGITODD: win if parity matches. Payout ~2x.\n' +
-    '- Duration: 1-5 ticks. Entry_trigger determines WHEN to place the trade (see entry types below).\n\n' +
-    'ENTRY TRIGGER TYPES (prefer immediate or last_digit_equals — gap_reached is last resort):\n' +
-    '- immediate: place trade right now. MOST RELIABLE — no timing risk.\n' +
-    '- last_digit_equals: wait until the last tick digit matches the trigger digit, then place. GOOD — precise entry.\n' +
-    '- gap_reached: wait until a digit\'s current drought reaches min_gap ticks. USE SPARINGLY — timing is unreliable.\n' +
-    'CRITICAL: ALWAYS prefer "immediate" or "last_digit_equals". gap_reached is LAST RESORT ONLY. Timing-based entries are unreliable on RNG.\n\n' +
-    'DATA LEGEND (for each market\'s rows):\n' +
-    '- rows=[freq%, meanGap, medGap, p90Gap, curDrought, recentDrift]\n' +
-    '- quarters=10x4: each digit\'s frequency in 4 chronological quarters (oldest->newest)\n' +
-    '- tr=X>Y:pct: strongest transition pairs\n' +
-    '- nX=t0,t1..t9: P(next digit = t | current = X). E.g. n5=12,11,10,9,8,13,11,10,8,8 means after digit 5, next=5 has 13% chance.\n' +
-    '- n3X=t0,t1..t9: P(digit t appears within 3 ticks | current = X). Multi-step pattern detector.\n' +
-    '- ent=entropyQ1..Q4: Shannon entropy per quarter. 3.32=perfectly uniform. Lower values = more predictable. Falling entropy trend = AI can exploit.\n' +
-    '- st=digit x2:repeatAfterRun%: streak continuation rate\n\n' +
-    'STRATEGY ARCHETYPES — rotate and NAME the one used (e.g. [drought-reversion]):\n' +
-    '- [drought-reversion]: enter when curDrought exceeds p90Gap on a cold-ish digit (mean_gap biased toward that digit)\n' +
-    '- [momentum-quarters]: follow digits trending UP across quarters Q1->Q4\n' +
-    '- [transition-cluster]: exploit high X>Y transition pairs far above 10% baseline\n' +
-    '- [streak-fade]: bet against repeats when streak repeat % is below 15%\n' +
+    'You are an elite quant analyst specializing in Deriv synthetic market microstructure. ' +
+    'You analyse tick-by-tick digit sequences to find exploitable statistical biases using advanced indicators.\n\n' +
+    'DERIV DIGIT CONTRACTS (exit digit decides win/loss):\n' +
+    '- DIGITMATCH: win if exit digit == barrier. Payout ~9x. Need >11.1% hit rate for profit.\n' +
+    '- DIGITDIFF: win if exit digit != barrier. Payout ~1.9x. Need >52.6% hit rate.\n' +
+    '- DIGITOVER: win if exit digit > barrier (barrier 0-8). Payout ~2x.\n' +
+    '- DIGITUNDER: win if exit digit < barrier (barrier 1-9). Payout ~2x.\n' +
+    '- DIGITEVEN/DIGITODD: win if parity matches. Payout ~2x.\n' +
+    'Duration: 1-5 ticks.\n\n' +
+    'ENTRY TRIGGER TYPES (always prefer immediate or last_digit_equals):\n' +
+    '- immediate: place trade NOW. Most reliable — zero timing risk.\n' +
+    '- last_digit_equals: wait for trigger digit to appear, then place. Good precision.\n' +
+    '- gap_reached: wait for drought to reach min_gap. LAST RESORT ONLY.\n\n' +
+    'DATA LEGEND (for each market):\n' +
+    '- freq=[10]: digit frequency % (baseline 10%). gaps=[10]: mean gap between appearances.\n' +
+    '- drought=[10]: ticks since last appearance. drift=[10]: recent frequency minus overall.\n' +
+    '- trans=top X>Y transition pairs with percentages.\n' +
+    '- Q=10x4 quarterly frequencies (oldest→newest). Reveals evolving digit behaviour.\n' +
+    '- nX=d:pct: P(next=d|cur=X) for significant values only. 1-step Markov transitions.\n' +
+    '- n3X=d:P(d in next 3|cur=X) for significant values only. Multi-step lookahead.\n' +
+    '- ent=Q1..Q4 Shannon entropy. 3.32=uniform. Lower=falling=more predictable=exploitable.\n' +
+    '- auto=lags1,2,3 autocorrelation. >0.1=momentum pattern, <-0.1=oscillation pattern.\n' +
+    '- chi2=chi-squared vs uniform. >17 means statistically significant non-randomness.\n' +
+    '- mom=momentum -100..+100. Positive=digits trending higher than average.\n' +
+    '- ma=short MA minus long MA. Positive=recent digits higher than baseline.\n' +
+    '- vc=volatility clustering. High=big digit swings cluster together.\n' +
+    '- run=mean consecutive same-digit run length. Baseline ~1.0.\n' +
+    '- pairs=top digit pairs X>Y with percentages. Exploit strong pair biases.\n' +
+    '- even=parity% hi=digit>=5%\n\n' +
+    'STRATEGY ARCHETYPES (name the one you use in rationale):\n' +
+    '- [frequency-exploit]: DIGITMATCH on digit with freq>11% (expected value >99%)\n' +
+    '- [anti-frequency]: DIGITDIFF on digit with freq<9% (expected value >101%)\n' +
+    '- [reversion]: Bet on high-freq digit after long drought (overdue)\n' +
+    '- [momentum]: Follow digit trending UP across quarters Q1→Q4\n' +
+    '- [transition]: Exploit strong X→Y transition (>15% vs 10% baseline)\n' +
+    '- [entropy-collapse]: Trade when entropy falling across quarters\n' +
+    '- [pair-pattern]: Exploit frequent consecutive digit pairs\n' +
     '- [parity-skew]: EVEN/ODD when skew > 2pp from 50%\n' +
-    '- [entropy-collapse]: trade when entropy is falling across quarters (system becoming more predictable)\n' +
-    '- [next3-pattern]: use n3X distributions to find digits that cluster in 3-tick windows\n\n' +
+    '- [autocorr-exploit]: Use autocorrelation patterns (momentum or oscillation)\n' +
+    '- [volatility-play]: Trade during high vol_cluster periods\n' +
+    '- [chi2-exploit]: Trade when chi2 indicates strong non-randomness\n\n' +
     'RULES:\n' +
-    '- Baseline: every digit=10%, parity=50%, transitions=10% each. Edges must exceed noise (>1.5pp).\n' +
-    '- If a PREVIOUS PLAN lost, pick a DIFFERENT archetype and/or market.\n' +
-    '- Confidence must be honest (50-85 typical). Never claim certainty.\n' +
-    '- Always pick the market with the strongest verified edge — top-scoring market is NOT always best.\n' +
-    '- BREVITY: summary<=180 chars plain words; rationale<=260 chars; monitoring<=140; risk_notes<=120.\n' +
-    '- Respond ONLY minified JSON per schema.';
+    '- Every edge must exceed noise (>1.5pp from baseline 10% or 50%).\n' +
+    '- If PREVIOUS PLAN lost, use a DIFFERENT archetype and/or market.\n' +
+    '- Pick the market with the strongest VERIFIED edge from the data — not just highest score.\n' +
+    '- Cross-check: confirm your pick using at least 2 independent indicators (freq, transitions, entropy, autocorr, pairs).\n' +
+    '- ALWAYS prefer entry type "immediate" or "last_digit_equals". Only use "gap_reached" when drought data is exceptionally strong.\n' +
+    '- Confidence: 50-85 typical. Never claim certainty.\n' +
+    '- BREVITY: summary<=180 chars; rationale<=260 chars; monitoring<=140; risk_notes<=120.\n' +
+    '- Respond ONLY minified JSON.';
 
-/** Objective local pre-score so the AI only sees the strongest candidates. */
+/** Objective local pre-score — higher = stronger exploitable edge. */
 function scoreMarket(s: SymbolStats): number {
     const dev = Math.max(...s.digits.map(d => Math.abs(d.pct - 10)));
     const drought = Math.max(...s.digits.map(d => (d.mean_gap > 0 ? d.cur_gap / d.mean_gap : 0)));
     const trans = Math.max(0, ...s.transitions.map(t => t.pct - 10));
     const swing = Math.max(...s.digits.map(d => Math.abs(d.drift)));
-    return Math.round((dev * 1.5 + Math.min(drought, 4) * 12 + trans * 2 + swing * 2) * 10) / 10;
+    const chiBonus = Math.min(s.chi2 / 8, 3);
+    const acBonus = Math.abs(s.autocorr[0]) * 4;
+    const entBonus = (s.entropy_trend[0] - s.entropy_trend[3]) > 0.08 ? 3 : 0;
+    const pairBonus = s.top_pairs.length > 0 && s.top_pairs[0].pct > 14 ? 2 : 0;
+    return Math.round((dev * 1.5 + Math.min(drought, 4) * 12 + trans * 2 + swing * 2 + chiBonus + acBonus + entBonus + pairBonus) * 10) / 10;
 }
 
 function buildDigest(stats: SymbolStats[]): string {
-    // Local comparison first: score every market, ship FULL detail for the
-    // top 4 and one-liners for the rest. Keeps requests ~2.5k tokens so
-    // repeated analyses never hit the free-tier token cap.
+    // Score every market and ship compressed data for ALL 10 so the AI
+    // can pick the genuine best opportunity. ~3k tokens total.
     const scored = stats.map(s => ({ s, score: scoreMarket(s) })).sort((a, b) => b.score - a.score);
-    const full = scored.slice(0, 4).map(({ s, score }) => [
-        s.symbol, score,
-        s.digits.map(d => [d.pct, Math.round(d.mean_gap), Math.round(d.med_gap), Math.round(d.p90_gap), d.cur_gap, d.drift]),
-        s.quarters.map(q => q),
-        s.transitions.map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
-        // Sequential patterns: after digit d, which next digits are above baseline?
-        s.next_dist.map((row, d) => {
-            const hot = row.map((v, t) => v > 12 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `n${d}=${hot}` : '';
-        }).filter(Boolean).join('|'),
-        // 3-step lookahead: digits that cluster within 3 ticks
-        s.next_3_dist.map((row, d) => {
-            const hot = row.map((v, t) => v > 20 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `n3${d}=${hot}` : '';
-        }).filter(Boolean).join('|'),
-        // Entropy trend: falling = more predictable = exploitable
-        s.entropy_trend.join(','),
-        s.streak_repeat_pct.map(x => `${x.digit}x2:${x.pct}`).join('|'),
-        s.even_pct, s.hi_pct,
-    ]);
-    const rest = scored.slice(4).map(({ s, score }) => {
-        let hot = 0, cold = 0;
-        s.digits.forEach((d, i) => { if (d.pct > s.digits[hot].pct) hot = i; if (d.pct < s.digits[cold].pct) cold = i; });
-        return `${s.symbol}(${score}) hot${hot}=${s.digits[hot].pct}% cold${cold}=${s.digits[cold].pct}% even=${s.even_pct}%`;
-    });
     return JSON.stringify({
-        L: 'rows=[freq%,meanGap,medGap,p90Gap,curDrought,recentDrift] quarters=10x4 freq% oldest->newest tr=X>Y:pct nX=d:pct=P(next=d|cur=X) for d>12% only n3X=d:pct=P(d in next3|cur=X) for d>20% only ent=entropyQ1..Q4 (3.32=uniform,falling=predictable) st=digit x2:repeatAfterRun% base=10%',
-        TOP: full,
-        REST: rest,
+        L: 'freq,gaps,drought,drift=per-digit arrays(0-9). trans=top pairs. Q=quarterly. nX/n3X=Markov. ent=entropy. auto=autocorr. chi2=randomness. mom=momentum. ma=MA cross. vc=vol cluster. run=run length. pairs=top pairs.',
+        M: scored.map(({ s, score }) => ({
+            sym: s.symbol, score,
+            freq: s.digits.map(d => d.pct),
+            gaps: s.digits.map(d => Math.round(d.mean_gap)),
+            drought: s.digits.map(d => d.cur_gap),
+            drift: s.digits.map(d => d.drift),
+            trans: s.transitions.slice(0, 5).map(t => `${t.from}>${t.to}:${t.pct}`).join('|'),
+            Q: s.quarters,
+            nX: s.next_dist.map((row, d) => {
+                const hot = row.map((v, t) => v > 12 ? `${t}:${v}` : '').filter(Boolean).join(',');
+                return hot ? `${d}=${hot}` : '';
+            }).filter(Boolean).join('|'),
+            n3X: s.next_3_dist.map((row, d) => {
+                const hot = row.map((v, t) => v > 20 ? `${t}:${v}` : '').filter(Boolean).join(',');
+                return hot ? `${d}=${hot}` : '';
+            }).filter(Boolean).join('|'),
+            ent: s.entropy_trend,
+            auto: s.autocorr,
+            chi2: s.chi2,
+            mom: s.momentum,
+            ma: s.ma_signal,
+            vc: s.vol_cluster,
+            run: s.run_mean,
+            pairs: s.top_pairs.map(p => `${p.from}>${p.to}:${p.pct}`).join('|'),
+            even: s.even_pct,
+            hi: s.hi_pct,
+        })),
     });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
-        'Exact stats (last 1000 ticks). TOP = full detail for highest-scoring markets; REST = brief scan of the others:\n' + digest +
-        '\n\nUse nX (1-step transition) and n3X (3-step lookahead) to find sequential patterns. ' +
-        'Falling entropy = system becoming more predictable = stronger edge. ' +
-        'Find every real pattern, cross-check them, commit to ONE best setup from ANY market (TOP or REST). ' +
-        'ALWAYS prefer entry_trigger type "immediate" or "last_digit_equals" — timing-based gap entries are unreliable. ' +
+        'Exact statistics from last 1000 ticks across all 10 markets (sorted by local edge score):\n' + digest +
+        '\n\nAnalyse ALL 10 markets. Use multiple indicators to confirm your pick:\n' +
+        '- freq vs 10% baseline for expected-value calculation\n' +
+        '- nX (1-step Markov) + n3X (3-step lookahead) for sequential patterns\n' +
+        '- ent (entropy trend): falling = stronger exploitable edge\n' +
+        '- auto (autocorrelation): positive = momentum, negative = oscillation\n' +
+        '- chi2: >17 means statistically significant non-randomness\n' +
+        '- pairs: exploit frequent consecutive digit pairs\n' +
+        '- mom (momentum) + ma (MA cross): directional bias\n' +
+        '- vc (vol cluster): high = bigger swings cluster together\n' +
+        'Commit to ONE best setup from ANY market. Cross-check with at least 2 indicators.\n' +
+        'Prefer "immediate" or "last_digit_equals" entry. Only use "gap_reached" if drought data is exceptionally strong.\n' +
+        'Think step-by-step before deciding. Consider multiple strategies then pick the highest expected value.\n' +
         'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
         '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
-        '"entry_trigger":{"type":"gap_reached|last_digit_equals|immediate","digit":0-9,"min_gap":int 0-10},' +
-        '"confidence":0-100,"summary":"plain-language plan","rationale":"[archetype] cite exact stats",' +
-        '"monitoring":"exact watch steps","risk_notes":"when it fails"}'
+        '"entry_trigger":{"type":"immediate|last_digit_equals|gap_reached","digit":0-9,"min_gap":int 0-10},' +
+        '"confidence":0-100,"summary":"<180 chars","rationale":"[archetype] cite exact stats and indicators used",' +
+        '"monitoring":"<140 chars","risk_notes":"<120 chars"}'
     );
 }
 
@@ -438,9 +562,9 @@ export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus, prevP
         ? `\nPREVIOUS PLAN: ${prevPlan}. If it lost more than it won, use a DIFFERENT archetype and/or market unless the fresh numbers overwhelmingly justify a repeat. Suggest a genuinely new idea when the data allows.`
         : '';
     const payload = {
-        temperature: 0.15,
-        max_tokens: 1000,
-        reasoning_effort: 'low',
+        temperature: 0.4,
+        max_tokens: 1500,
+        reasoning_effort: 'medium',
         response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
