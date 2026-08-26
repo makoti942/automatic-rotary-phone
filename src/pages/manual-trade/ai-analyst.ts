@@ -462,67 +462,43 @@ function scoreMarket(s: SymbolStats): number {
 }
 
 function buildDigest(stats: SymbolStats[]): string {
-    // ALL 10 markets — compact format focused on sequential patterns.
-    // ~2k tokens total. Only significant values shown.
+    // ALL 10 markets — aggressively compressed. Max ~1.5K tokens total.
     const scored = stats.map(s => ({ s, score: scoreMarket(s) })).sort((a, b) => b.score - a.score);
-    return JSON.stringify(scored.map(({ s, score }) => {
-        // freq: only digits ≠ 10% baseline (±1pp)
-        const freq = s.digits.map((d, i) => d.pct > 11 || d.pct < 9 ? `${i}=${d.pct}` : '').filter(Boolean).join('|');
-        // drought: only digits where drought > mean_gap (overdue)
-        const drt = s.digits.map((d, i) => d.mean_gap > 0 && d.cur_gap > d.mean_gap ? `${i}=${d.cur_gap}t(>${Math.round(d.mean_gap)})` : '').filter(Boolean).join('|');
-        // drift: only digits with >2pp change
-        const drift = s.digits.map((d, i) => Math.abs(d.drift) > 2 ? `${i}:${d.drift > 0 ? '+' : ''}${d.drift}` : '').filter(Boolean).join('|');
-        // nX: Markov transitions with >12% (2pp above baseline)
-        const nX = s.next_dist.map((row, d) => {
-            const hot = row.map((v, t) => v > 12 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `${d}>${hot}` : '';
-        }).filter(Boolean).join('|');
-        // n3X: 3-step lookahead with >20%
-        const n3X = s.next_3_dist.map((row, d) => {
-            const hot = row.map((v, t) => v > 20 ? `${t}:${v}` : '').filter(Boolean).join(',');
-            return hot ? `${d}>${hot}` : '';
-        }).filter(Boolean).join('|');
-        // pairs: top 3 digit pairs
-        const pairs = s.top_pairs.slice(0, 3).map(p => `${p.from}>${p.to}:${p.pct}`).join('|');
-        return {
-            s: s.symbol, sc: score,
-            f: freq || 'all~10%',
-            drt: drt || 'none overdue',
-            drift: drift || 'none',
-            nX, n3X,
-            e: s.entropy_trend.join(','),
-            c: s.chi2,
-            a: s.autocorr.join(','),
-            pairs,
-            ev: s.even_pct,
-        };
-    }));
+    const allNx: { from: number; to: number; pct: number; sym: string }[] = [];
+    const allN3x: { from: number; to: number; pct: number; sym: string }[] = [];
+    scored.forEach(({ s }) => {
+        for (let d = 0; d < 10; d++) {
+            for (let t = 0; t < 10; t++) {
+                if (s.next_dist[d][t] > 12) allNx.push({ from: d, to: t, pct: s.next_dist[d][t], sym: s.symbol });
+                if (s.next_3_dist[d][t] > 22) allN3x.push({ from: d, to: t, pct: s.next_3_dist[d][t], sym: s.symbol });
+            }
+        }
+    });
+    allNx.sort((a, b) => b.pct - a.pct);
+    allN3x.sort((a, b) => b.pct - a.pct);
+    const topNx = allNx.slice(0, 20).map(n => `${n.sym}:${n.from}>${n.to}:${n.pct}`).join('|');
+    const topN3x = allN3x.slice(0, 15).map(n => `${n.sym}:${n.from}>${n.to}:${n.pct}`).join('|');
+    const markets = scored.map(({ s, score }) => {
+        const freq = s.digits.map((d, i) => d.pct > 11.5 || d.pct < 8.5 ? `${i}:${d.pct}` : '').filter(Boolean).join(',');
+        const drt = s.digits.map((d, i) => d.mean_gap > 0 && d.cur_gap > d.mean_gap * 1.3 ? `${i}:${d.cur_gap}t` : '').filter(Boolean).join(',');
+        const topP = s.top_pairs.slice(0, 2).map(p => `${p.from}>${p.to}:${p.pct}`).join('|');
+        const entDrop = Math.round((s.entropy_trend[0] - s.entropy_trend[3]) * 100) / 100;
+        return `${s.symbol}(${score}) f=[${freq || '~'}] d=[${drt || '~'}] p=${topP || '~'} eΔ=${entDrop > 0 ? '+' : ''}${entDrop} c=${s.chi2} a=${s.autocorr[0]}`;
+    });
+    return JSON.stringify({ nx: topNx, n3x: topN3x, M: markets });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
-        'Tick statistics from last 1000 ticks across all 10 markets (sorted by edge score):\n' + digest +
-        '\n\n## KEY FIELDS\n' +
-        '- f: digit frequency (%). Only digits ≠10% shown. >11%=overrepresented, <9%=underrepresented.\n' +
-        '- drt: drought. Only overdue digits shown (cur_gap > mean_gap).\n' +
-        '- drift: recent-50 vs overall frequency change. >2pp = significant shift.\n' +
-        '- nX: Markov transitions. "3>7:18" = after digit 3, digit 7 appears 18% (vs 10% baseline = 8pp edge!).\n' +
-        '- n3X: 3-step lookahead. "3>7:35" = within 3 ticks after 3, digit 7 appears 35%.\n' +
-        '- e: entropy per quarter. Falling = more predictable.\n' +
-        '- c: chi-squared. >17 = statistically significant non-randomness.\n' +
-        '- a: autocorrelation lags 1,2,3. Positive = momentum, negative = oscillation.\n' +
-        '- pairs: top consecutive digit pairs. "3>7:15" = pair (3,7) appears 15%.\n\n' +
-        '## YOUR TASK\n' +
-        '1. Find the market with strongest sequential pattern (highest nX edge + significant chi2)\n' +
-        '2. Find the digit pair with strongest conditional probability (nX or n3X)\n' +
-        '3. Cross-check: confirm with entropy trend + autocorrelation + pairs\n' +
-        '4. Calculate expected value: if positive → trade, if negative → skip\n' +
-        '5. Specify the FULL sequence in rationale: "after digit X → digit Y appears Z% → trade DIGITMATCH on Y"\n\n' +
-        'Respond ONLY minified JSON: {"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
-        '"barrier_digit":respect contract rules,"duration_ticks":1-5,' +
-        '"entry_trigger":{"type":"last_digit_equals","digit":0-9,"min_gap":0},' +
-        '"confidence":50-85,"summary":"Watch for digit X on [market]","rationale":"[archetype] after digit X, Y appears Z% (nX: X>Y:Z). cite chi2/ent/auto",' +
-        '"monitoring":"<140 chars","risk_notes":"<120 chars"}'
+        digest +
+        '\n nx=Markov transitions(top20 across all markets). n3x=3-step lookahead(top15). M=markets: f=freq,d=drought,p=pairs,eΔ=entropy change,c=chi2,a=autocorr.\n' +
+        'Pick the market+digit with the strongest nX edge. Cross-check with chi2>17 and falling entropy.\n' +
+        'Rationale MUST cite the exact nX transition: "after X, Y appears Z% (edge Zpp)".\n' +
+        '{"market":"sym","contract_type":"DIGITMATCH|DIGITDIFF|DIGITOVER|DIGITUNDER|DIGITEVEN|DIGITODD",' +
+        '"barrier_digit":N,"duration_ticks":1-5,' +
+        '"entry_trigger":{"type":"last_digit_equals","digit":N,"min_gap":0},' +
+        '"confidence":50-85,"summary":"Watch for digit N on [market]","rationale":"[archetype] after X→Y at Z% (nX:X>Y:Z)",' +
+        '"monitoring":"<140","risk_notes":"<120"}'
     );
 }
 
@@ -646,7 +622,7 @@ export async function requestAiPlan(
         : '';
     const payload = {
         temperature: 0.4,
-        max_tokens: 1500,
+        max_tokens: 800,
         reasoning_effort: 'medium',
         messages: [
             { role: 'system', content: SYS_PROMPT },
