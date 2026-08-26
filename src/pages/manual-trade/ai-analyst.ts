@@ -349,23 +349,12 @@ export function backtestPlan(
     const payout = payouts[plan.contract_type] ?? 2;
     const barrier = plan.barrier_digit ?? 5;
 
-    // Context-aware: extract context digit from rationale if mentioned
-    // e.g. "after digit 3" → contextDigit = 3
-    let contextDigit = -1;
-    const ctxMatch = (plan.rationale + ' ' + plan.summary).match(/after digit (\d)/i);
-    if (ctxMatch) contextDigit = parseInt(ctxMatch[1]);
-
     let wins = 0, losses = 0, pnl = 0;
     let i = 0;
     while (i < digits.length - dur - 1) {
         // Entry: last_digit_equals
         if (t.type === 'last_digit_equals') {
-            // Must see trigger digit at position i
             if (digits[i] !== t.digit) { i++; continue; }
-            // If context digit specified, check the tick BEFORE the trigger
-            if (contextDigit >= 0 && i > 0 && digits[i - 1] !== contextDigit) {
-                i++; continue;
-            }
         }
         i++;
         const exitIdx = Math.min(i + dur - 1, digits.length - 1);
@@ -393,60 +382,31 @@ export function backtestPlan(
 
 const SYS_PROMPT =
     'You are an elite quant analyst for Deriv synthetic markets. You crack the matrix of digit sequences.\n\n' +
-    '## CONTRACT RULES (exit digit decides win/loss)\n' +
-    '| Type | Win condition | Payout | Break-even |\n' +
-    '|------|---------------|--------|------------|\n' +
-    '| DIGITMATCH | exit==barrier | ~9x | >11.1% |\n' +
-    '| DIGITDIFF | exit!=barrier | ~1.9x | >52.6% |\n' +
-    '| DIGITOVER | exit>barrier (0-8) | ~2x | >50% |\n' +
-    '| DIGITUNDER | exit<barrier (1-9) | ~2x | >50% |\n' +
-    '| DIGITEVEN | exit%2==0 | ~2x | >50% |\n' +
-    '| DIGITODD | exit%2==1 | ~2x | >50% |\n' +
-    'Duration: 1-5 ticks.\n\n' +
-    '## THE MATRIX: HOW DIGITS BEHAVE\n\n' +
-    'Digits are NOT random. They follow patterns:\n\n' +
-    '### 1. Markov Transitions (nX data)\n' +
-    'P(next digit = Y | current digit = X). This is the KEY insight.\n' +
-    'If digit 6 appears, what comes next? nX shows conditional probabilities.\n' +
-    'Example: nX "6>7:18" means after 6, digit 7 appears 18% (vs 10% baseline = 8pp edge!).\n\n' +
-    '### 2. Multi-Step Lookahead (n3X data)\n' +
-    'P(digit Y appears within next 3 ticks | current digit = X).\n' +
-    'Example: n3X "6>7:35" means within 3 ticks after 6, digit 7 appears 35%.\n\n' +
-    '### 3. Drought Analysis\n' +
-    'drought[X] = ticks since digit X last appeared. If drought > mean_gap, digit is overdue.\n\n' +
-    '### 4. Frequency Analysis\n' +
-    'freq[X] = overall frequency (baseline 10%). >11% = overrepresented. <9% = underrepresented.\n\n' +
-    '### 5. Entropy Trend\n' +
-    'ent=[Q1,Q2,Q3,Q4]. Falling = more predictable = exploitable. Rising = more random.\n\n' +
-    '### 6. Autocorrelation\n' +
-    'auto=[lag1,lag2,lag3]. Positive = momentum. Negative = oscillation.\n\n' +
-    '### 7. Statistical Significance\n' +
-    'chi2 > 17 = non-random distribution (p<0.05). Higher = stronger patterns.\n\n' +
-    '### 8. Digit Pairs\n' +
-    'pairs = top consecutive pairs X>Y. If (3,7) appears 15% vs 10% baseline, strong pattern.\n\n' +
-    '## YOUR STRATEGY PROCESS\n' +
-    '1. Find best market: highest chi2 + falling entropy + strong autocorrelation\n' +
-    '2. Find best digit: highest freq + overdue drought + strong transitions\n' +
-    '3. Find best entry: use nX/n3X to predict what comes after the current digit\n' +
-    '4. Cross-check: confirm with 2+ independent indicators\n' +
-    '5. Calculate EV: if positive, trade; if negative, skip\n\n' +
+    '## CONTRACT RULES\n' +
+    'DIGITDIFF: win if exit!=barrier. Payout ~1.9x. Need >52.6%. THIS IS YOUR PRIMARY TOOL.\n' +
+    'DIGITMATCH: win if exit==barrier. Payout ~9x. Need >11.1%. ONLY use when edge >3pp.\n' +
+    'DIGITOVER: win if exit>barrier(0-8). Payout ~2x. DIGITUNDER: win if exit<barrier(1-9). ~2x.\n' +
+    'DIGITEVEN/DIGITODD: win if parity matches. ~2x. Duration: 1-5 ticks.\n\n' +
+    '## THE WIN FORMULA\n' +
+    'DIGITDIFF is the KING of consistency. If digit X has freq=8%, DIGITDIFF on X wins 92%!\n' +
+    'EV = win_rate × payout - loss_rate × 1. Example: 92% × 1.9 - 8% × 1 = 1.668 (massive edge!)\n' +
+    'PREFER DIGITDIFF. Only use DIGITMATCH when nX shows >13% conditional probability.\n\n' +
+    '## THE MATRIX: MARKOV TRANSITIONS\n' +
+    'P(next digit = Y | current digit = X). This is your EDGE.\n' +
+    'nX "3>7:18" = after digit 3, digit 7 appears 18%. If digit 7 freq=8%, DIGITDIFF on 7 wins 92% after 3!\n' +
+    'n3X "3>7:35" = within 3 ticks after 3, digit 7 appears 35%.\n\n' +
+    '## YOUR PROCESS\n' +
+    '1. Find digit with LOWEST freq (for DIGITDIFF — lower freq = higher win rate)\n' +
+    '2. Find market with strongest nX transition (after X, Y appears Z%)\n' +
+    '3. If Y has low freq → DIGITDIFF on Y (wins >90%)\n' +
+    '4. If Y has high freq (>12%) → DIGITMATCH on Y (wins ~12% but 9x payout)\n' +
+    '5. Cross-check: chi2>17, falling entropy, strong autocorrelation\n' +
+    '6. Calculate EV: must be >1.0 (profitable)\n\n' +
     '## ENTRY RULE\n' +
-    'ALWAYS use entry_trigger.type="last_digit_equals". Wait for trigger digit, then trade.\n' +
-    'The trigger digit must be chosen based on Markov transitions (nX data).\n' +
-    'You MUST specify the context digit in rationale: "after digit X, digit Y appears Z%".\n\n' +
-    '## EXAMPLE THINKING\n' +
-    '"R_100: chi2=22.3 (significant!), ent falling 3.28→3.05, auto[0]=0.05 (momentum).\n' +
-    'Digit 7 freq=12.5% (2.5pp above baseline). After digit 3, digit 7 appears 18% (nX: 3>7:18) = 8pp edge!\n' +
-    'Digit 7 drought=12, mean_gap=8 → overdue. n3X: 3>7:35 → within 3 ticks, 35% chance.\n' +
-    'CONCLUSION: DIGITMATCH on digit 7, barrier 7, duration 1 tick.\n' +
-    'Wait for digit 3 to appear, then watch for digit 7."\n\n' +
-    '## RULES\n' +
-    '- Cross-check with 2+ indicators. Edges >1.5pp from baseline.\n' +
-    '- If previous plan lost, use DIFFERENT archetype/market.\n' +
-    '- Confidence 50-85.\n' +
-    '- Summary MUST start with: "Watch for digit X on [market]".\n' +
-    '- BREVITY: summary<=180, rationale<=260, monitoring<=140, risk_notes<=120.\n' +
-    '- Respond ONLY minified JSON.';
+    'ALWAYS entry_trigger.type="last_digit_equals". Wait for trigger digit, then trade.\n' +
+    'Rationale MUST cite: "after X→Y at Z%, freq(Y)=W%, DIGITDIFF wins ~100-W%"\n\n' +
+    'RULES: Cross-check 2+ indicators. Edges >1.5pp. Confidence 50-85.\n' +
+    'Summary: "Watch for digit X on [market]". Respond ONLY minified JSON.';
 
 /** Objective local pre-score — higher = stronger exploitable edge. */
 function scoreMarket(s: SymbolStats): number {
