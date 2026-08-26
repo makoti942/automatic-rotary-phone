@@ -6,12 +6,14 @@
 // Model chain: if Groq deprecates a model, the next one takes over
 // automatically instead of breaking deployments.
 const MODELS = [
+    'qwen/qwen3.8-27b',
     'openai/gpt-oss-120b',
     'openai/gpt-oss-20b',
     'qwen/qwen3.6-27b',
 ];
 
 const MODEL_GONE = /does not exist|decommission|not found|do not have access/i;
+const REASONING_MODELS = /gpt-oss/i;
 
 export default async function handler(req, res) {
     if (req.method !== 'POST') {
@@ -29,9 +31,10 @@ export default async function handler(req, res) {
             const body = {
                 ...req.body,
                 model,
-                reasoning_effort: req.body?.reasoning_effort ?? 'medium',
             };
             delete body.signal;
+            // reasoning_effort only supported by gpt-oss models
+            if (!REASONING_MODELS.test(model)) delete body.reasoning_effort;
             const upstream = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },

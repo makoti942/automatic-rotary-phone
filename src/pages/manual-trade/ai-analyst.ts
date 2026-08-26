@@ -582,7 +582,6 @@ export async function requestAiPlan(stats: SymbolStats[], focus?: AiFocus, prevP
         temperature: 0.4,
         max_tokens: 1500,
         reasoning_effort: 'medium',
-        response_format: { type: 'json_object' },
         messages: [
             { role: 'system', content: SYS_PROMPT },
             { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine + prevLine },
