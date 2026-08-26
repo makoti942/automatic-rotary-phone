@@ -386,31 +386,28 @@ export function backtestPlan(
 const SYS_PROMPT =
     'You are an elite quant analyst for Deriv synthetic markets. You read digit sequences like a codebreaker.\n\n' +
     '## CONTRACT RULES\n' +
-    'DIGITDIFF: win if exit!=barrier. ~1.9x. Need >52.6%. DEFAULT CHOICE.\n' +
-    'DIGITMATCH: win if exit==barrier. ~9x. Need >11.1%. ONLY if freq>12%.\n' +
-    'DIGITUNDER B: win if exit<B. Digits 0..B-1 win. barrier=5 → 5 digits win (0-4) = 50%.\n' +
-    'DIGITOVER B: win if exit>B. Digits B+1..9 win. barrier=4 → 5 digits win (5-9) = 50%.\n' +
-    'RULE: DIGITUNDER barrier=5 always wins 50%. DIGITOVER barrier=4 always wins 50%.\n' +
-    'Any other barrier = fewer winning digits = <50% = LOSING. AVOID.\n' +
+    'DIGITDIFF barrier B: win if exit!=B. ~1.9x. Break-even >52.6%.\n' +
+    'DIGITMATCH barrier B: win if exit==B. ~9x. Break-even >11.1%.\n' +
+    'DIGITUNDER B: win if exit<B. barrier=5 → wins on 0,1,2,3,4 (5 digits). ~2x.\n' +
+    'DIGITOVER B: win if exit>B. barrier=4 → wins on 5,6,7,8,9 (5 digits). ~2x.\n' +
     'Duration: 1-5 ticks.\n\n' +
-    '## HOW TO READ THE SEQUENCES\n' +
-    'seq= provides actual digits. Count in LAST 30 ticks:\n' +
-    'How many digits 0-4? (DIGITUNDER barrier 5 wins these)\n' +
-    'How many digits 5-9? (DIGITOVER barrier 4 wins these)\n' +
-    'If 0-4 appear >55% → DIGITUNDER barrier 5 (wins 55%+)\n' +
-    'If 5-9 appear >55% → DIGITOVER barrier 4 (wins 55%+)\n' +
-    'If neither >55% → use DIGITDIFF on the rarest digit.\n\n' +
-    '## THE WIN FORMULA\n' +
-    'DIGITDIFF is the KING. Find the RAREST digit → bet against it.\n' +
-    'EV = win_rate × 1.9 - loss_rate × 1. freq(X)=8% → EV = 1.67.\n' +
-    'DIGITUNDER barrier 5: EV = win% × 2 - loss% × 1. If 0-4 appear 55%, EV = 0.55×2 - 0.45×1 = 0.65.\n' +
-    'DIGITMATCH: EV = win% × 9 - loss% × 1. If freq=13%, EV = 0.13×9 - 0.87×1 = 0.30.\n\n' +
-    '## YOUR PROCESS\n' +
-    '1. Count digits 0-4 vs 5-9 in last 30 ticks\n' +
-    '2. If one side >55% → DIGITUNDER/over barrier (whichever side is >55%)\n' +
-    '3. Otherwise → DIGITDIFF on the rarest single digit\n' +
-    '4. Cross-check: chi2>17, entropy falling\n' +
-    '5. EV must be >0.3 to trade\n\n' +
+    '## THE ENTRY POINT SYSTEM\n' +
+    'Every trade needs a TRIGGER DIGIT — the digit you watch before placing the bet.\n' +
+    'The digest provides u5=[X:P] and o4=[X:P] for each market:\n' +
+    'u5:X:P = after digit X appears, digits 0-4 appear P% of the time.\n' +
+    'o4:X:P = after digit X appears, digits 5-9 appear P% of the time.\n\n' +
+    'DIGITDIFF: pick the digit with LOWEST freq overall. Trigger = ANY digit (immediate).\n' +
+    'DIGITUNDER 5: find digit X where u5:X > 55%. Wait for X, then bet UNDER 5. Wins when exit < 5.\n' +
+    'DIGITOVER 4: find digit X where o4:X > 55%. Wait for X, then bet OVER 4. Wins when exit > 4.\n' +
+    'If no u5/o4 > 55%: use DIGITDIFF instead (safest).\n\n' +
+    '## HOW TO READ seq=\n' +
+    'Count digits in last 30 of seq=. Find rarest digit → DIGITDIFF on it.\n' +
+    'Count 0-4 vs 5-9 in last 30. If one side >55% → DIGITUNDER/over.\n\n' +
+    '## EV CALCULATION\n' +
+    'DIGITDIFF: EV = (1-freq/100)×1.9 - (freq/100)×1. freq=8% → EV=1.67.\n' +
+    'DIGITUNDER 5: EV = u5%×2 - (100-u5%)×1. u5=58% → EV=0.58×2-0.42×1=0.74.\n' +
+    'DIGITMATCH: EV = freq/100×9 - (100-freq/100)×1. freq=13% → EV=0.30.\n' +
+    'Only trade if EV > 0.2.\n\n' +
     'RULES: Cross-check 2+ indicators. Confidence 50-85.\n' +
     'Summary: "Watch for digit X on [market]". Respond ONLY minified JSON.';
 
@@ -429,48 +426,45 @@ function scoreMarket(s: SymbolStats): number {
 
 function buildDigest(stats: SymbolStats[]): string {
     const scored = stats.map(s => ({ s, score: scoreMarket(s) })).sort((a, b) => b.score - a.score);
-    // Global top Markov transitions
-    const allNx: { from: number; to: number; pct: number; sym: string }[] = [];
-    const allN3x: { from: number; to: number; pct: number; sym: string }[] = [];
-    scored.forEach(({ s }) => {
-        for (let d = 0; d < 10; d++) {
-            for (let t = 0; t < 10; t++) {
-                if (s.next_dist[d][t] > 12) allNx.push({ from: d, to: t, pct: s.next_dist[d][t], sym: s.symbol });
-                if (s.next_3_dist[d][t] > 22) allN3x.push({ from: d, to: t, pct: s.next_3_dist[d][t], sym: s.symbol });
-            }
-        }
-    });
-    allNx.sort((a, b) => b.pct - a.pct);
-    allN3x.sort((a, b) => b.pct - a.pct);
-    const topNx = allNx.slice(0, 15).map(n => `${n.sym}:${n.from}>${n.to}:${n.pct}`).join('|');
-    const topN3x = allN3x.slice(0, 10).map(n => `${n.sym}:${n.from}>${n.to}:${n.pct}`).join('|');
-    // Top 5 markets with raw digit sequences + stats
+    // Top 5 markets with full data
     const markets = scored.slice(0, 5).map(({ s, score }) => {
         const freq = s.digits.map((d, i) => `${i}:${d.pct}`).join(',');
-        const drt = s.digits.map((d, i) => `${i}:${d.cur_gap}`).join(',');
         const topP = s.top_pairs.slice(0, 3).map(p => `${p.from}>${p.to}:${p.pct}`).join('|');
-        const entDrop = Math.round((s.entropy_trend[0] - s.entropy_trend[3]) * 100) / 100;
-        // Last 100 digits as compressed string
         const seq = s.raw_digits.join('');
-        return `${s.symbol}(${score}) seq=${seq} freq=[${freq}] gap=[${drt}] nX=all p=${topP} ent=${s.entropy_trend.join(',')} c=${s.chi2} a=${s.autocorr.join(',')}`;
+        // UNDER/OVER per trigger digit: u5:X=P means after digit X, digits 0-4 appear P%
+        const u5 = s.next_dist.map((row, d) => {
+            const p = row[0] + row[1] + row[2] + row[3] + row[4];
+            return p > 52 || p < 48 ? `${d}:${Math.round(p)}` : '';
+        }).filter(Boolean).join(',');
+        const o4 = s.next_dist.map((row, d) => {
+            const p = row[5] + row[6] + row[7] + row[8] + row[9];
+            return p > 52 || p < 48 ? `${d}:${Math.round(p)}` : '';
+        }).filter(Boolean).join(',');
+        // Top nX transitions for this market
+        const nx: string[] = [];
+        for (let d = 0; d < 10; d++) for (let t = 0; t < 10; t++) {
+            if (s.next_dist[d][t] > 12) nx.push(`${d}>${t}:${s.next_dist[d][t]}`);
+        }
+        return `${s.symbol}(${score}) seq=${seq} freq=[${freq}] p=${topP} u5=[${u5 || '~'}] o4=[${o4 || '~'}] nx=[${nx.slice(0,8).join('|')}] ent=${s.entropy_trend.join(',')} c=${s.chi2} a=${s.autocorr.join(',')}`;
     });
-    // Bottom 5 markets summary only
+    // Bottom 5 summary
     const rest = scored.slice(5).map(({ s, score }) => {
         const freq = s.digits.map((d, i) => d.pct > 11.5 || d.pct < 8.5 ? `${i}:${d.pct}` : '').filter(Boolean).join(',');
         return `${s.symbol}(${score}) f=[${freq || '~'}] c=${s.chi2} a=${s.autocorr[0]}`;
     });
-    return JSON.stringify({ nx: topNx, n3x: topN3x, top5: markets, rest });
+    return JSON.stringify({ top5: markets, rest });
 }
 
 function buildUserPrompt(digest: string): string {
     return (
         digest +
-        '\n\nRead the seq= strings above. Count digits in last 30 of each sequence. Find the rarest digit.\n' +
-        'DIGITDIFF on the rarest digit = highest win rate. nX = Markov transitions. n3x = 3-step lookahead.\n' +
-        'Pick the market where the rarest digit appears LEAST in the last 30 ticks.\n' +
-        '{"market":"sym","contract_type":"DIGITDIFF preferred","barrier_digit":rarest_digit,' +
-        '"duration_ticks":1-5,"entry_trigger":{"type":"last_digit_equals","digit":trigger_digit,"min_gap":0},' +
-        '"confidence":50-85,"summary":"Watch for digit N on [market]","rationale":"freq(N)=X% in last 30, DIGITDIFF wins ~100-X%. cite nX",' +
+        '\n\nFields: seq=last100digits, freq=[digit:overall%], u5=[trigger:under5%], o4=[trigger:over4%], nx=[from>to:%].\n' +
+        'STEP 1: Read u5/o4. If any u5:X>55% → DIGITUNDER5 triggered by X. If any o4:X>55% → DIGITOVER4 triggered by X.\n' +
+        'STEP 2: If no u5/o4>55% → count rarest digit in seq= last 30 → DIGITDIFF on it.\n' +
+        'STEP 3: Calculate EV. Trade only if EV>0.2.\n' +
+        '{"market":"sym","contract_type":"DIGITDIFF|DIGITUNDER|DIGITOVER|DIGITMATCH","barrier_digit":N,' +
+        '"duration_ticks":1-5,"entry_trigger":{"type":"last_digit_equals","digit":trigger_N,"min_gap":0},' +
+        '"confidence":50-85,"summary":"Watch for digit N on [market]","rationale":"cite u5/o4% or freq%, EV calculation",' +
         '"monitoring":"<140","risk_notes":"<120"}'
     );
 }
