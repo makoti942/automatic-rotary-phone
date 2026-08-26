@@ -221,6 +221,49 @@ $ai-loss: #dc2626;
     &.is-active { background: linear-gradient(135deg, $ai-accent, $ai-accent2); color: #fff; }
 }
 
+.ai-types {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+}
+
+.ai-type-cb {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    color: $ai-muted;
+    cursor: pointer;
+    padding: 3px 6px;
+    border-radius: 4px;
+    background: $ai-bg2;
+    user-select: none;
+
+    input { width: 11px; height: 11px; accent-color: $ai-accent; }
+    span { font-size: 10px; }
+}
+
+.ai-toggles {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.ai-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: $ai-muted;
+    cursor: pointer;
+    user-select: none;
+
+    input { width: 11px; height: 11px; accent-color: $ai-accent; }
+    span { font-size: 10px; }
+}
+
 .ai-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

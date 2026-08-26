@@ -4,7 +4,7 @@ import { useStore } from '@/hooks/useStore';
 import { LogTypes, MessageTypes } from '@/external/bot-skeleton';
 import {
     VOLATILITY_LIST, computeSymbolStats, requestAiPlan, backtestPlan,
-    AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus,
+    AiPlan, SymbolStats, volPipSize, VolatilitySymbol, AiFocus, AiContractType,
 } from './ai-analyst';
 
 export type AiPhase = 'idle' | 'collecting' | 'analyzing' | 'ready' | 'running' | 'error';
@@ -31,6 +31,14 @@ export function useAiAnalyst() {
     const [logs, setLogs] = useState<string[]>([]);
     const [plan, setPlan] = useState<AiPlan | null>(null);
     const [run, setRun] = useState<RunState>({ pnl: 0, trades: 0, wins: 0, losses: 0, openId: null });
+    const [autoRun, setAutoRun] = useState(false);
+    const [stakeMultiplierEnabled, setStakeMultiplierEnabled] = useState(false);
+    const [allowedTypes, setAllowedTypes] = useState<Set<AiContractType>>(
+        new Set(['DIGITDIFF', 'DIGITMATCH', 'DIGITOVER', 'DIGITUNDER']),
+    );
+    const autoRunRef = useRef(false);
+    const stakeMultiplierRef = useRef(false);
+    const currentStakeRef = useRef(0);
 
     const mountedRef = useRef(true);
     const reqCounter = useRef(0);
@@ -50,6 +58,7 @@ export function useAiAnalyst() {
     const lastRefreshAt = useRef(0);
     const lastTickPrice = useRef(0);
     const rawPricesMap = useRef<Map<string, number[]>>(new Map());
+    const baseStakeRef = useRef(0);
 
     // ── MobX store refs ────────────────────────────────────────────────
     // The store may not be ready on the very first render (StoreProvider
@@ -60,6 +69,15 @@ export function useAiAnalyst() {
     storeRef.current = (rootStore as any) ?? storeRef.current;
 
     // ── Helpers ────────────────────────────────────────────────────────
+    const toggleAllowedType = useCallback((t: AiContractType) => {
+        setAllowedTypes(prev => {
+            const next = new Set(prev);
+            if (next.has(t)) { if (next.size > 1) next.delete(t); }
+            else next.add(t);
+            return next;
+        });
+    }, []);
+
     /** Directly push a formatted log entry into the MobX journal store.
      *  FormatMessage recognises LogTypes.PURCHASE / PROFIT / LOST and
      *  renders them with the proper colours and currency formatting. */
@@ -176,7 +194,7 @@ export function useAiAnalyst() {
             let attempt = 0;
             while (attempt < 3 && !p) {
                 try {
-                    p = await requestAiPlan(stats, focusRef.current, undefined, log);
+                    p = await requestAiPlan(stats, focusRef.current, undefined, log, allowedTypes);
                 } catch (err: any) {
                     attempt++;
                     const msg = err?.message ?? '';
@@ -204,7 +222,7 @@ export function useAiAnalyst() {
                     setProgress('Backtest failed — asking AI for a better setup…');
                     try {
                         const p2 = await requestAiPlan(stats, focusRef.current,
-                            `Previous plan backtested NEGATIVE: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl}. Use a completely different archetype and/or market.`, log);
+                            `Previous plan backtested NEGATIVE: ${bt.trades} trades, ${bt.winRate}% win, P&L ${bt.pnl}. Use a completely different archetype and/or market.`, log, allowedTypes);
                         if (p2) {
                             const bt2 = backtestPlan(p2, rawPricesMap.current.get(p2.market) ?? marketPrices);
                             log(`Backtest #2: ${bt2.trades} trades, ${bt2.winRate}% win, P&L ${bt2.pnl >= 0 ? '+' : ''}${bt2.pnl.toFixed(2)}`);
@@ -229,7 +247,7 @@ export function useAiAnalyst() {
             setProgress(e?.message ?? 'Analysis failed.');
             log(`ERROR: ${e?.message ?? 'Analysis failed.'}`);
         }
-    }, [phase, focusType, request, log, collectStats]);
+    }, [phase, focusType, request, log, collectStats, allowedTypes]);
 
     // ── RUN ENGINE ──────────────────────────────────────────────────────
     const refreshPlan = useCallback(async (reason: string) => {
@@ -238,19 +256,53 @@ export function useAiAnalyst() {
         try {
             log(`Re-planning (${reason}) — refreshing evidence…`);
             const stats = await collectStats();
-            const p = await requestAiPlan(stats, focusRef.current, undefined, log);
+            let p: AiPlan | null = null;
+            let attempt = 0;
+            while (attempt < 3 && !p) {
+                try {
+                    p = await requestAiPlan(stats, focusRef.current, undefined, log, allowedTypes);
+                } catch (err: any) {
+                    attempt++;
+                    const msg = err?.message ?? '';
+                    const retryMatch = msg.match(/try again in ([\d.]+)s/);
+                    if (retryMatch && attempt < 3) {
+                        const waitSec = parseFloat(retryMatch[1]);
+                        log(`Rate limited on re-plan — waiting ${waitSec.toFixed(1)}s…`);
+                        setProgress(`Rate limited — retrying in ${Math.ceil(waitSec)}s…`);
+                        await new Promise(r => setTimeout(r, (waitSec + 0.5) * 1000));
+                    } else {
+                        throw err;
+                    }
+                }
+            }
+            if (!p) throw new Error('AI returned no plan after retries.');
             planRef.current = p;
             setPlan(p);
             tradesSinceRefresh.current = 0;
             lastRefreshAt.current = Date.now();
             log(`NEW PLAN → ${p.market} ${p.contract_type}${p.barrier_digit != null ? ` ${p.barrier_digit}` : ''} · ${p.duration_ticks}t · trigger=${p.entry_trigger.type}:${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `+gap${p.entry_trigger.min_gap}` : ''} · confidence ${p.confidence}%`);
             log(p.rationale);
+            // Auto-run: re-arm tick stream for new market
+            if (autoRunRef.current) {
+                if (tickSubId.current) { sendViaNewSystem({ forget: tickSubId.current }); tickSubId.current = null; }
+                try {
+                    const res: any = await request({ ticks_history: p.market, count: 1500, end: 'latest', style: 'ticks' });
+                    const pip = volPipSize(p.market as VolatilitySymbol);
+                    liveDigits.current = (res?.history?.prices ?? []).map(Number).filter(Number.isFinite).map((v: number) => Number(Number(v).toFixed(pip).slice(-1)));
+                    const sub: any = await request({ ticks_history: p.market, count: 1, end: 'latest', style: 'ticks', subscribe: 1 }, 8000);
+                    if (sub?.subscription?.id) tickSubId.current = sub.subscription.id;
+                    log(`Auto-run: watching ${p.market} with ${liveDigits.current.length} ticks.`);
+                    void maybeFire();
+                } catch (e: any) {
+                    log(`Auto-run stream error: ${e?.message}`);
+                }
+            }
         } catch (e: any) {
             log(`Re-plan failed (${e?.message ?? 'unknown'}) — keeping current plan.`);
         } finally {
             analyzingRef.current = false;
         }
-    }, [collectStats, log]);
+    }, [collectStats, log, request, maybeFire, allowedTypes]);
 
     const settleAndContinue = useCallback(async (contractId: number, profit: number, poc?: any) => {
         const rs = runStateRef.current;
@@ -262,6 +314,18 @@ export function useAiAnalyst() {
         if (profit >= 0) { rs.wins += 1; consecutiveLosses.current = 0; }
         else { rs.losses += 1; consecutiveLosses.current += 1; }
         setRun({ ...rs });
+
+        // ── Stake multiplier: compound on win, reset on loss ─────────
+        if (stakeMultiplierRef.current && baseStakeRef.current > 0) {
+            if (profit >= 0) {
+                currentStakeRef.current += profit;
+                log(`Multiplier: stake → $${currentStakeRef.current.toFixed(2)} (+$${profit.toFixed(2)} profit)`);
+            } else {
+                currentStakeRef.current = baseStakeRef.current;
+                log(`Multiplier: stake reset → $${currentStakeRef.current.toFixed(2)} (base)`);
+            }
+            stakeRef.current = currentStakeRef.current;
+        }
 
         const p = planRef.current;
 
@@ -301,7 +365,12 @@ export function useAiAnalyst() {
         if (tpRef.current > 0 && rs.pnl >= tpRef.current) { stopRun(`Take profit reached (+${rs.pnl.toFixed(2)}).`); return; }
         if (slRef.current > 0 && rs.pnl <= -slRef.current) { stopRun(`Stop loss hit (${rs.pnl.toFixed(2)}).`); return; }
 
-        if (profit < 0 && consecutiveLosses.current >= 2) {
+        // ── Auto-run: always re-plan and fire ─────────────────────────
+        const shouldAuto = autoRunRef.current;
+        if (shouldAuto) {
+            log('Auto-run: re-analyzing for next trade…');
+            void refreshPlan('auto-run — next trade');
+        } else if (profit < 0 && consecutiveLosses.current >= 2) {
             void refreshPlan('2 losses in a row — signal may be exhausted');
         } else if (profit >= 0) {
             void refreshPlan('Win secured — finding next edge');
@@ -443,6 +512,8 @@ export function useAiAnalyst() {
         const amt = parseFloat(stake);
         if (!amt || amt <= 0) { log('Enter a valid stake before running.'); return; }
         stakeRef.current = amt;
+        baseStakeRef.current = amt;
+        currentStakeRef.current = amt;
         tpRef.current = parseFloat(takeProfit) || 0;
         slRef.current = parseFloat(stopLoss) || 0;
 
@@ -457,7 +528,8 @@ export function useAiAnalyst() {
 
         try {
             setPhase('running');
-            log(`RUN started → watching ${p.market} for trigger "${p.entry_trigger.type}" (digit ${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `, min gap ${p.entry_trigger.min_gap}` : ''}). TP ${tpRef.current || '∞'} / SL ${slRef.current || '∞'}.`);
+            const modeLabel = autoRunRef.current ? 'AUTO-RUN' : 'RUN';
+            log(`${modeLabel} started → watching ${p.market} for trigger "${p.entry_trigger.type}" (digit ${p.entry_trigger.digit}${p.entry_trigger.min_gap ? `, min gap ${p.entry_trigger.min_gap}` : ''}). TP ${tpRef.current || '∞'} / SL ${slRef.current || '∞'}.` + (stakeMultiplierRef.current ? ` · Stake multiplier ON ($${amt.toFixed(2)})` : ''));
 
             const res: any = await request({
                 ticks_history: p.market, count: 1500, end: 'latest', style: 'ticks',
@@ -527,6 +599,9 @@ export function useAiAnalyst() {
 
     useEffect(() => { phaseRef.current = phase; }, [phase]);
 
+    useEffect(() => { autoRunRef.current = autoRun; }, [autoRun]);
+    useEffect(() => { stakeMultiplierRef.current = stakeMultiplierEnabled; }, [stakeMultiplierEnabled]);
+
     useEffect(() => () => {
         if (tickSubId.current) sendViaNewSystem({ forget: tickSubId.current });
     }, []);
@@ -536,6 +611,9 @@ export function useAiAnalyst() {
         stake, setStake, takeProfit, setTakeProfit, stopLoss, setStopLoss,
         focusType, setFocusType,
         phase, progress, logs, plan, run,
+        autoRun, setAutoRun,
+        stakeMultiplierEnabled, setStakeMultiplierEnabled,
+        allowedTypes, toggleAllowedType,
         analyze, startRun, stopRun: () => stopRun(),
     };
 }

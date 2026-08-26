@@ -585,9 +585,13 @@ export async function requestAiPlan(
     focus?: AiFocus,
     prevPlan?: string,
     logFn?: (msg: string) => void,
+    allowedTypes?: Set<AiContractType>,
 ): Promise<AiPlan> {
     const focusLine = focus && focus !== 'auto'
         ? `\nHARD CONSTRAINT: contract_type MUST be one of ${FOCUS_TYPES[focus].join(' or ')} — pick the stronger of the two from the data.`
+        : '';
+    const typesLine = allowedTypes && allowedTypes.size < 4
+        ? `\nALLOWED CONTRACT TYPES ONLY: ${[...allowedTypes].join(', ')}. Do NOT use any other type.`
         : '';
     const prevLine = prevPlan
         ? `\nPREVIOUS PLAN: ${prevPlan}. If it lost more than it won, use a DIFFERENT archetype and/or market unless the fresh numbers overwhelmingly justify a repeat. Suggest a genuinely new idea when the data allows.`
@@ -598,7 +602,7 @@ export async function requestAiPlan(
         reasoning_effort: 'medium',
         messages: [
             { role: 'system', content: SYS_PROMPT },
-            { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine + prevLine },
+            { role: 'user', content: buildUserPrompt(buildDigest(stats)) + focusLine + typesLine + prevLine },
         ],
     };
 

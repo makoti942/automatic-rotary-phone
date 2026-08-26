@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useAiAnalyst } from './use-ai-analyst';
-import { AiFocus } from './ai-analyst';
+import { AiFocus, AiContractType } from './ai-analyst';
 import './ai-panel.scss';
 
 const PHASE_LABEL: Record<string, string> = {
@@ -19,6 +19,13 @@ const FOCUS_LABELS: Record<AiFocus, string> = {
     'over-under': 'Over/Under',
     'even-odd': 'Even/Odd',
 };
+
+const TYPE_LABELS: { key: AiContractType; label: string }[] = [
+    { key: 'DIGITMATCH', label: 'Match' },
+    { key: 'DIGITDIFF', label: 'Differ' },
+    { key: 'DIGITOVER', label: 'Over' },
+    { key: 'DIGITUNDER', label: 'Under' },
+];
 
 export const AiPanel = observer(() => {
     const ai = useAiAnalyst();
@@ -160,6 +167,19 @@ export const AiPanel = observer(() => {
                             )}
                         </div>
 
+                        <div className='ai-types'>
+                            {TYPE_LABELS.map(t => (
+                                <label key={t.key} className='ai-type-cb'>
+                                    <input
+                                        type='checkbox'
+                                        checked={ai.allowedTypes.has(t.key)}
+                                        onChange={() => ai.toggleAllowedType(t.key)}
+                                    />
+                                    <span>{t.label}</span>
+                                </label>
+                            ))}
+                        </div>
+
                         <div className='ai-grid'>
                             <div className='ai-field'>
                                 <label>Stake</label>
@@ -176,6 +196,19 @@ export const AiPanel = observer(() => {
                                 <input type='number' min={0} step={0.5} value={ai.stopLoss}
                                     onChange={e => ai.setStopLoss(e.target.value)} />
                             </div>
+                        </div>
+
+                        <div className='ai-toggles'>
+                            <label className='ai-toggle'>
+                                <input type='checkbox' checked={ai.autoRun}
+                                    onChange={e => ai.setAutoRun(e.target.checked)} />
+                                <span>Auto-run</span>
+                            </label>
+                            <label className='ai-toggle'>
+                                <input type='checkbox' checked={ai.stakeMultiplierEnabled}
+                                    onChange={e => ai.setStakeMultiplierEnabled(e.target.checked)} />
+                                <span>Stake ×</span>
+                            </label>
                         </div>
 
                         <div className='ai-actions'>
