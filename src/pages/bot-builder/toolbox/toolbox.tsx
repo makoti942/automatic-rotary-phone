@@ -9,13 +9,12 @@ import { localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
 /* [/AI] */
-import ToolbarButton from '../toolbar/toolbar-button';
 import SearchBox from './search-box';
 import { ToolboxItems } from './toolbox-items';
 
 const Toolbox = observer(() => {
     const { isDesktop } = useDevice();
-    const { toolbox, flyout, quick_strategy } = useStore();
+    const { toolbox, flyout } = useStore();
     const {
         hasSubCategory,
         is_search_loading,
@@ -30,7 +29,6 @@ const Toolbox = observer(() => {
         toolbox_dom,
     } = toolbox;
 
-    const { setFormVisibility } = quick_strategy;
     const { setVisibility, selected_category } = flyout;
 
     const toolbox_ref = React.useRef(ToolboxItems());
@@ -43,22 +41,9 @@ const Toolbox = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const handleQuickStrategyOpen = () => {
-        setFormVisibility(true);
-        /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
-        /* [/AI] */
-    };
-
     if (isDesktop) {
         return (
             <div className='db-toolbox' data-testid='dashboard__toolbox'>
-                <ToolbarButton
-                    popover_message={localize('Click here to start building your Deriv Bot.')}
-                    button_id='db-toolbar__get-started-button'
-                    button_classname='toolbar__btn toolbar__btn--icon toolbar__btn--start'
-                    buttonOnClick={handleQuickStrategyOpen}
-                    button_text={localize('Quick strategy')}
-                />
                 <div id='gtm-toolbox' className='db-toolbox__content'>
                     <div className='db-toolbox__header'>
                         <div

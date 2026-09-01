@@ -142,6 +142,20 @@
         overflow: hidden !important;
 
         .dc-tabs {
+            flex: 1 1 auto;
+            min-height: 0;
+        }
+
+        .dc-tabs__content {
+            height: 100%;
+            min-height: 0;
+        }
+
+        .run-panel__stat {
+            flex: 0 0 auto;
+        }
+
+        .dc-tabs {
             &__item {
                 overflow: hidden;
                 text-overflow: ellipsis;
@@ -160,7 +174,7 @@
 
     &-tab {
         &__content {
-            height: calc(100vh - 290px);
+            height: 100%;
             overflow: hidden;
 
             &--no-stat {
