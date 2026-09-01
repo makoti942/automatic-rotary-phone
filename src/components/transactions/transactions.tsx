@@ -163,10 +163,10 @@ const Transactions = observer(({ is_drawer_open }: TTransactions) => {
                                 const row = transaction_list?.[index];
                                 switch (row.type) {
                                     case transaction_elements.CONTRACT: {
-                                        return 50;
+                                        return 32;
                                     }
                                     case transaction_elements.DIVIDER: {
-                                        return 21;
+                                        return 14;
                                     }
                                     default: {
                                         return 0;

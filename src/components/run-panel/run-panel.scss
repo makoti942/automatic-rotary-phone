@@ -91,7 +91,7 @@
         &--tiles {
             width: 100%;
             display: grid;
-            grid-template: 64px 64px / 1fr 1fr 1fr;
+            grid-template: 44px 44px / 1fr 1fr 1fr;
         }
 
         &-amount {
@@ -153,7 +153,7 @@
 
     &-tab {
         &__content {
-            height: calc(100vh - 42rem);
+            height: calc(100vh - 36rem);
             overflow: hidden;
 
             &--no-stat {
