@@ -2,7 +2,7 @@
     width: 100%;
     height: 100vh;
     padding: 20px;
-    background: #0d1117;
+    background: var(--general-main-1);
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
@@ -18,7 +18,7 @@
     &__loading {
         text-align: center;
         padding: 60px 20px;
-        color: #7fa0be;
+        color: var(--text-less-prominent);
     }
 
     &__grid {
@@ -41,13 +41,13 @@
         text-align: center;
         padding: 60px 20px 100px 20px;
         margin-bottom: 40px;
-        color: #7fa0be;
+        color: var(--text-less-prominent);
     }
 }
 
 .free-bot-card {
-    background: #111827;
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--general-section-1);
+    border: 1px solid var(--general-section-2);
     border-radius: 8px;
     padding: 8px;
     display: flex;
@@ -95,7 +95,7 @@
     &__title {
         margin-bottom: 4px;
         line-height: 1.2;
-        color: #dceaf8;
+        color: var(--text-prominent);
         font-size: 11px;
         font-weight: 600;
         overflow: hidden;
@@ -125,7 +125,7 @@
     }
 
     &__description {
-        color: #6a8eab;
+        color: var(--text-less-prominent);
         line-height: 1.3;
         font-size: 10px;
         text-align: center;
@@ -155,26 +155,26 @@
         letter-spacing: 0.3px;
 
         &--beginner {
-            background: rgba(46, 125, 50, 0.2);
-            color: #81c784;
+            background: rgba(46, 125, 50, 0.15);
+            color: var(--status-success);
             border: 1px solid rgba(46, 125, 50, 0.3);
         }
 
         &--intermediate {
-            background: rgba(255, 193, 7, 0.2);
-            color: #ffc107;
+            background: rgba(255, 193, 7, 0.15);
+            color: var(--status-warning);
             border: 1px solid rgba(255, 193, 7, 0.3);
         }
 
         &--advanced {
-            background: rgba(244, 67, 54, 0.2);
-            color: #e57373;
+            background: rgba(244, 67, 54, 0.15);
+            color: var(--brand-danger);
             border: 1px solid rgba(244, 67, 54, 0.3);
         }
 
         &--strategy {
-            background: rgba(96, 165, 250, 0.2);
-            color: #60a5fa;
+            background: rgba(96, 165, 250, 0.15);
+            color: var(--status-info);
             border: 1px solid rgba(96, 165, 250, 0.3);
         }
     }
@@ -192,7 +192,7 @@
         font-size: 8px;
         font-weight: 500;
         background: rgba(59, 130, 246, 0.12);
-        color: #60a5fa;
+        color: var(--status-info);
         border: 1px solid rgba(59, 130, 246, 0.2);
         white-space: nowrap;
     }
@@ -216,8 +216,8 @@
         }
 
         &:disabled {
-            background: #333 !important;
-            color: #666 !important;
+            background: var(--general-disabled) !important;
+            color: var(--text-disabled) !important;
             cursor: not-allowed;
             opacity: 0.5;
         }
@@ -226,7 +226,7 @@
     &.loading {
         .free-bot-card__title,
         .free-bot-card__description {
-            background: linear-gradient(90deg, #1e2633 25%, #2a3545 50%, #1e2633 75%);
+            background: linear-gradient(90deg, var(--general-section-2) 25%, var(--general-section-3) 50%, var(--general-section-2) 75%);
             background-size: 200% 100%;
             animation: skeleton-loading 1.5s infinite;
             border-radius: 4px;
@@ -236,10 +236,10 @@
 }
 
 @media (max-width: 768px) {
-    .free-bots {
+.free-bots {
         padding: 12px 10px 120px 10px;
         height: calc(100vh - 60px);
-        background: #0d1117;
+        background: var(--general-main-1);
     }
 
     .free-bot-card {
