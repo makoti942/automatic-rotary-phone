@@ -57,7 +57,7 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
     &__wrapper {
         display: flex;
         align-items: center;
-        height: 40px;
+        height: 30px;
     }
 
     &__controls {
@@ -107,7 +107,7 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
     &__container {
         height: 100%;
         flex: 1;
-        padding: 5px 12px;
+        padding: 2px 10px;
         display: flex;
         flex-direction: column;
         justify-content: space-evenly;
@@ -117,11 +117,11 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
 
     &__text {
         color: $hacker-green;
-        font-size: 12px;
+        font-size: 10px;
         font-weight: bold;
         text-align: center;
-        margin-bottom: 5px;
-        line-height: 18px;
+        margin-bottom: 2px;
+        line-height: 14px;
         text-shadow: 0 0 6px $hacker-glow;
         animation: flicker 3s ease-in-out infinite;
         font-family: 'Courier New', monospace;
@@ -132,7 +132,7 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
         display: flex;
         justify-content: space-between;
         position: relative;
-        height: 8px;
+        height: 6px;
 
         .circular-wrapper {
             width: $static-circle-diameter;
