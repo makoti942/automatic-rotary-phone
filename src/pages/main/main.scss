@@ -230,6 +230,10 @@
         }
 
         .animation {
+            &__wrapper {
+                height: 28px;
+            }
+
             &__button#db-animation {
                 &__run-button {
                     background-color: var(--button-primary-default);

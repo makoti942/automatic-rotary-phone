@@ -92,24 +92,27 @@
 
     &__group {
         display: flex;
+        flex-wrap: nowrap;
         border-radius: $BORDER_RADIUS;
         border: solid 1px var(--border-normal);
-        height: 2.8rem;
+        height: 2.4rem;
 
         &-btn {
-            padding: 0 0.6rem;
-            height: 2.8rem;
+            display: flex;
+            flex-wrap: nowrap;
+            padding: 0 0.4rem;
+            height: 2.4rem;
+            align-items: center;
 
             @include mobile-or-tablet-screen {
                 padding: 0;
                 height: fit-content;
-                flex-direction: column;
                 border: none;
 
                 .dc-popover {
                     &__target {
-                        width: 4rem;
-                        height: 4rem;
+                        width: 3.2rem;
+                        height: 3.2rem;
                     }
                 }
             }
@@ -121,7 +124,7 @@
     }
 
     &__animation {
-        width: 35rem;
+        width: 30rem;
     }
 
     &__dialog {
@@ -134,13 +137,16 @@
         @include mobile-or-tablet-screen {
             background-color: var(--general-main-1);
             position: absolute;
-            top: 10;
-            overflow-y: auto;
+            top: 0;
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            overflow-y: hidden;
             scrollbar-width: none;
-            height: calc(100% - 5rem);
-            box-shadow:
-                0 1.2rem 1.6rem rgb(14 14 14 / 8%),
-                0 0.4rem 0.6rem rgb(14 14 14 / 3%);
+            height: 4rem;
+            padding: 0.4rem 0.8rem;
+            align-items: center;
+            z-index: 2;
         }
     }
 }

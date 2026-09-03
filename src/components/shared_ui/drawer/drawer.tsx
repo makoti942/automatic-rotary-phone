@@ -52,8 +52,8 @@ const Drawer = ({
                 transform:
                     is_open && isDesktop
                         ? anchor === 'left'
-                            ? `translateX(calc(${width}px - 16px))`
-                            : `translateX(calc(-${width}px + 16px))`
+                            ? `translateX(calc(${width}px - 12px))`
+                            : `translateX(calc(-${width}px + 12px))`
                         : undefined,
             }}
         >

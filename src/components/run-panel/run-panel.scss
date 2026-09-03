@@ -144,15 +144,17 @@
         .dc-tabs {
             flex: 1 1 auto;
             min-height: 0;
+            overflow: hidden;
         }
 
         .dc-tabs__content {
-            height: 100%;
             min-height: 0;
+            overflow: hidden;
         }
 
         .run-panel__stat {
             flex: 0 0 auto;
+            z-index: 2;
         }
 
         .dc-tabs {
