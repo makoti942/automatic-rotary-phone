@@ -778,7 +778,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThr
                 </label>
             </div>
 
-            {recoveryMode && !running && (
+            {(recoveryMode || manualRecovery) && !running && (
                 <div className='mw-killer__fields'>
                     <div className='mw-field'>
                         <label className='mw-label'>Recovery Virtual Loss Threshold</label>
