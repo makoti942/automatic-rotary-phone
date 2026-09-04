@@ -35,6 +35,13 @@ const NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
     differs: true, only_ups: false, only_downs: false,
 };
 
+const HAS_DELAY: Record<MultiKillerStrategy, boolean> = {
+    over: false, under: false, rise: true, fall: true,
+    differs: false, only_ups: false, only_downs: false,
+};
+
+const TICK_MS = 2000;
+
 let _buySeq = 0;
 
 interface TradeEntry {
@@ -51,6 +58,9 @@ export const MultiKiller: React.FC = () => {
     const [barriers, setBarriers] = useState<Record<string, string>>({
         over: '5', under: '5', differs: '5',
     });
+    const [delays, setDelays] = useState<Record<string, number>>({
+        rise: 0, fall: 0,
+    });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
 
@@ -61,6 +71,7 @@ export const MultiKiller: React.FC = () => {
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
     const stakeRef = useRef('10');
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
+    const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
     const genRef = useRef(0);
 
     const log = useCallback((msg: string) => {
@@ -72,6 +83,7 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { selectedRef.current = selected; }, [selected]);
     useEffect(() => { stakeRef.current = stake; }, [stake]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
+    useEffect(() => { delaysRef.current = delays; }, [delays]);
 
     // Buy a single contract with unique req_id — bypasses sendViaNewSystemWithPromise
     const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
@@ -248,8 +260,21 @@ export const MultiKiller: React.FC = () => {
 
         log(`🚀 Round: ${sel.length} × $${stakeNum} = $${(sel.length * stakeNum).toFixed(2)}`);
 
-        // Fire ALL buys at the same time
-        const promises = sel.map(s => buyOne(s, stakeNum));
+        // Fire buys with tick delays
+        const promises = sel.map(s => {
+            const delayTicks = HAS_DELAY[s] ? (delaysRef.current[s] ?? 0) : 0;
+            if (delayTicks > 0) {
+                log(`⏱ ${LABELS[s]} delayed ${delayTicks} tick${delayTicks > 1 ? 's' : ''}`);
+                return new Promise<{ cid: string; strategy: MultiKillerStrategy } | null>((resolve) => {
+                    setTimeout(async () => {
+                        if (genRef.current !== gen) { resolve(null); return; }
+                        const result = await buyOne(s, stakeNum);
+                        resolve(result);
+                    }, delayTicks * TICK_MS);
+                });
+            }
+            return buyOne(s, stakeNum);
+        });
         const results = await Promise.all(promises);
 
         // Check if stopped during buys
@@ -323,6 +348,19 @@ export const MultiKiller: React.FC = () => {
                             <input type='checkbox' checked={selected.includes(s)}
                                 onChange={() => toggle(s)} disabled={running} />
                             <span>{LABELS[s]}</span>
+                            {HAS_DELAY[s] && selected.includes(s) && (
+                                <select
+                                    className='mw-type-delay'
+                                    value={delays[s] ?? 0}
+                                    onChange={e => setDelays(p => ({ ...p, [s]: Number(e.target.value) }))}
+                                    disabled={running}
+                                    onClick={e => e.stopPropagation()}
+                                >
+                                    <option value={0}>0t</option>
+                                    <option value={1}>1t</option>
+                                    <option value={2}>2t</option>
+                                </select>
+                            )}
                         </label>
                     ))}
                 </div>

@@ -1617,6 +1617,20 @@ $mw-radius:   10px;
     &:hover { background: rgba(255,255,255,0.05); }
 }
 
+.mw-type-delay {
+    width: 36px;
+    padding: 1px 2px;
+    font-size: 9px;
+    background: $mw-bg3;
+    color: $mw-text;
+    border: 1px solid $mw-border;
+    border-radius: 4px;
+    cursor: pointer;
+    margin-left: 2px;
+
+    &:disabled { opacity: 0.4; cursor: default; }
+}
+
 .mw-killer__toggles {
     display: flex;
     flex-wrap: wrap;
