@@ -181,7 +181,7 @@ const running = phase === 'running';
                         <div className='mw-killer__log-empty'>Press Analyze to start.</div>
                     ) : (
                         logs.map((l, i) => (
-                            <div key={i} className='mw-killer__log-line'>{l}</div>
+                            <div key={i} className='mw-killer__log-line'>{l.msg}</div>
                         ))
                     )}
                 </div>
