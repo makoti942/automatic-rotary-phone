@@ -8,32 +8,30 @@ type MultiKillerStrategy =
     | 'under'
     | 'rise'
     | 'fall'
-    | 'eve'
-    | 'odd'
     | 'differs'
     | 'only_ups'
     | 'only_downs';
 
 const LABELS: Record<MultiKillerStrategy, string> = {
     over: 'Over', under: 'Under', rise: 'Rise', fall: 'Fall',
-    eve: 'Even', odd: 'Odd', differs: 'Differs',
+    differs: 'Differs',
     only_ups: 'Only Ups', only_downs: 'Only Downs',
 };
 
 const CONTRACT_TYPE: Record<MultiKillerStrategy, string> = {
-    over: 'DIGITOVER', under: 'DIGITUNDER', rise: 'RISE', fall: 'FALL',
-    eve: 'DIGITEVEN', odd: 'DIGITODD', differs: 'DIGITDIFF',
+    over: 'DIGITOVER', under: 'DIGITUNDER', rise: 'CALL', fall: 'PUT',
+    differs: 'DIGITDIFF',
     only_ups: 'RUNHIGH', only_downs: 'RUNLOW',
 };
 
 const DURATION: Record<MultiKillerStrategy, number> = {
-    over: 1, under: 1, rise: 1, fall: 1, eve: 1, odd: 1, differs: 1,
+    over: 1, under: 1, rise: 1, fall: 1, differs: 1,
     only_ups: 2, only_downs: 2,
 };
 
 const NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
     over: true, under: true, rise: false, fall: false,
-    eve: false, odd: false, differs: true, only_ups: false, only_downs: false,
+    differs: true, only_ups: false, only_downs: false,
 };
 
 interface TradeEntry {
@@ -47,7 +45,7 @@ export const MultiKiller: React.FC = () => {
     const [stake, setStake] = useState('10');
     const [selected, setSelected] = useState<MultiKillerStrategy[]>([]);
     const [barriers, setBarriers] = useState<Record<string, number>>({
-        over: 5, under: 5, differs: 5, only_ups: 5, only_downs: 5,
+        over: 5, under: 5, differs: 5,
     });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
