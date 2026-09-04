@@ -96,8 +96,11 @@ export const MultiKiller: React.FC = () => {
   }, []);
 
   const sendWS = useCallback((msg: any) => {
-    if (window._newSystemWS?.readyState === WebSocket.OPEN) {
-      window._newSystemWS.send(JSON.stringify(msg));
+    const ws = window._newSystemWS;
+    addLog(`🔍 WS state: ${ws?.readyState === WebSocket.OPEN ? 'OPEN' : ws?.readyState === WebSocket.CONNECTING ? 'CONNECTING' : ws?.readyState === WebSocket.CLOSED ? 'CLOSED' : 'NULL'}`, 'info');
+    addLog(`🔍 Sending: ${JSON.stringify(msg).slice(0, 200)}`, 'info');
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify(msg));
       return true;
     } else {
       addLog('❌ WebSocket not connected', 'error');
@@ -162,6 +165,12 @@ export const MultiKiller: React.FC = () => {
   const executeRound = useCallback(async () => {
     if (!running || selectedStrategies.length === 0) return;
     
+    const ws = window._newSystemWS;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addLog('❌ WebSocket not ready, cannot execute', 'error');
+      return;
+    }
+    
     const stakeNum = parseFloat(stake) || 10;
     totalExpectedRef.current = selectedStrategies.length;
     settlementCountRef.current = 0;
@@ -204,7 +213,9 @@ export const MultiKiller: React.FC = () => {
       
       const sent = sendWS(buyRequest);
       if (sent) {
-        addLog(`📤 BUY: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+        addLog(`📤 BUY sent: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum} (req_id=${reqId})`, 'trade');
+      } else {
+        addLog(`❌ Failed to send BUY for ${STRATEGY_LABELS[strategy]}`, 'error');
       }
       
       return Promise.resolve();
@@ -216,11 +227,18 @@ export const MultiKiller: React.FC = () => {
   const startMultiKiller = useCallback(() => {
     if (running || selectedStrategies.length === 0) return;
     
+    const ws = window._newSystemWS;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      addLog('❌ WebSocket not connected', 'error');
+      return;
+    }
+    
     setRunning(true);
     setLogs([]);
     activeContractsRef.current = [];
     requestIdRef.current = 0;
     
+    // Subscribe to proposal_open_contract for all active contracts
     addLog('▶️ Multi-Killer started', 'info');
     executeRound();
   }, [running, selectedStrategies, executeRound, addLog]);
