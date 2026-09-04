@@ -5,7 +5,7 @@ import { OverUnderKiller } from './over-under-killer';
 import { HighLow } from './high-low';
 import { UnderUnderMarket } from './under-under-market';
 import { DiffersAuto } from './differs-auto';
-import { AiPanel } from '@/pages/manual-trade/ai-panel';
+import { AiAnalystStrategy } from './ai-analyst-strategy';
 import { ALL_SYMBOLS } from './makoti-ws';
 import './makoti-widget.scss';
 
@@ -373,15 +373,7 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'high_low' && <HighLow />}
                     {tab === 'under_under_market' && <UnderUnderMarket />}
                     {tab === 'differs_auto' && <DiffersAuto />}
-                    {tab === 'ai_analyst' && (
-                        <AiPanel
-                            embedded
-                            preset={{
-                                focusType: 'auto',
-                                allowedTypes: { DIGITOVER: true, DIGITUNDER: true, DIGITDIFF: true, DIGITMATCH: false },
-                            }}
-                        />
-                    )}
+                    {tab === 'ai_analyst' && <AiAnalystStrategy />}
                 </div>
             </div>
 
