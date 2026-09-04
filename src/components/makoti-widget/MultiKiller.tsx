@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
+import { sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import './makoti-widget.scss';
 
 type MultiKillerStrategy = 
@@ -86,7 +87,6 @@ export const MultiKiller: React.FC = () => {
   const [logs, setLogs] = useState<string[]>([]);
 
   const activeContractsRef = useRef<ActiveContract[]>([]);
-  const requestIdRef = useRef(0);
   const settlementCountRef = useRef(0);
   const totalExpectedRef = useRef(0);
 
@@ -95,28 +95,56 @@ export const MultiKiller: React.FC = () => {
     setLogs(prev => [{ time, msg, type }, ...prev].slice(0, 100));
   }, []);
 
-  const sendWS = useCallback((msg: any) => {
-    const ws = window._newSystemWS;
-    addLog(`🔍 WS state: ${ws?.readyState === WebSocket.OPEN ? 'OPEN' : ws?.readyState === WebSocket.CONNECTING ? 'CONNECTING' : ws?.readyState === WebSocket.CLOSED ? 'CLOSED' : 'NULL'}`, 'info');
-    addLog(`🔍 Sending: ${JSON.stringify(msg).slice(0, 200)}`, 'info');
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify(msg));
-      return true;
-    } else {
-      addLog('❌ WebSocket not connected', 'error');
-      return false;
+  const executeBuy = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number): Promise<number | null> => {
+    const barrier = STRATEGY_NEEDS_BARRIER[strategy] 
+      ? (barriers[strategy] ?? 5)
+      : undefined;
+    
+    const contractType = STRATEGY_CONTRACT_TYPE[strategy];
+    const duration = STRATEGY_DURATION[strategy];
+    
+    const params: any = {
+      amount: stakeNum,
+      basis: 'stake',
+      contract_type: contractType,
+      currency: 'USD',
+      duration: duration,
+      duration_unit: 't',
+      symbol: market,
+    };
+    
+    if (barrier !== undefined) {
+      params.barrier = barrier.toString();
     }
-  }, [addLog]);
+    
+    const buyRequest = {
+      buy: 1,
+      price: stakeNum,
+      parameters: params,
+    };
+    
+    addLog(`📤 BUY: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+    
+    try {
+      const response = await sendViaNewSystemWithPromise(buyRequest);
+      const contractId = response?.buy?.contract_id ?? response?.contract_id;
+      
+      if (contractId) {
+        addLog(`✅ ${STRATEGY_LABELS[strategy]} bought (ID: ${contractId})`, 'trade');
+        return contractId;
+      } else {
+        addLog(`❌ ${STRATEGY_LABELS[strategy]}: Buy OK but no contract_id`, 'error');
+        return null;
+      }
+    } catch (err: any) {
+      addLog(`❌ ${STRATEGY_LABELS[strategy]} buy error: ${err?.error?.message || err?.message || 'timeout'}`, 'error');
+      return null;
+    }
+  }, [barriers, market, addLog]);
 
   const handleWSMessage = useCallback((event: MessageEvent) => {
     try {
       const data = JSON.parse(event.data);
-      
-      // Handle buy response
-      if (data.msg_type === 'buy' && data.buy) {
-        const contractId = data.buy.contract_id;
-        addLog(`✅ Contract bought (ID: ${contractId})`, 'trade');
-      }
       
       // Handle contract settlement (proposal_open_contract with is_sold)
       if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
@@ -146,11 +174,6 @@ export const MultiKiller: React.FC = () => {
           }
         }
       }
-      
-      // Handle error
-      if (data.error) {
-        addLog(`❌ Error: ${data.error.message}`, 'error');
-      }
     } catch (e) {
       // Ignore parse errors
     }
@@ -177,52 +200,28 @@ export const MultiKiller: React.FC = () => {
     
     addLog(`🚀 Starting round: ${selectedStrategies.length} contracts @ $${stakeNum} each = $${(stakeNum * selectedStrategies.length).toFixed(2)} total`, 'info');
     
-    // Send all buy requests simultaneously with direct buy
-    const promises = selectedStrategies.map(async (strategy) => {
-      const barrier = STRATEGY_NEEDS_BARRIER[strategy] 
-        ? (barriers[strategy] ?? 5)
-        : undefined;
-      
-      const contractType = STRATEGY_CONTRACT_TYPE[strategy];
-      const duration = STRATEGY_DURATION[strategy];
-      
-      const params: any = {
-        amount: stakeNum,
-        basis: 'stake',
-        contract_type: contractType,
-        currency: 'USD',
-        duration: duration,
-        duration_unit: 't',
-        symbol: market,
-      };
-      
-      if (barrier !== undefined) {
-        params.barrier = barrier.toString();
-      }
-      
-      const reqId = ++requestIdRef.current;
-      const buyRequest = {
-        buy: 1,
-        price: stakeNum,
-        parameters: params,
-        req_id: reqId,
-      };
-      
-      // Track this contract
-      activeContractsRef.current.push({ contractId: 0, strategy, stake: stakeNum });
-      
-      const sent = sendWS(buyRequest);
-      if (sent) {
-        addLog(`📤 BUY sent: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum} (req_id=${reqId})`, 'trade');
-      } else {
-        addLog(`❌ Failed to send BUY for ${STRATEGY_LABELS[strategy]}`, 'error');
-      }
-      
-      return Promise.resolve();
-    });
+    // Send all buy requests simultaneously and wait for all to complete
+    const buyPromises = selectedStrategies.map((strategy) => 
+      executeBuy(strategy, stakeNum).then(contractId => {
+        if (contractId) {
+          activeContractsRef.current.push({ contractId, strategy, stake: stakeNum });
+        }
+        return contractId;
+      })
+    );
     
-    await Promise.all(promises);
-  }, [running, selectedStrategies, barriers, stake, market, sendWS, addLog]);
+    const results = await Promise.all(buyPromises);
+    const successful = results.filter(id => id !== null);
+    
+    if (successful.length === 0) {
+      addLog('❌ No contracts were bought successfully', 'error');
+      setRunning(false);
+    } else {
+      totalExpectedRef.current = successful.length;
+      settlementCountRef.current = 0;
+      addLog(`✅ ${successful.length} contracts bought, waiting for settlement...`, 'info');
+    }
+  }, [running, selectedStrategies, stake, executeBuy, addLog]);
 
   const startMultiKiller = useCallback(() => {
     if (running || selectedStrategies.length === 0) return;
@@ -236,9 +235,7 @@ export const MultiKiller: React.FC = () => {
     setRunning(true);
     setLogs([]);
     activeContractsRef.current = [];
-    requestIdRef.current = 0;
     
-    // Subscribe to proposal_open_contract for all active contracts
     addLog('▶️ Multi-Killer started', 'info');
     executeRound();
   }, [running, selectedStrategies, executeRound, addLog]);
