@@ -21,10 +21,11 @@ export const AiAnalystStrategy: React.FC = () => {
         focusType: 'auto',
         allowedTypes: { DIGITOVER: true, DIGITUNDER: true, DIGITDIFF: true, DIGITMATCH: false },
     });
-
-    const { focusType, allowedTypes, stake, takeProfit, stopLoss, autoRun, stakeMultiplierEnabled,
-        running, isBusy, plan, progress, logs, analyze, startRun, stopRun, setFocusType, toggleAllowedType,
-        setStake, setTakeProfit, setStopLoss, setAutoRun, setStakeMultiplierEnabled } = ai;
+const {
+    focusType, allowedTypes, stake, takeProfit, stopLoss, autoRun, stakeMultiplierEnabled,
+    phase, isBusy, plan, progress, logs, analyze, startRun, stopRun, setFocusType, toggleAllowedType,
+    setStake, setTakeProfit, setStopLoss, setAutoRun, setStakeMultiplierEnabled } = ai;
+const running = phase === 'running';
 
     return (
         <div className='mw-killer'>

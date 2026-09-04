@@ -1,7 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { useAiAnalyst } from '@/pages/manual-trade/use-ai-analyst';
-import { AiFocus, AiPlan } from '@/pages/manual-trade/ai-analyst';
-import { ALL_SYMBOLS, VOLATILITY_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
+import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
 import './makoti-widget.scss';
 
 type MultiKillerStrategy = 
@@ -39,35 +37,17 @@ const STRATEGY_DURATION: Record<MultiKillerStrategy, number> = {
   only_downs: 2,
 };
 
-const STRATEGY_BARRIER: Record<MultiKillerStrategy, { type: 'digit' | 'none', digit?: number }> = {
-  over: { type: 'digit' },
-  under: { type: 'digit' },
-  rise: { type: 'none' },
-  fall: { type: 'none' },
-  eve: { type: 'none' },
-  odd: { type: 'none' },
-  differs: { type: 'digit' },
-  only_ups: { type: 'digit' },
-  only_downs: { type: 'digit' },
+const STRATEGY_CONTRACT_TYPE: Record<MultiKillerStrategy, string> = {
+  over: 'DIGITOVER',
+  under: 'DIGITUNDER',
+  rise: 'RISE',
+  fall: 'FALL',
+  eve: 'DIGITEVEN',
+  odd: 'DIGITODD',
+  differs: 'DIGITDIFF',
+  only_ups: 'DIGITOVER',
+  only_downs: 'DIGITUNDER',
 };
-
-interface MultiKillerConfig {
-  market: string;
-  stake: number;
-  strategies: MultiKillerStrategy[];
-  barriers: Record<MultiKillerStrategy, number | null>;
-  running: boolean;
-  isBusy: boolean;
-  plan: AiPlan | null;
-  progress: string | null;
-  logs: string[];
-  analyze: () => void;
-  startRun: () => void;
-  stopRun: () => void;
-  setStake: (v: string) => void;
-  setFocusType: (v: AiFocus) => void;
-  toggleAllowedType: (key: string) => void;
-}
 
 export const MultiKiller: React.FC = () => {
   const [market, setMarket] = useState<string>('R_100');
@@ -85,144 +65,67 @@ export const MultiKiller: React.FC = () => {
     only_downs: 5,
   });
   const [running, setRunning] = useState(false);
-  const [isBusy, setIsBusy] = useState(false);
-  const [plan, setPlan] = useState<AiPlan | null>(null);
-  const [progress, setProgress] = useState<string | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
 
-  const ai = useAiAnalyst({
-    focusType: 'auto',
-    allowedTypes: {
-      DIGITOVER: true,
-      DIGITUNDER: true,
-      DIGITDIFF: true,
-      DIGITMATCH: false,
-    },
-  });
-
-  const {
-    focusType,
-    allowedTypes,
-    stake: aiStake,
-    takeProfit,
-    stopLoss,
-    autoRun,
-    stakeMultiplierEnabled,
-    running: aiRunning,
-    isBusy: aiIsBusy,
-    plan: aiPlan,
-    progress: aiProgress,
-    logs: aiLogs,
-    analyze,
-    startRun: aiStartRun,
-    stopRun: aiStopRun,
-    setFocusType: aiSetFocusType,
-    toggleAllowedType: aiToggleAllowedType,
-    setStake: aiSetStake,
-  } = ai;
-
-  // Update plan from AI analyst
-  useEffect(() => {
-    if (aiPlan) {
-      setPlan(aiPlan);
-    }
-  }, [aiPlan]);
-
-  // Update logs from AI analyst
-  useEffect(() => {
-    if (aiLogs) {
-      setLogs(prev => [...prev, ...aiLogs].slice(-50));
-    }
-  }, [aiLogs]);
-
-  // Update progress
-  useEffect(() => {
-    if (aiProgress) {
-      setProgress(aiProgress);
-    }
-  }, [aiProgress]);
-
-  const handleAnalyze = useCallback(async () => {
-    setIsBusy(true);
-    setLogs([]);
-    await analyze();
-    setIsBusy(false);
-  }, [analyze]);
+  const addLog = useCallback((msg: string, type: 'info' | 'trade' | 'error' = 'info') => {
+    const time = new Date().toLocaleTimeString();
+    setLogs(prev => [{ time, msg, type }, ...prev].slice(0, 100));
+  }, []);
 
   const startMultiKiller = useCallback(async () => {
-    if (running || isBusy || selectedStrategies.length === 0) return;
+    if (running || selectedStrategies.length === 0) return;
     
     setRunning(true);
-    setIsBusy(true);
     setLogs([]);
     
     try {
       const stakeNum = parseFloat(stake) || 10;
-      const duration = STRATEGY_DURATION;
       
       // Execute all selected strategies simultaneously
       const promises = selectedStrategies.map(async (strategy) => {
         const barrier = STRATEGY_BARRIER[strategy].type === 'digit' 
-          ? (barriers[strategy as keyof Record<MultiKillerStrategy, number | null>] || 5)
+          ? (barriers[strategy] ?? 5)
           : null;
         
-        // Send trade signal for this strategy
-        const signal: any = {
-          market,
-          contract_type: strategy as any,
-          barrier_digit: barrier,
-          duration_ticks: duration[strategy],
-          stake: stakeNum,
-          entry_trigger: {
-            type: 'immediate',
-            digit: 0,
-            min_gap: 0,
-          },
-          confidence: 50,
-        };
+        const contractType = STRATEGY_CONTRACT_TYPE[strategy];
+        const duration = STRATEGY_DURATION[strategy];
         
         // Log the trade
-        const time = new Date().toLocaleTimeString();
-        setLogs(prev => [{
-          time,
-          msg: `🔄 Multi-Killer: ${STRATEGY_LABELS[strategy]} ${signal.contract_type} @ barrier=${barrier} stake=${stakeNum} ticks=${duration[strategy]}`,
-          type: 'trade',
-        }, ...prev].slice(0, 100));
+        addLog(`🔄 Multi-Killer: ${STRATEGY_LABELS[strategy]} ${contractType} @ barrier=${barrier ?? 'N/A'} stake=${stakeNum} ticks=${duration}`, 'trade');
         
-        // In a real implementation, this would send via WebSocket
-        // For now, we'll just log
-        return { strategy, signal };
+        // Send trade via WebSocket (using existing Deriv API pattern)
+        if (window._newSystemWS?.readyState === WebSocket.OPEN) {
+          const proposalRequest = {
+            proposal: 1,
+            amount: stakeNum,
+            basis: 'stake',
+            contract_type: contractType,
+            currency: 'USD',
+            duration: duration,
+            duration_unit: 't',
+            symbol: market,
+            barrier: barrier?.toString(),
+          };
+          
+          window._newSystemWS.send(JSON.stringify(proposalRequest));
+        }
+        
+        return { strategy, contractType, barrier, stake: stakeNum, duration };
       });
       
       await Promise.all(promises);
       
-      setLogs(prev => [{
-        time: new Date().toLocaleTimeString(),
-        msg: `✅ Multi-Kicker started ${selectedStrategies.length} contracts simultaneously`,
-        type: 'info',
-      }, ...prev].slice(0, 100));
+      addLog(`✅ Multi-Killer started ${selectedStrategies.length} contracts simultaneously`, 'info');
       
     } catch (err) {
-      setLogs(prev => [{
-        time: new Date().toLocaleTimeString(),
-        msg: `❌ Multi-Killer error: ${(err as Error).message}`,
-        type: 'error',
-      }, ...prev].slice(0, 100));
-    } finally {
-      setIsBusy(false);
-      // Don't auto-stop - let user stop manually
+      addLog(`❌ Multi-Killer error: ${(err as Error).message}`, 'error');
     }
-  }, [stake, selectedStrategies, barriers, running, isBusy, market]);
+  }, [stake, selectedStrategies, barriers, running, market, addLog]);
 
   const stopMultiKiller = useCallback(() => {
     setRunning(false);
-    setIsBusy(false);
-    setLogs(prev => [{
-      time: new Date().toLocaleTimeString(),
-      msg: '⏹ Multi-Killer stopped',
-      type: 'info',
-    }, ...prev].slice(0, 100));
-  }, []);
+    addLog('⏹ Multi-Killer stopped', 'info');
+  }, [addLog]);
 
   return (
     <div className='mw-killer'>
@@ -309,14 +212,52 @@ export const MultiKiller: React.FC = () => {
         </div>
       )}
 
+      {selectedStrategies.includes('differs') && (
+        <div className='mw-field'>
+          <label className='mw-label'>Differs Barrier</label>
+          <input
+            className='mw-input'
+            type='number'
+            min='0'
+            max='9'
+            step='1'
+            value={barriers.differs ?? 5}
+            onChange={e => setBarriers(prev => ({ ...prev, differs: parseInt(e.target.value) || 5 }))}
+          />
+        </div>
+      )}
+
+      {selectedStrategies.includes('only_ups') && (
+        <div className='mw-field'>
+          <label className='mw-label'>Only Ups Barrier</label>
+          <input
+            className='mw-input'
+            type='number'
+            min='0'
+            max='9'
+            step='1'
+            value={barriers.only_ups ?? 5}
+            onChange={e => setBarriers(prev => ({ ...prev, only_ups: parseInt(e.target.value) || 5 }))}
+          />
+        </div>
+      )}
+
+      {selectedStrategies.includes('only_downs') && (
+        <div className='mw-field'>
+          <label className='mw-label'>Only Downs Barrier</label>
+          <input
+            className='mw-input'
+            type='number'
+            min='0'
+            max='9'
+            step='1'
+            value={barriers.only_downs ?? 5}
+            onChange={e => setBarriers(prev => ({ ...prev, only_downs: parseInt(e.target.value) || 5 }))}
+          />
+        </div>
+      )}
+
       <div className='mw-killer__actions'>
-        <button
-          className={`mw-btn mw-btn--analyze${isBusy ? ' mw-btn--busy' : ''}`}
-          disabled={isBusy || running}
-          onClick={handleAnalyze}
-        >
-          {isBusy ? <><span className='mw-spin' /> Analyzing…</> : 'Analyze'}
-        </button>
         {running ? (
           <button className='mw-btn mw-btn--stop' onClick={stopMultiKiller}>
             Stop
@@ -324,7 +265,7 @@ export const MultiKiller: React.FC = () => {
         ) : (
           <button
             className='mw-btn mw-btn--run'
-            disabled={!selectedStrategies.length || isBusy}
+            disabled={!selectedStrategies.length}
             onClick={startMultiKiller}
           >
             Run
@@ -332,50 +273,30 @@ export const MultiKiller: React.FC = () => {
         )}
       </div>
 
-      {progress && <div className='mw-killer__progress'>{progress}</div>}
-
-      {plan && (
-        <div className='mw-killer__plan'>
-          <div className='mw-killer__plan-head'>
-            <span className='mw-killer__plan-market'>{plan.market}</span>
-            <span className='mw-killer__plan-contract'>
-              {plan.contract_type.replace('DIGIT', '')}
-              {plan.barrier_digit != null ? ` ${plan.barrier_digit}` : ''}
-            </span>
-            <span className='mw-killer__plan-dur'>{plan.duration_ticks}t</span>
-            <span className={`mw-killer__conf ${plan.confidence >= 60 ? 'mw-killer__conf--hi' : plan.confidence >= 40 ? 'mw-killer__conf--mid' : 'mw-killer__conf--low'}`}>
-              {plan.confidence}%
-            </span>
-          </div>
-          <div className='mw-killer__plan-stakes'>
-            <div className='mw-killer__plan-stake'>
-              <span className='mw-killer__plan-stake-lbl'>Stake</span>
-              <span className='mw-killer__plan-stake-val'>{plan.stake.toFixed(2)}</span>
-            </div>
-            <div className='mw-killer__plan-stake'>
-              <span className='mw-killer__plan-stake-lbl'>Payout</span>
-              <span className='mw-killer__plan-stake-val'>{plan.payout.toFixed(2)}</span>
-            </div>
-            <div className='mw-killer__plan-stake'>
-              <span className='mw-killer__plan-stake-lbl'>Profit</span>
-              <span className='mw-killer__plan-stake-val'>{plan.profit.toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
-      )}
-
       <div className='mw-killer__logs'>
         <div className='mw-killer__logs-head'>Live Log</div>
         <div className='mw-killer__log-list'>
           {logs.length === 0 ? (
-            <div className='mw-killer__log-empty'>Press Analyze to start.</div>
+            <div className='mw-killer__log-empty'>Select strategies and press Run.</div>
           ) : (
             logs.map((l, i) => (
-              <div key={i} className='mw-killer__log-line'>{l}</div>
+              <div key={i} className={`mw-killer__log-line ${l.type === 'error' ? 'mw-log-line--error' : l.type === 'trade' ? 'mw-log-line--trade' : ''}`}>{l.msg}</div>
             ))
           )}
         </div>
       </div>
     </div>
   );
+};
+
+const STRATEGY_BARRIER: Record<MultiKillerStrategy, { type: 'digit' | 'none', digit?: number }> = {
+  over: { type: 'digit' },
+  under: { type: 'digit' },
+  rise: { type: 'none' },
+  fall: { type: 'none' },
+  eve: { type: 'none' },
+  odd: { type: 'none' },
+  differs: { type: 'digit' },
+  only_ups: { type: 'digit' },
+  only_downs: { type: 'digit' },
 };
