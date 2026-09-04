@@ -34,6 +34,9 @@ export interface AiPlan {
     rationale: string;
     monitoring: string;
     risk_notes: string;
+    stake: number;
+    payout: number;
+    profit: number;
 }
 
 export interface DigitStat {
@@ -518,6 +521,9 @@ export function normalizePlan(raw: any, focus?: AiFocus): AiPlan {
         rationale: String(raw?.rationale ?? '').slice(0, 400),
         monitoring: String(raw?.monitoring ?? '').slice(0, 220),
         risk_notes: String(raw?.risk_notes ?? '').slice(0, 180),
+        stake: Number(raw?.stake) || 0,
+        payout: Number(raw?.payout) || 0,
+        profit: Number(raw?.profit) || 0,
     };
 }
 
