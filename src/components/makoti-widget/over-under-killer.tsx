@@ -300,7 +300,7 @@ export const OverUnderKiller: React.FC = () => {
                         handleRecovery(sym, Math.abs(profit));
                         return;
                     }
-                    if (manualRecoveryRef.current && consecutiveLossesRef.current >= 2 && !inManualRecoveryRef.current) {
+                    if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                         inManualRecoveryRef.current = true;
                         addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
                     }
@@ -545,7 +545,7 @@ export const OverUnderKiller: React.FC = () => {
             addLog(`🔄 RECOVERY MODE ON — real losses switch to Rise/Fall via Market Killer`, 'info');
         }
         if (manualRecovery) {
-            addLog(`🔄 MANUAL RECOVERY ON — 2 losses → switch to ${recoverySide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
+            addLog(`🔄 MANUAL RECOVERY ON — ${recoveryLossThreshold} loss${recoveryLossThreshold !== '1' ? 'es' : ''} → switch to ${recoverySide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
         }
         addLog('Connected — using live tick stream', 'info');
 
@@ -659,7 +659,7 @@ export const OverUnderKiller: React.FC = () => {
                             handleRecovery(sym, Math.abs(profit));
                             return;
                         }
-                        if (manualRecoveryRef.current && consecutiveLossesRef.current >= 2 && !inManualRecoveryRef.current) {
+if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
                             addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
                         }
@@ -794,7 +794,7 @@ export const OverUnderKiller: React.FC = () => {
                 <label className='mw-killer__vh-toggle'>
                     <input type='checkbox' checked={manualRecovery}
                         onChange={e => setManualRecovery(e.target.checked)} disabled={running} />
-                    <span>Manual Recovery <small style={{opacity:0.6,fontWeight:400}}>(2 losses → switch side/digit)</small></span>
+                    <span>Manual Recovery <small style={{opacity:0.6,fontWeight:400}}>({recoveryLossThreshold} loss{recoveryLossThreshold !== '1' ? 'es' : ''} → switch side/digit)</small></span>
                 </label>
             </div>
 
