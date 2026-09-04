@@ -45,8 +45,8 @@ const STRATEGY_CONTRACT_TYPE: Record<MultiKillerStrategy, string> = {
   eve: 'DIGITEVEN',
   odd: 'DIGITODD',
   differs: 'DIGITDIFF',
-  only_ups: 'RISE',
-  only_downs: 'FALL',
+  only_ups: 'RUNHIGH',
+  only_downs: 'RUNLOW',
 };
 
 const STRATEGY_NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
@@ -62,11 +62,9 @@ const STRATEGY_NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
 };
 
 interface ActiveContract {
-  id: string;
   contractId: number;
   strategy: MultiKillerStrategy;
   stake: number;
-  startTime: number;
 }
 
 export const MultiKiller: React.FC = () => {
@@ -89,7 +87,6 @@ export const MultiKiller: React.FC = () => {
 
   const activeContractsRef = useRef<ActiveContract[]>([]);
   const requestIdRef = useRef(0);
-  const pendingBuyRef = useRef<Map<string, { strategy: MultiKillerStrategy; stake: number }>>(new Map());
   const settlementCountRef = useRef(0);
   const totalExpectedRef = useRef(0);
 
@@ -101,8 +98,10 @@ export const MultiKiller: React.FC = () => {
   const sendWS = useCallback((msg: any) => {
     if (window._newSystemWS?.readyState === WebSocket.OPEN) {
       window._newSystemWS.send(JSON.stringify(msg));
+      return true;
     } else {
       addLog('❌ WebSocket not connected', 'error');
+      return false;
     }
   }, [addLog]);
 
@@ -110,29 +109,10 @@ export const MultiKiller: React.FC = () => {
     try {
       const data = JSON.parse(event.data);
       
-      // Handle proposal response
-      if (data.msg_type === 'proposal' && data.proposal) {
-        const reqId = data.req_id;
-        const pending = pendingBuyRef.current.get(reqId.toString());
-        if (pending) {
-          pendingBuyRef.current.delete(reqId.toString());
-          // Buy the contract
-          sendWS({
-            buy: data.proposal.id,
-            price: pending.stake,
-          });
-          addLog(`📝 Buying ${STRATEGY_LABELS[pending.strategy]} @ $${pending.stake}`, 'trade');
-        }
-      }
-      
       // Handle buy response
       if (data.msg_type === 'buy' && data.buy) {
         const contractId = data.buy.contract_id;
-        // Find which strategy this belongs to
-        const active = activeContractsRef.current.find(c => c.contractId === contractId);
-        if (active) {
-          addLog(`✅ ${STRATEGY_LABELS[active.strategy]} bought (ID: ${contractId})`, 'trade');
-        }
+        addLog(`✅ Contract bought (ID: ${contractId})`, 'trade');
       }
       
       // Handle contract settlement (proposal_open_contract with is_sold)
@@ -171,7 +151,7 @@ export const MultiKiller: React.FC = () => {
     } catch (e) {
       // Ignore parse errors
     }
-  }, [running, sendWS, addLog]);
+  }, [running, addLog]);
 
   // Subscribe to WebSocket messages
   useEffect(() => {
@@ -188,8 +168,8 @@ export const MultiKiller: React.FC = () => {
     
     addLog(`🚀 Starting round: ${selectedStrategies.length} contracts @ $${stakeNum} each = $${(stakeNum * selectedStrategies.length).toFixed(2)} total`, 'info');
     
-    // Send all proposals simultaneously
-    const promises = selectedStrategies.map((strategy) => {
+    // Send all buy requests simultaneously with direct buy
+    const promises = selectedStrategies.map(async (strategy) => {
       const barrier = STRATEGY_NEEDS_BARRIER[strategy] 
         ? (barriers[strategy] ?? 5)
         : undefined;
@@ -197,13 +177,7 @@ export const MultiKiller: React.FC = () => {
       const contractType = STRATEGY_CONTRACT_TYPE[strategy];
       const duration = STRATEGY_DURATION[strategy];
       
-      const reqId = ++requestIdRef.current;
-      
-      // Store pending buy info
-      pendingBuyRef.current.set(reqId.toString(), { strategy, stake: stakeNum });
-      
-      const proposalRequest: any = {
-        proposal: 1,
+      const params: any = {
         amount: stakeNum,
         basis: 'stake',
         contract_type: contractType,
@@ -214,13 +188,24 @@ export const MultiKiller: React.FC = () => {
       };
       
       if (barrier !== undefined) {
-        proposalRequest.barrier = barrier.toString();
+        params.barrier = barrier.toString();
       }
       
-      proposalRequest.req_id = reqId;
+      const reqId = ++requestIdRef.current;
+      const buyRequest = {
+        buy: 1,
+        price: stakeNum,
+        parameters: params,
+        req_id: reqId,
+      };
       
-      sendWS(proposalRequest);
-      addLog(`📤 Proposal: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+      // Track this contract
+      activeContractsRef.current.push({ contractId: 0, strategy, stake: stakeNum });
+      
+      const sent = sendWS(buyRequest);
+      if (sent) {
+        addLog(`📤 BUY: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+      }
       
       return Promise.resolve();
     });
@@ -234,7 +219,6 @@ export const MultiKiller: React.FC = () => {
     setRunning(true);
     setLogs([]);
     activeContractsRef.current = [];
-    pendingBuyRef.current.clear();
     requestIdRef.current = 0;
     
     addLog('▶️ Multi-Killer started', 'info');
@@ -244,7 +228,6 @@ export const MultiKiller: React.FC = () => {
   const stopMultiKiller = useCallback(() => {
     setRunning(false);
     activeContractsRef.current = [];
-    pendingBuyRef.current.clear();
     addLog('⏹ Multi-Killer stopped', 'info');
   }, [addLog]);
 
