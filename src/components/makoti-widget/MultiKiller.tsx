@@ -48,8 +48,8 @@ export const MultiKiller: React.FC = () => {
     const [market, setMarket] = useState('R_100');
     const [stake, setStake] = useState('10');
     const [selected, setSelected] = useState<MultiKillerStrategy[]>([]);
-    const [barriers, setBarriers] = useState<Record<string, number>>({
-        over: 5, under: 5, differs: 5,
+    const [barriers, setBarriers] = useState<Record<string, string>>({
+        over: '5', under: '5', differs: '5',
     });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
@@ -59,14 +59,18 @@ export const MultiKiller: React.FC = () => {
     const roundDoneRef = useRef(0);
     const roundTotalRef = useRef(0);
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
+    const stakeRef = useRef('10');
+    const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
 
     const log = useCallback((msg: string) => {
         const t = new Date().toLocaleTimeString();
         setLogs(p => [`[${t}] ${msg}`, ...p].slice(0, 80));
     }, []);
 
-    // Keep selectedRef in sync
+    // Keep refs in sync
     useEffect(() => { selectedRef.current = selected; }, [selected]);
+    useEffect(() => { stakeRef.current = stake; }, [stake]);
+    useEffect(() => { barriersRef.current = barriers; }, [barriers]);
 
     // Buy a single contract with unique req_id — bypasses sendViaNewSystemWithPromise
     const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
@@ -82,7 +86,8 @@ export const MultiKiller: React.FC = () => {
             const ct = CONTRACT_TYPE[strategy];
             const dur = DURATION[strategy];
             const needBarrier = NEEDS_BARRIER[strategy];
-            const barrier = needBarrier ? String(barriers[strategy] ?? 5) : undefined;
+            const rawBarrier = barriersRef.current[strategy] ?? '5';
+            const barrier = needBarrier ? String(parseInt(rawBarrier) || 5) : undefined;
 
             const params: Record<string, any> = {
                 amount: stakeNum,
@@ -155,7 +160,7 @@ export const MultiKiller: React.FC = () => {
                 resolve(null);
             }, 15000);
         });
-    }, [barriers, market, log, transactions]);
+    }, [market, log, transactions]);
 
     // Settlement listener
     useEffect(() => {
@@ -217,7 +222,7 @@ export const MultiKiller: React.FC = () => {
             return;
         }
 
-        const stakeNum = parseFloat(stake) || 10;
+        const stakeNum = parseFloat(stakeRef.current) || 10;
         roundTotalRef.current = 0;
         roundDoneRef.current = 0;
 
@@ -243,7 +248,7 @@ export const MultiKiller: React.FC = () => {
         tradesRef.current.push(...bought);
         roundTotalRef.current = bought.length;
         log(`✅ ${bought.length} open — waiting for settlement`);
-    }, [stake, buyOne, log]);
+    }, [buyOne, log]);
 
     const start = useCallback(() => {
         if (running || selected.length === 0) return;
@@ -302,8 +307,8 @@ export const MultiKiller: React.FC = () => {
                         <div key={s} className='mw-field'>
                             <label className='mw-label'>{LABELS[s]} Barrier</label>
                             <input className='mw-input' type='number' min='0' max='9' step='1'
-                                value={barriers[s] ?? 5}
-                                onChange={e => setBarriers(p => ({ ...p, [s]: parseInt(e.target.value) || 5 }))} />
+                                value={barriers[s] ?? '5'}
+                                onChange={e => setBarriers(p => ({ ...p, [s]: e.target.value }))} />
                         </div>
                     ))}
                 </div>
