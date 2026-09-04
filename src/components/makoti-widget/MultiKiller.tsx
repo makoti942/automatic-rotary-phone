@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
+import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
 
 type MultiKillerStrategy =
@@ -41,6 +42,7 @@ interface TradeEntry {
 }
 
 export const MultiKiller: React.FC = () => {
+    const { transactions } = useStore();
     const [market, setMarket] = useState('R_100');
     const [stake, setStake] = useState('10');
     const [selected, setSelected] = useState<MultiKillerStrategy[]>([]);
@@ -61,36 +63,59 @@ export const MultiKiller: React.FC = () => {
         setLogs(p => [`[${t}] ${msg}`, ...p].slice(0, 80));
     }, []);
 
+    // Subscribe to proposal_open_contract for settlement updates
+    useEffect(() => {
+        if (!running) return;
+        const ws = window._newSystemWS;
+        if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+        }
+    }, [running]);
+
     // Listen for contract settlements via the newSystemMessage event
     useEffect(() => {
-        const unsub = onNewSystemMessage((raw: any) => {
+        const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
-                const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
-                if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract?.is_sold) {
-                    const poc = data.proposal_open_contract;
-                    const cid = poc.contract_id;
-                    const profit = parseFloat(poc.profit) || 0;
+                const data = JSON.parse(event.data);
+                if (data.msg_type !== 'proposal_open_contract') return;
+                const poc = data.proposal_open_contract;
+                if (!poc?.is_sold) return;
+                const cid = poc.contract_id;
+                const profit = parseFloat(poc.profit) || 0;
 
-                    const idx = tradesRef.current.findIndex(t => t.contractId === cid);
-                    if (idx !== -1) {
-                        const t = tradesRef.current[idx];
-                        const icon = profit >= 0 ? '✅' : '❌';
-                        log(`${icon} ${LABELS[t.strategy]} settled: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$)`);
-                        tradesRef.current.splice(idx, 1);
-                        roundDoneRef.current++;
+                const idx = tradesRef.current.findIndex(t => t.contractId === cid);
+                if (idx === -1) return;
+                const t = tradesRef.current[idx];
+                const icon = profit >= 0 ? '✅' : '❌';
+                log(`${icon} ${LABELS[t.strategy]} settled: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$)`);
+                tradesRef.current.splice(idx, 1);
+                roundDoneRef.current++;
 
-                        if (roundDoneRef.current >= roundTotalRef.current) {
-                            log(`🔄 Round done — all ${roundTotalRef.current} contracts settled`);
-                            if (runningRef.current) {
-                                setTimeout(() => runRound(), 500);
-                            }
-                        }
+                try {
+                    transactions.onBotContractEvent({
+                        contract_id: cid,
+                        transaction_ids: { buy: cid },
+                        buy_price: t.stake,
+                        currency: 'USD',
+                        contract_type: CONTRACT_TYPE[t.strategy],
+                        underlying: market,
+                        display_name: market,
+                        date_start: Math.floor(Date.now() / 1000),
+                        status: 'sold',
+                        profit: profit,
+                    } as any);
+                } catch {}
+
+                if (roundDoneRef.current >= roundTotalRef.current) {
+                    log(`🔄 Round done — all ${roundTotalRef.current} contracts settled`);
+                    if (runningRef.current) {
+                        setTimeout(() => runRound(), 500);
                     }
                 }
             } catch { /* ignore */ }
         });
         return unsub;
-    }, [log]);
+    }, [log, transactions, market]);
 
     const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number): Promise<number | null> => {
         const ct = CONTRACT_TYPE[strategy];
@@ -120,6 +145,19 @@ export const MultiKiller: React.FC = () => {
             const cid = res?.buy?.contract_id ?? res?.contract_id;
             if (cid) {
                 log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                try {
+                    transactions.onBotContractEvent({
+                        contract_id: cid,
+                        transaction_ids: { buy: res?.buy?.transaction_id ?? cid },
+                        buy_price: stakeNum,
+                        currency: 'USD',
+                        contract_type: ct,
+                        underlying: market,
+                        display_name: market,
+                        date_start: Math.floor(Date.now() / 1000),
+                        status: 'open',
+                    } as any);
+                } catch {}
                 return cid;
             }
             log(`⚠️ ${LABELS[strategy]} buy returned no contract_id`);
@@ -128,7 +166,7 @@ export const MultiKiller: React.FC = () => {
             log(`❌ ${LABELS[strategy]} error: ${e?.error?.message || e?.message || 'timeout'}`);
             return null;
         }
-    }, [barriers, market, log]);
+    }, [barriers, market, log, transactions]);
 
     const runRound = useCallback(async () => {
         if (!runningRef.current || selected.length === 0) return;
