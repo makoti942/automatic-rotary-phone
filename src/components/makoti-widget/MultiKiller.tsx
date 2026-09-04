@@ -61,6 +61,7 @@ export const MultiKiller: React.FC = () => {
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
     const stakeRef = useRef('10');
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
+    const genRef = useRef(0);
 
     const log = useCallback((msg: string) => {
         const t = new Date().toLocaleTimeString();
@@ -201,9 +202,14 @@ export const MultiKiller: React.FC = () => {
                 log(`  (${roundDoneRef.current}/${roundTotalRef.current} settled)`);
 
                 if (roundDoneRef.current >= roundTotalRef.current) {
-                    log(`🔄 Round complete`);
+                    log(`🔄 Round complete — next round in 3s`);
                     if (runningRef.current) {
-                        setTimeout(() => runRound(), 1000);
+                        const gen = genRef.current;
+                        setTimeout(() => {
+                            if (runningRef.current && genRef.current === gen) {
+                                runRoundRef.current?.();
+                            }
+                        }, 3000);
                     }
                 }
             } catch {}
@@ -211,9 +217,12 @@ export const MultiKiller: React.FC = () => {
         return unsub;
     }, [log, transactions, market]);
 
+    const runRoundRef = useRef<() => Promise<void>>();
+
     // Execute a round — fire ALL buys simultaneously
     const runRound = useCallback(async () => {
         if (!runningRef.current) return;
+        const gen = genRef.current;
         const sel = selectedRef.current;
         if (sel.length === 0) {
             log('⚠️ No strategies selected');
@@ -231,6 +240,9 @@ export const MultiKiller: React.FC = () => {
         // Fire ALL buys at the same time
         const promises = sel.map(s => buyOne(s, stakeNum));
         const results = await Promise.all(promises);
+
+        // Check if stopped during buys
+        if (genRef.current !== gen) return;
 
         // Build trade list from successful results
         const bought: TradeEntry[] = [];
@@ -250,17 +262,21 @@ export const MultiKiller: React.FC = () => {
         log(`✅ ${bought.length} open — waiting for settlement`);
     }, [buyOne, log]);
 
+    runRoundRef.current = runRound;
+
     const start = useCallback(() => {
         if (running || selected.length === 0) return;
         setRunning(true);
         setLogs([]);
         runningRef.current = true;
+        genRef.current++;
         tradesRef.current = [];
         log('▶️ Started');
-        runRound();
-    }, [running, selected, runRound, log]);
+        runRoundRef.current?.();
+    }, [running, selected, log]);
 
     const stop = useCallback(() => {
+        genRef.current++;
         runningRef.current = false;
         setRunning(false);
         tradesRef.current = [];
