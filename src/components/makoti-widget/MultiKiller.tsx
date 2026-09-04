@@ -45,9 +45,29 @@ const STRATEGY_CONTRACT_TYPE: Record<MultiKillerStrategy, string> = {
   eve: 'DIGITEVEN',
   odd: 'DIGITODD',
   differs: 'DIGITDIFF',
-  only_ups: 'DIGITOVER',
-  only_downs: 'DIGITUNDER',
+  only_ups: 'RISE',
+  only_downs: 'FALL',
 };
+
+const STRATEGY_NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
+  over: true,
+  under: true,
+  rise: false,
+  fall: false,
+  eve: false,
+  odd: false,
+  differs: true,
+  only_ups: false,
+  only_downs: false,
+};
+
+interface ActiveContract {
+  id: string;
+  contractId: number;
+  strategy: MultiKillerStrategy;
+  stake: number;
+  startTime: number;
+}
 
 export const MultiKiller: React.FC = () => {
   const [market, setMarket] = useState<string>('R_100');
@@ -61,69 +81,170 @@ export const MultiKiller: React.FC = () => {
     eve: null,
     odd: null,
     differs: 5,
-    only_ups: 5,
-    only_downs: 5,
+    only_ups: null,
+    only_downs: null,
   });
   const [running, setRunning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
 
-  const addLog = useCallback((msg: string, type: 'info' | 'trade' | 'error' = 'info') => {
+  const activeContractsRef = useRef<ActiveContract[]>([]);
+  const requestIdRef = useRef(0);
+  const pendingBuyRef = useRef<Map<string, { strategy: MultiKillerStrategy; stake: number }>>(new Map());
+  const settlementCountRef = useRef(0);
+  const totalExpectedRef = useRef(0);
+
+  const addLog = useCallback((msg: string, type: 'info' | 'trade' | 'error' | 'win' | 'loss' = 'info') => {
     const time = new Date().toLocaleTimeString();
     setLogs(prev => [{ time, msg, type }, ...prev].slice(0, 100));
   }, []);
 
-  const startMultiKiller = useCallback(async () => {
+  const sendWS = useCallback((msg: any) => {
+    if (window._newSystemWS?.readyState === WebSocket.OPEN) {
+      window._newSystemWS.send(JSON.stringify(msg));
+    } else {
+      addLog('❌ WebSocket not connected', 'error');
+    }
+  }, [addLog]);
+
+  const handleWSMessage = useCallback((event: MessageEvent) => {
+    try {
+      const data = JSON.parse(event.data);
+      
+      // Handle proposal response
+      if (data.msg_type === 'proposal' && data.proposal) {
+        const reqId = data.req_id;
+        const pending = pendingBuyRef.current.get(reqId.toString());
+        if (pending) {
+          pendingBuyRef.current.delete(reqId.toString());
+          // Buy the contract
+          sendWS({
+            buy: data.proposal.id,
+            price: pending.stake,
+          });
+          addLog(`📝 Buying ${STRATEGY_LABELS[pending.strategy]} @ $${pending.stake}`, 'trade');
+        }
+      }
+      
+      // Handle buy response
+      if (data.msg_type === 'buy' && data.buy) {
+        const contractId = data.buy.contract_id;
+        // Find which strategy this belongs to
+        const active = activeContractsRef.current.find(c => c.contractId === contractId);
+        if (active) {
+          addLog(`✅ ${STRATEGY_LABELS[active.strategy]} bought (ID: ${contractId})`, 'trade');
+        }
+      }
+      
+      // Handle contract settlement (proposal_open_contract with is_sold)
+      if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
+        const poc = data.proposal_open_contract;
+        if (poc.is_sold) {
+          const contractId = poc.contract_id;
+          const profit = parseFloat(poc.profit) || 0;
+          const payout = parseFloat(poc.payout) || 0;
+          
+          const activeIndex = activeContractsRef.current.findIndex(c => c.contractId === contractId);
+          if (activeIndex !== -1) {
+            const active = activeContractsRef.current[activeIndex];
+            const type = profit >= 0 ? 'win' : 'loss';
+            addLog(`${type === 'win' ? '✅' : '❌'} ${STRATEGY_LABELS[active.strategy]} settled: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`, type);
+            
+            activeContractsRef.current.splice(activeIndex, 1);
+            settlementCountRef.current++;
+            
+            // Check if all contracts in this round have settled
+            if (settlementCountRef.current >= totalExpectedRef.current) {
+              addLog(`🔄 Round complete (${totalExpectedRef.current} contracts settled)`, 'info');
+              // Start next round if still running
+              if (running) {
+                executeRound();
+              }
+            }
+          }
+        }
+      }
+      
+      // Handle error
+      if (data.error) {
+        addLog(`❌ Error: ${data.error.message}`, 'error');
+      }
+    } catch (e) {
+      // Ignore parse errors
+    }
+  }, [running, sendWS, addLog]);
+
+  // Subscribe to WebSocket messages
+  useEffect(() => {
+    window.addEventListener('message', handleWSMessage as any);
+    return () => window.removeEventListener('message', handleWSMessage as any);
+  }, [handleWSMessage]);
+
+  const executeRound = useCallback(async () => {
+    if (!running || selectedStrategies.length === 0) return;
+    
+    const stakeNum = parseFloat(stake) || 10;
+    totalExpectedRef.current = selectedStrategies.length;
+    settlementCountRef.current = 0;
+    
+    addLog(`🚀 Starting round: ${selectedStrategies.length} contracts @ $${stakeNum} each = $${(stakeNum * selectedStrategies.length).toFixed(2)} total`, 'info');
+    
+    // Send all proposals simultaneously
+    const promises = selectedStrategies.map((strategy) => {
+      const barrier = STRATEGY_NEEDS_BARRIER[strategy] 
+        ? (barriers[strategy] ?? 5)
+        : undefined;
+      
+      const contractType = STRATEGY_CONTRACT_TYPE[strategy];
+      const duration = STRATEGY_DURATION[strategy];
+      
+      const reqId = ++requestIdRef.current;
+      
+      // Store pending buy info
+      pendingBuyRef.current.set(reqId.toString(), { strategy, stake: stakeNum });
+      
+      const proposalRequest: any = {
+        proposal: 1,
+        amount: stakeNum,
+        basis: 'stake',
+        contract_type: contractType,
+        currency: 'USD',
+        duration: duration,
+        duration_unit: 't',
+        symbol: market,
+      };
+      
+      if (barrier !== undefined) {
+        proposalRequest.barrier = barrier.toString();
+      }
+      
+      proposalRequest.req_id = reqId;
+      
+      sendWS(proposalRequest);
+      addLog(`📤 Proposal: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+      
+      return Promise.resolve();
+    });
+    
+    await Promise.all(promises);
+  }, [running, selectedStrategies, barriers, stake, market, sendWS, addLog]);
+
+  const startMultiKiller = useCallback(() => {
     if (running || selectedStrategies.length === 0) return;
     
     setRunning(true);
     setLogs([]);
+    activeContractsRef.current = [];
+    pendingBuyRef.current.clear();
+    requestIdRef.current = 0;
     
-    try {
-      const stakeNum = parseFloat(stake) || 10;
-      
-      // Execute all selected strategies simultaneously
-      const promises = selectedStrategies.map(async (strategy) => {
-        const barrier = STRATEGY_BARRIER[strategy].type === 'digit' 
-          ? (barriers[strategy] ?? 5)
-          : null;
-        
-        const contractType = STRATEGY_CONTRACT_TYPE[strategy];
-        const duration = STRATEGY_DURATION[strategy];
-        
-        // Log the trade
-        addLog(`🔄 Multi-Killer: ${STRATEGY_LABELS[strategy]} ${contractType} @ barrier=${barrier ?? 'N/A'} stake=${stakeNum} ticks=${duration}`, 'trade');
-        
-        // Send trade via WebSocket (using existing Deriv API pattern)
-        if (window._newSystemWS?.readyState === WebSocket.OPEN) {
-          const proposalRequest = {
-            proposal: 1,
-            amount: stakeNum,
-            basis: 'stake',
-            contract_type: contractType,
-            currency: 'USD',
-            duration: duration,
-            duration_unit: 't',
-            symbol: market,
-            barrier: barrier?.toString(),
-          };
-          
-          window._newSystemWS.send(JSON.stringify(proposalRequest));
-        }
-        
-        return { strategy, contractType, barrier, stake: stakeNum, duration };
-      });
-      
-      await Promise.all(promises);
-      
-      addLog(`✅ Multi-Killer started ${selectedStrategies.length} contracts simultaneously`, 'info');
-      
-    } catch (err) {
-      addLog(`❌ Multi-Killer error: ${(err as Error).message}`, 'error');
-    }
-  }, [stake, selectedStrategies, barriers, running, market, addLog]);
+    addLog('▶️ Multi-Killer started', 'info');
+    executeRound();
+  }, [running, selectedStrategies, executeRound, addLog]);
 
   const stopMultiKiller = useCallback(() => {
     setRunning(false);
+    activeContractsRef.current = [];
+    pendingBuyRef.current.clear();
     addLog('⏹ Multi-Killer stopped', 'info');
   }, [addLog]);
 
@@ -181,81 +302,26 @@ export const MultiKiller: React.FC = () => {
         </div>
       </div>
 
-      {/* Barrier fields for over and under */}
-      {selectedStrategies.includes('over') && (
-        <div className='mw-field'>
-          <label className='mw-label'>Over Barrier</label>
+      {/* Barrier fields ONLY for strategies that need them */}
+      {selectedStrategies.filter(s => STRATEGY_NEEDS_BARRIER[s as MultiKillerStrategy]).map(strategy => (
+        <div key={strategy} className='mw-field'>
+          <label className='mw-label'>
+            {STRATEGY_LABELS[strategy as MultiKillerStrategy]} Barrier
+          </label>
           <input
             className='mw-input'
             type='number'
             min='0'
             max='9'
             step='1'
-            value={barriers.over ?? 5}
-            onChange={e => setBarriers(prev => ({ ...prev, over: parseInt(e.target.value) || 5 }))}
+            value={barriers[strategy as MultiKillerStrategy] ?? 5}
+            onChange={e => setBarriers(prev => ({ 
+              ...prev, 
+              [strategy]: parseInt(e.target.value) || 5 
+            }))}
           />
         </div>
-      )}
-
-      {selectedStrategies.includes('under') && (
-        <div className='mw-field'>
-          <label className='mw-label'>Under Barrier</label>
-          <input
-            className='mw-input'
-            type='number'
-            min='0'
-            max='9'
-            step='1'
-            value={barriers.under ?? 5}
-            onChange={e => setBarriers(prev => ({ ...prev, under: parseInt(e.target.value) || 5 }))}
-          />
-        </div>
-      )}
-
-      {selectedStrategies.includes('differs') && (
-        <div className='mw-field'>
-          <label className='mw-label'>Differs Barrier</label>
-          <input
-            className='mw-input'
-            type='number'
-            min='0'
-            max='9'
-            step='1'
-            value={barriers.differs ?? 5}
-            onChange={e => setBarriers(prev => ({ ...prev, differs: parseInt(e.target.value) || 5 }))}
-          />
-        </div>
-      )}
-
-      {selectedStrategies.includes('only_ups') && (
-        <div className='mw-field'>
-          <label className='mw-label'>Only Ups Barrier</label>
-          <input
-            className='mw-input'
-            type='number'
-            min='0'
-            max='9'
-            step='1'
-            value={barriers.only_ups ?? 5}
-            onChange={e => setBarriers(prev => ({ ...prev, only_ups: parseInt(e.target.value) || 5 }))}
-          />
-        </div>
-      )}
-
-      {selectedStrategies.includes('only_downs') && (
-        <div className='mw-field'>
-          <label className='mw-label'>Only Downs Barrier</label>
-          <input
-            className='mw-input'
-            type='number'
-            min='0'
-            max='9'
-            step='1'
-            value={barriers.only_downs ?? 5}
-            onChange={e => setBarriers(prev => ({ ...prev, only_downs: parseInt(e.target.value) || 5 }))}
-          />
-        </div>
-      )}
+      ))}
 
       <div className='mw-killer__actions'>
         {running ? (
@@ -280,23 +346,11 @@ export const MultiKiller: React.FC = () => {
             <div className='mw-killer__log-empty'>Select strategies and press Run.</div>
           ) : (
             logs.map((l, i) => (
-              <div key={i} className={`mw-killer__log-line ${l.type === 'error' ? 'mw-log-line--error' : l.type === 'trade' ? 'mw-log-line--trade' : ''}`}>{l.msg}</div>
+              <div key={i} className={`mw-killer__log-line ${l.type === 'error' ? 'mw-log-line--error' : l.type === 'trade' ? 'mw-log-line--trade' : l.type === 'win' ? 'mw-log-line--win' : l.type === 'loss' ? 'mw-log-line--loss' : ''}`}>{l.msg}</div>
             ))
           )}
         </div>
       </div>
     </div>
   );
-};
-
-const STRATEGY_BARRIER: Record<MultiKillerStrategy, { type: 'digit' | 'none', digit?: number }> = {
-  over: { type: 'digit' },
-  under: { type: 'digit' },
-  rise: { type: 'none' },
-  fall: { type: 'none' },
-  eve: { type: 'none' },
-  odd: { type: 'none' },
-  differs: { type: 'digit' },
-  only_ups: { type: 'digit' },
-  only_downs: { type: 'digit' },
 };
