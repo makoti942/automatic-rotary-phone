@@ -325,7 +325,7 @@ export const MultiKiller: React.FC = () => {
           <button
             className='mw-btn mw-btn--run'
             disabled={!selectedStrategies.length || isBusy}
-            onClick={startMultiKicker}
+            onClick={startMultiKiller}
           >
             Run
           </button>
