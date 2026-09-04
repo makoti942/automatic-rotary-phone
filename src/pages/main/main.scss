@@ -802,3 +802,29 @@
     align-items: center;
     justify-content: center;
 }
+
+/* Persistent TradingView iframe - stays mounted to preserve user config (volatility, indicators) */
+.trading-view-persistent {
+    position: absolute;
+    inset: 0;
+    display: none;
+    z-index: 1;
+    pointer-events: none;
+
+    &--visible {
+        display: block;
+        pointer-events: auto;
+    }
+
+    iframe {
+        width: 100%;
+        height: 100%;
+        border: none;
+        display: block;
+    }
+}
+
+.trading-view-tab-placeholder {
+    width: 100%;
+    height: 100%;
+}

@@ -12,6 +12,7 @@ import Tabs from '@/components/shared_ui/tabs/tabs';
 import TradeTypeConfirmationModal from '@/components/trade-type-confirmation-modal';
 import TradingViewModal from '@/components/trading-view-chart/trading-view-modal';
 import { DBOT_TABS } from '@/constants/bot-contents';
+const { TRADING_VIEW } = DBOT_TABS;
 import { api_base, updateWorkspaceName } from '@/external/bot-skeleton';
 import { CONNECTION_STATUS } from '@/external/bot-skeleton/services/api/observables/connection-status-stream';
 import { isDbotRTL } from '@/external/bot-skeleton/utils/workspace';
@@ -487,7 +488,7 @@ const AppWrapper = observer(() => {
                                 }
                                 id='id-trading-view'
                             >
-                                <TradingViewComponent />
+                                <div className='trading-view-tab-placeholder' />
                             </div>
                             <div
                                 label={
@@ -514,6 +515,9 @@ const AppWrapper = observer(() => {
                                 </div>
                             </div>
                         </Tabs>
+                        <div className={`trading-view-persistent${active_tab === TRADING_VIEW ? ' trading-view-persistent--visible' : ''}`}>
+                            <TradingViewComponent />
+                        </div>
                         {!isDesktop && right_tab_shadow && <span className='tabs-shadow tabs-shadow--right' />}{' '}
                     </div>
                 </div>

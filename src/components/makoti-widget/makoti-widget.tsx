@@ -5,12 +5,13 @@ import { OverUnderKiller } from './over-under-killer';
 import { HighLow } from './high-low';
 import { UnderUnderMarket } from './under-under-market';
 import { DiffersAuto } from './differs-auto';
+import { AiPanel } from '@/pages/manual-trade/ai-panel';
 import { ALL_SYMBOLS } from './makoti-ws';
 import './makoti-widget.scss';
 
-type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto';
+type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst';
 const PAD = 8;
-const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto'];
+const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst'];
 
 const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'scanner', label: 'Scanner' },
@@ -19,6 +20,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'high_low', label: 'HIGH/LOW' },
     { value: 'under_under_market', label: 'UNDER 7,6,5 KILLER' },
     { value: 'differs_auto', label: 'DIFFERS AUTO' },
+    { value: 'ai_analyst', label: 'AI Analyst' },
 ];
 
 function isLoggedIn(): boolean {
@@ -371,6 +373,15 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'high_low' && <HighLow />}
                     {tab === 'under_under_market' && <UnderUnderMarket />}
                     {tab === 'differs_auto' && <DiffersAuto />}
+                    {tab === 'ai_analyst' && (
+                        <AiPanel
+                            embedded
+                            preset={{
+                                focusType: 'auto',
+                                allowedTypes: { DIGITOVER: true, DIGITUNDER: true, DIGITDIFF: true, DIGITMATCH: false },
+                            }}
+                        />
+                    )}
                 </div>
             </div>
 
