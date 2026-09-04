@@ -36,7 +36,7 @@ const NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
 };
 
 interface TradeEntry {
-    contractId: number;
+    contractId: string;
     strategy: MultiKillerStrategy;
     stake: number;
 }
@@ -80,7 +80,7 @@ export const MultiKiller: React.FC = () => {
                 if (data.msg_type !== 'proposal_open_contract') return;
                 const poc = data.proposal_open_contract;
                 if (!poc?.is_sold) return;
-                const cid = poc.contract_id;
+                const cid = String(poc.contract_id);
                 const profit = parseFloat(poc.profit) || 0;
 
                 const idx = tradesRef.current.findIndex(t => t.contractId === cid);
@@ -93,8 +93,8 @@ export const MultiKiller: React.FC = () => {
 
                 try {
                     transactions.onBotContractEvent({
-                        contract_id: cid,
-                        transaction_ids: { buy: cid },
+                        contract_id: Number(cid),
+                        transaction_ids: { buy: Number(cid) },
                         buy_price: t.stake,
                         currency: 'USD',
                         contract_type: CONTRACT_TYPE[t.strategy],
@@ -142,13 +142,18 @@ export const MultiKiller: React.FC = () => {
                 price: stakeNum,
                 parameters: params,
             });
-            const cid = res?.buy?.contract_id ?? res?.contract_id;
-            if (cid) {
+            const cid = String(res?.buy?.contract_id ?? res?.contract_id);
+            if (cid && cid !== 'undefined') {
                 log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                // Re-subscribe to get settlement updates for this contract
+                const ws = window._newSystemWS;
+                if (ws?.readyState === WebSocket.OPEN) {
+                    ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+                }
                 try {
                     transactions.onBotContractEvent({
-                        contract_id: cid,
-                        transaction_ids: { buy: res?.buy?.transaction_id ?? cid },
+                        contract_id: Number(cid),
+                        transaction_ids: { buy: res?.buy?.transaction_id ?? Number(cid) },
                         buy_price: stakeNum,
                         currency: 'USD',
                         contract_type: ct,
