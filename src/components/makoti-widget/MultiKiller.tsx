@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
-import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
+import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
 
@@ -35,6 +35,8 @@ const NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
     differs: true, only_ups: false, only_downs: false,
 };
 
+let _buySeq = 0;
+
 interface TradeEntry {
     contractId: string;
     strategy: MultiKillerStrategy;
@@ -56,23 +58,105 @@ export const MultiKiller: React.FC = () => {
     const runningRef = useRef(false);
     const roundDoneRef = useRef(0);
     const roundTotalRef = useRef(0);
-    const roundStakeRef = useRef(0);
+    const selectedRef = useRef<MultiKillerStrategy[]>([]);
 
     const log = useCallback((msg: string) => {
         const t = new Date().toLocaleTimeString();
         setLogs(p => [`[${t}] ${msg}`, ...p].slice(0, 80));
     }, []);
 
-    // Subscribe to proposal_open_contract for settlement updates
-    useEffect(() => {
-        if (!running) return;
-        const ws = window._newSystemWS;
-        if (ws?.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
-        }
-    }, [running]);
+    // Keep selectedRef in sync
+    useEffect(() => { selectedRef.current = selected; }, [selected]);
 
-    // Listen for contract settlements via the newSystemMessage event
+    // Buy a single contract with unique req_id — bypasses sendViaNewSystemWithPromise
+    const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
+        return new Promise((resolve) => {
+            const ws = window._newSystemWS;
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                log('❌ WS not open');
+                resolve(null);
+                return;
+            }
+
+            const reqId = Date.now() * 1000 + (++_buySeq);
+            const ct = CONTRACT_TYPE[strategy];
+            const dur = DURATION[strategy];
+            const needBarrier = NEEDS_BARRIER[strategy];
+            const barrier = needBarrier ? String(barriers[strategy] ?? 5) : undefined;
+
+            const params: Record<string, any> = {
+                amount: stakeNum,
+                basis: 'stake',
+                contract_type: ct,
+                currency: 'USD',
+                duration: dur,
+                duration_unit: 't',
+                symbol: market,
+            };
+            if (barrier !== undefined) params.barrier = barrier;
+
+            const toSend = {
+                buy: '1',
+                price: stakeNum,
+                parameters: params,
+                req_id: reqId,
+            };
+
+            log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' B' + barrier : ''} ${dur}t $${stakeNum}`);
+
+            const handler = (event: any) => {
+                try {
+                    const data = JSON.parse(event.detail?.data ?? event.data);
+                    if (data.req_id !== reqId) return;
+                    window.removeEventListener('newSystemMessage', handler);
+
+                    if (data.error) {
+                        log(`❌ ${LABELS[strategy]}: ${data.error.message || 'error'}`);
+                        resolve(null);
+                        return;
+                    }
+
+                    const cid = String(data.buy?.contract_id ?? data.contract_id);
+                    if (cid && cid !== 'undefined') {
+                        // Subscribe to settlement updates for this contract
+                        ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+
+                        // Register with main panel
+                        try {
+                            transactions.onBotContractEvent({
+                                contract_id: Number(cid),
+                                transaction_ids: { buy: data.buy?.transaction_id ?? Number(cid) },
+                                buy_price: stakeNum,
+                                currency: 'USD',
+                                contract_type: ct,
+                                underlying: market,
+                                display_name: market,
+                                date_start: Math.floor(Date.now() / 1000),
+                                status: 'open',
+                            } as any);
+                        } catch {}
+
+                        log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                        resolve({ cid, strategy });
+                    } else {
+                        log(`⚠️ ${LABELS[strategy]}: no contract_id`);
+                        resolve(null);
+                    }
+                } catch {}
+            };
+
+            window.addEventListener('newSystemMessage', handler);
+            ws.send(JSON.stringify(toSend));
+
+            setTimeout(() => {
+                window.removeEventListener('newSystemMessage', handler);
+                log(`❌ ${LABELS[strategy]}: timeout`);
+                resolve(null);
+            }, 15000);
+        });
+    }, [barriers, market, log, transactions]);
+
+    // Settlement listener
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -86,11 +170,13 @@ export const MultiKiller: React.FC = () => {
                 const idx = tradesRef.current.findIndex(t => t.contractId === cid);
                 if (idx === -1) return;
                 const t = tradesRef.current[idx];
+
                 const icon = profit >= 0 ? '✅' : '❌';
-                log(`${icon} ${LABELS[t.strategy]} settled: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$)`);
+                log(`${icon} ${LABELS[t.strategy]}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$ bet)`);
                 tradesRef.current.splice(idx, 1);
                 roundDoneRef.current++;
 
+                // Update main panel
                 try {
                     transactions.onBotContractEvent({
                         contract_id: Number(cid),
@@ -106,106 +192,57 @@ export const MultiKiller: React.FC = () => {
                     } as any);
                 } catch {}
 
+                log(`  (${roundDoneRef.current}/${roundTotalRef.current} settled)`);
+
                 if (roundDoneRef.current >= roundTotalRef.current) {
-                    log(`🔄 Round done — all ${roundTotalRef.current} contracts settled`);
+                    log(`🔄 Round complete`);
                     if (runningRef.current) {
-                        setTimeout(() => runRound(), 500);
+                        setTimeout(() => runRound(), 1000);
                     }
                 }
-            } catch { /* ignore */ }
+            } catch {}
         });
         return unsub;
     }, [log, transactions, market]);
 
-    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number): Promise<number | null> => {
-        const ct = CONTRACT_TYPE[strategy];
-        const dur = DURATION[strategy];
-        const needBarrier = NEEDS_BARRIER[strategy];
-        const barrier = needBarrier ? String(barriers[strategy] ?? 5) : undefined;
-
-        const params: Record<string, any> = {
-            amount: stakeNum,
-            basis: 'stake',
-            contract_type: ct,
-            currency: 'USD',
-            duration: dur,
-            duration_unit: 't',
-            symbol: market,
-        };
-        if (barrier !== undefined) params.barrier = barrier;
-
-        log(`📤 BUY ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' B' + barrier : ''} ${dur}t $${stakeNum}`);
-
-        try {
-            const res = await sendViaNewSystemWithPromise({
-                buy: 1,
-                price: stakeNum,
-                parameters: params,
-            });
-            const cid = String(res?.buy?.contract_id ?? res?.contract_id);
-            if (cid && cid !== 'undefined') {
-                log(`✅ ${LABELS[strategy]} bought (#${cid})`);
-                // Re-subscribe to get settlement updates for this contract
-                const ws = window._newSystemWS;
-                if (ws?.readyState === WebSocket.OPEN) {
-                    ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
-                }
-                try {
-                    transactions.onBotContractEvent({
-                        contract_id: Number(cid),
-                        transaction_ids: { buy: res?.buy?.transaction_id ?? Number(cid) },
-                        buy_price: stakeNum,
-                        currency: 'USD',
-                        contract_type: ct,
-                        underlying: market,
-                        display_name: market,
-                        date_start: Math.floor(Date.now() / 1000),
-                        status: 'open',
-                    } as any);
-                } catch {}
-                return cid;
-            }
-            log(`⚠️ ${LABELS[strategy]} buy returned no contract_id`);
-            return null;
-        } catch (e: any) {
-            log(`❌ ${LABELS[strategy]} error: ${e?.error?.message || e?.message || 'timeout'}`);
-            return null;
-        }
-    }, [barriers, market, log, transactions]);
-
+    // Execute a round — fire ALL buys simultaneously
     const runRound = useCallback(async () => {
-        if (!runningRef.current || selected.length === 0) return;
+        if (!runningRef.current) return;
+        const sel = selectedRef.current;
+        if (sel.length === 0) {
+            log('⚠️ No strategies selected');
+            runningRef.current = false;
+            setRunning(false);
+            return;
+        }
 
         const stakeNum = parseFloat(stake) || 10;
-        roundTotalRef.current = selected.length;
+        roundTotalRef.current = 0;
         roundDoneRef.current = 0;
-        roundStakeRef.current = stakeNum;
 
-        log(`🚀 Round: ${selected.length} × $${stakeNum} = $${(selected.length * stakeNum).toFixed(2)} total`);
+        log(`🚀 Round: ${sel.length} × $${stakeNum} = $${(sel.length * stakeNum).toFixed(2)}`);
 
-        const results = await Promise.all(
-            selected.map(s => buyOne(s, stakeNum))
-        );
+        // Fire ALL buys at the same time
+        const promises = sel.map(s => buyOne(s, stakeNum));
+        const results = await Promise.all(promises);
 
-        const ok = results.filter(Boolean) as number[];
-        if (ok.length === 0) {
+        // Build trade list from successful results
+        const bought: TradeEntry[] = [];
+        results.forEach(r => {
+            if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: stakeNum });
+        });
+
+        if (bought.length === 0) {
             log('❌ All buys failed');
             runningRef.current = false;
             setRunning(false);
-        } else {
-            // register trades
-            ok.forEach((cid, i) => {
-                tradesRef.current.push({
-                    contractId: cid,
-                    strategy: selected[i],
-                    stake: stakeNum,
-                });
-            });
-            roundTotalRef.current = ok.length;
-            roundDoneRef.current = 0;
-            log(`✅ ${ok.length} open — waiting for settlement`);
+            return;
         }
-    }, [selected, stake, buyOne, log]);
+
+        tradesRef.current.push(...bought);
+        roundTotalRef.current = bought.length;
+        log(`✅ ${bought.length} open — waiting for settlement`);
+    }, [stake, buyOne, log]);
 
     const start = useCallback(() => {
         if (running || selected.length === 0) return;
