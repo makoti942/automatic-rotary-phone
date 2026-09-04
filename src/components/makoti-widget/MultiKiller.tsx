@@ -49,7 +49,6 @@ interface TradeEntry {
 }
 
 interface PendingDelay {
-    strategy: MultiKillerStrategy;
     ticksNeeded: number;
     resolve: () => void;
     gen: number;
@@ -71,15 +70,18 @@ export const MultiKiller: React.FC = () => {
 
     const tradesRef = useRef<TradeEntry[]>([]);
     const runningRef = useRef(false);
-    const roundDoneRef = useRef(0);
-    const roundTotalRef = useRef(0);
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
     const genRef = useRef(0);
-    const tickCountRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
+
+    // Round lifecycle: tracks buy phase vs settlement phase
+    const expectedSettlementsRef = useRef(0);
+    const settledCountRef = useRef(0);
+    const buyPhaseDoneRef = useRef(false);
+    const roundCompleteResolveRef = useRef<(() => void) | null>(null);
 
     const log = useCallback((msg: string) => {
         const t = new Date().toLocaleTimeString();
@@ -95,14 +97,11 @@ export const MultiKiller: React.FC = () => {
     // Tick counter — listens for actual tick messages from Deriv WS
     useEffect(() => {
         if (!running) return;
-        tickCountRef.current = 0;
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.msg_type !== 'tick') return;
-                tickCountRef.current++;
 
-                // Check pending delayed buys
                 const pending = pendingDelaysRef.current;
                 for (let i = pending.length - 1; i >= 0; i--) {
                     const p = pending[i];
@@ -121,16 +120,10 @@ export const MultiKiller: React.FC = () => {
         return unsub;
     }, [running]);
 
-    // Wait for N ticks
-    const waitForTicks = useCallback((ticks: number, gen: number): Promise<boolean> => {
+    const waitForTicks = useCallback((ticks: number, gen: number): Promise<void> => {
         return new Promise((resolve) => {
-            if (ticks <= 0) { resolve(true); return; }
-            pendingDelaysRef.current.push({
-                strategy: 'rise' as MultiKillerStrategy,
-                ticksNeeded: ticks,
-                resolve: () => resolve(true),
-                gen,
-            });
+            if (ticks <= 0) { resolve(); return; }
+            pendingDelaysRef.current.push({ ticksNeeded: ticks, resolve, gen });
         });
     }, []);
 
@@ -138,7 +131,7 @@ export const MultiKiller: React.FC = () => {
         return parseFloat(stakesRef.current[strategy] ?? '10') || 10;
     }, []);
 
-    // Buy a single contract with unique req_id
+    // Buy a single contract
     const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
         return new Promise((resolve) => {
             const ws = window._newSystemWS;
@@ -226,7 +219,7 @@ export const MultiKiller: React.FC = () => {
         });
     }, [market, log, transactions]);
 
-    // Settlement listener
+    // Settlement listener — only triggers next round when buy phase is DONE and all settled
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -244,7 +237,7 @@ export const MultiKiller: React.FC = () => {
                 const icon = profit >= 0 ? '✅' : '❌';
                 log(`${icon} ${LABELS[t.strategy]}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$ bet)`);
                 tradesRef.current.splice(idx, 1);
-                roundDoneRef.current++;
+                settledCountRef.current++;
 
                 try {
                     transactions.onBotContractEvent({
@@ -271,17 +264,13 @@ export const MultiKiller: React.FC = () => {
                     } as any);
                 } catch {}
 
-                log(`  (${roundDoneRef.current}/${roundTotalRef.current} settled)`);
+                log(`  (${settledCountRef.current}/${expectedSettlementsRef.current} settled)`);
 
-                if (roundDoneRef.current >= roundTotalRef.current) {
-                    log(`🔄 Round complete — next round in 5s`);
-                    if (runningRef.current) {
-                        const gen = genRef.current;
-                        setTimeout(() => {
-                            if (runningRef.current && genRef.current === gen) {
-                                runRoundRef.current?.();
-                            }
-                        }, 5000);
+                // Only complete round when buy phase is done AND all settled
+                if (buyPhaseDoneRef.current && settledCountRef.current >= expectedSettlementsRef.current) {
+                    if (roundCompleteResolveRef.current) {
+                        roundCompleteResolveRef.current();
+                        roundCompleteResolveRef.current = null;
                     }
                 }
             } catch {}
@@ -291,7 +280,7 @@ export const MultiKiller: React.FC = () => {
 
     const runRoundRef = useRef<() => Promise<void>>();
 
-    // Execute a round
+    // Execute a round — buy phase then settlement phase
     const runRound = useCallback(async () => {
         if (!runningRef.current) return;
         const gen = genRef.current;
@@ -304,28 +293,29 @@ export const MultiKiller: React.FC = () => {
         }
 
         const totalCost = sel.reduce((sum, s) => sum + getStake(s), 0);
-        roundTotalRef.current = 0;
-        roundDoneRef.current = 0;
-
         log(`🚀 Round: ${sel.length} contracts = $${totalCost.toFixed(2)} total`);
 
-        // Fire buys — delayed ones wait for actual ticks
+        // ── BUY PHASE ──
+        buyPhaseDoneRef.current = false;
+        expectedSettlementsRef.current = 0;
+        settledCountRef.current = 0;
+
         const promises = sel.map(async (s) => {
             const delayTicks = HAS_DELAY[s] ? (delaysRef.current[s] ?? 0) : 0;
             if (delayTicks > 0) {
                 log(`⏱ ${LABELS[s]} waiting ${delayTicks} tick${delayTicks > 1 ? 's' : ''}...`);
-                const ok = await waitForTicks(delayTicks, gen);
-                if (!ok || genRef.current !== gen) return null;
+                await waitForTicks(delayTicks, gen);
+                if (genRef.current !== gen) return null;
                 log(`⏱ ${LABELS[s]} tick delay done — buying`);
             }
-            const stakeNum = getStake(s);
-            return buyOne(s, stakeNum);
+            return buyOne(s, getStake(s));
         });
 
         const results = await Promise.all(promises);
 
         if (genRef.current !== gen) return;
 
+        // Register bought contracts
         const bought: TradeEntry[] = [];
         results.forEach(r => {
             if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: getStake(r.strategy) });
@@ -339,8 +329,46 @@ export const MultiKiller: React.FC = () => {
         }
 
         tradesRef.current.push(...bought);
-        roundTotalRef.current = bought.length;
-        log(`✅ ${bought.length} open — waiting for settlement`);
+        expectedSettlementsRef.current = bought.length;
+        buyPhaseDoneRef.current = true;
+        log(`✅ ${bought.length} open — waiting for all settlements`);
+
+        // ── SETTLEMENT PHASE ──
+        // If all already settled (unlikely but possible for fast contracts), skip wait
+        if (settledCountRef.current >= expectedSettlementsRef.current) {
+            log(`🔄 Round complete — next round in 5s`);
+            await new Promise<void>(r => {
+                const g = genRef.current;
+                setTimeout(() => {
+                    if (runningRef.current && genRef.current === g) r();
+                    else r();
+                }, 5000);
+            });
+            if (genRef.current === gen && runningRef.current) {
+                runRoundRef.current?.();
+            }
+            return;
+        }
+
+        // Wait for all settlements
+        await new Promise<void>((resolve) => {
+            roundCompleteResolveRef.current = resolve;
+        });
+
+        if (genRef.current !== gen) return;
+
+        log(`🔄 Round complete — next round in 5s`);
+        await new Promise<void>(r => {
+            const g = genRef.current;
+            setTimeout(() => {
+                if (runningRef.current && genRef.current === g) r();
+                else r();
+            }, 5000);
+        });
+
+        if (genRef.current === gen && runningRef.current) {
+            runRoundRef.current?.();
+        }
     }, [buyOne, log, waitForTicks, getStake]);
 
     runRoundRef.current = runRound;
@@ -353,6 +381,9 @@ export const MultiKiller: React.FC = () => {
         genRef.current++;
         tradesRef.current = [];
         pendingDelaysRef.current = [];
+        buyPhaseDoneRef.current = false;
+        expectedSettlementsRef.current = 0;
+        settledCountRef.current = 0;
         log('▶️ Started');
         runRoundRef.current?.();
     }, [running, selected, log]);
@@ -363,6 +394,11 @@ export const MultiKiller: React.FC = () => {
         setRunning(false);
         tradesRef.current = [];
         pendingDelaysRef.current = [];
+        buyPhaseDoneRef.current = false;
+        if (roundCompleteResolveRef.current) {
+            roundCompleteResolveRef.current();
+            roundCompleteResolveRef.current = null;
+        }
         log('⏹ Stopped');
     }, [log]);
 
