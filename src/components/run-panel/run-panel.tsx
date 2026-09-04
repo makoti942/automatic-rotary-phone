@@ -35,6 +35,8 @@ type TStatisticsSummary = {
     toggleStatisticsInfoModal: () => void;
     total_profit: number;
     won_contracts: number;
+    isMinimized?: boolean;
+    onToggleMinimize?: () => void;
 };
 type TDrawerHeader = {
     is_clear_stat_disabled: boolean;
@@ -78,41 +80,58 @@ export const StatisticsSummary = ({
     toggleStatisticsInfoModal,
     total_profit,
     won_contracts,
+    isMinimized = false,
+    onToggleMinimize,
 }: TStatisticsSummary) => (
     <div
         className={classNames('run-panel__stat', {
             'run-panel__stat--mobile': is_mobile,
+            'run-panel__stat--minimized': isMinimized,
         })}
     >
-        <div className='run-panel__stat--info' onClick={toggleStatisticsInfoModal}>
-            <div className='run-panel__stat--info-item'>
-                <Localize i18n_default_text="What's this?" />
+        <div className='run-panel__stat--header'>
+            <div className='run-panel__stat--info' onClick={toggleStatisticsInfoModal}>
+                <div className='run-panel__stat--info-item'>
+                    <Localize i18n_default_text="What's this?" />
+                </div>
             </div>
+            {onToggleMinimize && (
+                <button
+                    className={classNames('run-panel__stat--minimize-btn', { 'run-panel__stat--minimize-btn--minimized': isMinimized })}
+                    onClick={onToggleMinimize}
+                    title={isMinimized ? 'Expand statistics' : 'Minimize statistics'}
+                    aria-label={isMinimized ? 'Expand statistics' : 'Minimize statistics'}
+                >
+                    <span className='run-panel__stat--minimize-icon' />
+                </button>
+            )}
         </div>
-        <div className='run-panel__stat--tiles'>
-            <StatisticsTile
-                title={localize('Total stake')}
-                alignment='top'
-                content={<Money amount={total_stake} currency={currency} show_currency />}
-            />
-            <StatisticsTile
-                title={localize('Total payout')}
-                alignment='top'
-                content={<Money amount={total_payout} currency={currency} show_currency />}
-            />
-            <StatisticsTile title={localize('No. of runs')} alignment='top' content={number_of_runs} />
-            <StatisticsTile title={localize('Contracts lost')} alignment='bottom' content={lost_contracts} />
-            <StatisticsTile title={localize('Contracts won')} alignment='bottom' content={won_contracts} />
-            <StatisticsTile
-                title={localize('Total profit/loss')}
-                content={<Money amount={total_profit} currency={currency} has_sign show_currency />}
-                alignment='bottom'
-                contentClassName={classNames('run-panel__stat-amount', {
-                    'run-panel__stat-amount--positive': total_profit > 0,
-                    'run-panel__stat-amount--negative': total_profit < 0,
-                })}
-            />
-        </div>
+        {!isMinimized && (
+            <div className='run-panel__stat--tiles'>
+                <StatisticsTile
+                    title={localize('Total stake')}
+                    alignment='top'
+                    content={<Money amount={total_stake} currency={currency} show_currency />}
+                />
+                <StatisticsTile
+                    title={localize('Total payout')}
+                    alignment='top'
+                    content={<Money amount={total_payout} currency={currency} show_currency />}
+                />
+                <StatisticsTile title={localize('No. of runs')} alignment='top' content={number_of_runs} />
+                <StatisticsTile title={localize('Contracts lost')} alignment='bottom' content={lost_contracts} />
+                <StatisticsTile title={localize('Contracts won')} alignment='bottom' content={won_contracts} />
+                <StatisticsTile
+                    title={localize('Total profit/loss')}
+                    content={<Money amount={total_profit} currency={currency} has_sign show_currency />}
+                    alignment='bottom'
+                    contentClassName={classNames('run-panel__stat-amount', {
+                        'run-panel__stat-amount--positive': total_profit > 0,
+                        'run-panel__stat-amount--negative': total_profit < 0,
+                    })}
+                />
+            </div>
+        )}
     </div>
 );
 
@@ -129,9 +148,16 @@ const DrawerHeader = ({ is_clear_stat_disabled, is_mobile, is_drawer_open, onCle
         />
     );
 
-const DrawerContent = ({ active_index, is_drawer_open, active_tour, setActiveTabIndex, ...props }: TDrawerContent) => {
+const DrawerContent = ({
+    active_index,
+    is_drawer_open,
+    active_tour,
+    setActiveTabIndex,
+    isStatMinimized,
+    onToggleStatMinimize,
+    ...props
+}: TDrawerContent & { isStatMinimized: boolean; onToggleStatMinimize: () => void }) => {
     const { isDesktop } = useDevice();
-    // Use the useBlockScroll hook to prevent body scrolling when drawer is open on mobile
 
     React.useEffect(() => {
         if (!isDesktop && is_drawer_open) {
@@ -158,7 +184,13 @@ const DrawerContent = ({ active_index, is_drawer_open, active_tour, setActiveTab
                     <Journal />
                 </div>
             </Tabs>
-            {((is_drawer_open && active_index !== 2) || active_tour) && <StatisticsSummary {...props} />}
+            {((is_drawer_open && active_index !== 2) || active_tour) && (
+                <StatisticsSummary
+                    {...props}
+                    isMinimized={isStatMinimized}
+                    onToggleMinimize={onToggleStatMinimize}
+                />
+            )}
         </>
     );
 };
@@ -270,6 +302,9 @@ const RunPanel = observer(() => {
     const { total_payout, total_profit, total_stake, won_contracts, lost_contracts, number_of_runs } = statistics;
     const { BOT_BUILDER, CHART } = DBOT_TABS;
 
+    const [isStatMinimized, setIsStatMinimized] = React.useState(false);
+    const toggleStatMinimize = () => setIsStatMinimized(m => !m);
+
     React.useEffect(() => {
         onMount();
         return () => onUnmount();
@@ -297,6 +332,8 @@ const RunPanel = observer(() => {
             total_stake={total_stake}
             won_contracts={won_contracts}
             active_tour={active_tour}
+            isStatMinimized={isStatMinimized}
+            onToggleStatMinimize={toggleStatMinimize}
         />
     );
 
