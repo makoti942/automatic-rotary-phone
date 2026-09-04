@@ -124,9 +124,12 @@ export const MultiKiller: React.FC = () => {
     };
     
     addLog(`📤 BUY: ${STRATEGY_LABELS[strategy]} ${contractType}${barrier !== undefined ? ` barrier=${barrier}` : ''} ${duration}t $${stakeNum}`, 'trade');
+    addLog(`🔍 Request: ${JSON.stringify(buyRequest).slice(0, 300)}`, 'info');
     
     try {
+      addLog(`⏳ Calling sendViaNewSystemWithPromise...`, 'info');
       const response = await sendViaNewSystemWithPromise(buyRequest);
+      addLog(`✅ Response received: ${JSON.stringify(response).slice(0, 300)}`, 'info');
       const contractId = response?.buy?.contract_id ?? response?.contract_id;
       
       if (contractId) {
@@ -201,16 +204,18 @@ export const MultiKiller: React.FC = () => {
     addLog(`🚀 Starting round: ${selectedStrategies.length} contracts @ $${stakeNum} each = $${(stakeNum * selectedStrategies.length).toFixed(2)} total`, 'info');
     
     // Send all buy requests simultaneously and wait for all to complete
-    const buyPromises = selectedStrategies.map((strategy) => 
-      executeBuy(strategy, stakeNum).then(contractId => {
-        if (contractId) {
-          activeContractsRef.current.push({ contractId, strategy, stake: stakeNum });
-        }
-        return contractId;
-      })
-    );
+    const buyPromises = selectedStrategies.map(async (strategy) => {
+      addLog(`🔄 Executing ${STRATEGY_LABELS[strategy]}...`, 'info');
+      const contractId = await executeBuy(strategy, stakeNum);
+      if (contractId) {
+        activeContractsRef.current.push({ contractId, strategy, stake: stakeNum });
+      }
+      return contractId;
+    });
     
+    addLog(`⏳ Waiting for ${buyPromises.length} promises...`, 'info');
     const results = await Promise.all(buyPromises);
+    addLog(`📊 Results: ${JSON.stringify(results)}`, 'info');
     const successful = results.filter(id => id !== null);
     
     if (successful.length === 0) {
@@ -227,6 +232,7 @@ export const MultiKiller: React.FC = () => {
     if (running || selectedStrategies.length === 0) return;
     
     const ws = window._newSystemWS;
+    addLog(`🔍 Start clicked: running=${running}, strategies=${selectedStrategies.length}, ws=${ws?.readyState}`, 'info');
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       addLog('❌ WebSocket not connected', 'error');
       return;
