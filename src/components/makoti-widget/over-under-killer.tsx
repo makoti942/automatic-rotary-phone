@@ -36,7 +36,7 @@ const CONTRACT_SIDES: { label: string; value: ContractSide }[] = [
 const LS_CONFIG_KEY  = 'mw_ouk_config';
 const LS_LOGS_KEY = 'mw_ouk_logs';
 
-const DEFAULT_CONFIG = { stake: '0.35', martingale: '2', takeProfit: '10', stopLoss: '5', predictionDigit: '5', contractSide: 'DIGITOVER' as const, recoveryMode: false, manualRecovery: false, recoverySide: 'DIGITOVER' as const, recoveryDigit: '5', recoveryLossThreshold: '1', automate: false };
+const DEFAULT_CONFIG = { stake: '0.35', martingale: '2', takeProfit: '10', stopLoss: '5', predictionDigit: '5', contractSide: 'DIGITOVER' as const, recoveryMode: false, manualRecovery: false, recoverySide: 'DIGITOVER' as const, recoveryDigit: '5', recoveryLossThreshold: '1', manualRecoveryLossThreshold: '2', automate: false };
 
 function loadConfig(): typeof DEFAULT_CONFIG {
     try {
@@ -109,6 +109,7 @@ export const OverUnderKiller: React.FC = () => {
     const [recoverySide, setRecoverySide] = useState<ContractSide>(initCfg.recoverySide);
     const [recoveryDigit, setRecoveryDigit] = useState(initCfg.recoveryDigit);
     const [recoveryLossThreshold, setRecoveryLossThreshold] = useState(initCfg.recoveryLossThreshold);
+    const [manualRecoveryLossThreshold, setManualRecoveryLossThreshold] = useState(initCfg.manualRecoveryLossThreshold);
     const [automate,    setAutomate]    = useState(initCfg.automate);
     const [running,     setRunning]     = useState(false);
     const [pnl,         setPnl]         = useState(0);
@@ -136,6 +137,7 @@ export const OverUnderKiller: React.FC = () => {
     const recoverySideRef       = useRef<ContractSide>('DIGITOVER');
     const recoveryDigitRef      = useRef(5);
     const recoveryLossThresholdRef = useRef(1);
+    const manualRecoveryLossThresholdRef = useRef(2);
     const inManualRecoveryRef   = useRef(false);
     const automateRef           = useRef(false);
 
@@ -149,7 +151,7 @@ export const OverUnderKiller: React.FC = () => {
     const lastTickSymRef        = useRef('');
 
     /* ── Persist ──────────────────────────────────────────────────────────── */
-    useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, automate]);
+    useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate]);
 
     /* ── Log helper (defined FIRST — no deps) ────────────────────────────── */
     const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -300,7 +302,7 @@ export const OverUnderKiller: React.FC = () => {
                         handleRecovery(sym, Math.abs(profit));
                         return;
                     }
-                    if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
+if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                         inManualRecoveryRef.current = true;
                         addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
                     }
@@ -545,7 +547,7 @@ export const OverUnderKiller: React.FC = () => {
             addLog(`🔄 RECOVERY MODE ON — real losses switch to Rise/Fall via Market Killer`, 'info');
         }
         if (manualRecovery) {
-            addLog(`🔄 MANUAL RECOVERY ON — ${recoveryLossThreshold} loss${recoveryLossThreshold !== '1' ? 'es' : ''} → switch to ${recoverySide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
+            addLog(`🔄 MANUAL RECOVERY ON — ${manualRecoveryLossThreshold} loss${manualRecoveryLossThreshold !== '1' ? 'es' : ''} → switch to ${recoverySide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
         }
         addLog('Connected — using live tick stream', 'info');
 
@@ -659,7 +661,7 @@ export const OverUnderKiller: React.FC = () => {
                             handleRecovery(sym, Math.abs(profit));
                             return;
                         }
-if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
+if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
                             addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
                         }
@@ -778,7 +780,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThr
                 </label>
             </div>
 
-            {(recoveryMode || manualRecovery) && !running && (
+            {recoveryMode && !running && (
                 <div className='mw-killer__fields'>
                     <div className='mw-field'>
                         <label className='mw-label'>Recovery Virtual Loss Threshold</label>
@@ -790,11 +792,23 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= recoveryLossThr
                 </div>
             )}
 
+            {manualRecovery && !running && (
+                <div className='mw-killer__fields'>
+                    <div className='mw-field'>
+                        <label className='mw-label'>Manual Recovery Loss Threshold</label>
+                        <input className='mw-input' type='number' min='0' step='1'
+                            value={manualRecoveryLossThreshold}
+                            onChange={e => setManualRecoveryLossThreshold(e.target.value)} />
+                        <small style={{color:'#64748b',fontSize:'9px',marginTop:'2px'}}>Real losses before switching to manual recovery mode.</small>
+                    </div>
+                </div>
+            )}
+
             <div className='mw-killer__vh'>
                 <label className='mw-killer__vh-toggle'>
                     <input type='checkbox' checked={manualRecovery}
                         onChange={e => setManualRecovery(e.target.checked)} disabled={running} />
-                    <span>Manual Recovery <small style={{opacity:0.6,fontWeight:400}}>({recoveryLossThreshold} loss{recoveryLossThreshold !== '1' ? 'es' : ''} → switch side/digit)</small></span>
+                    <span>Manual Recovery <small style={{opacity:0.6,fontWeight:400}}>({manualRecoveryLossThreshold} loss{manualRecoveryLossThreshold !== '1' ? 'es' : ''} → switch side/digit)</small></span>
                 </label>
             </div>
 
