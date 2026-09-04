@@ -40,8 +40,6 @@ const HAS_DELAY: Record<MultiKillerStrategy, boolean> = {
     differs: false, only_ups: false, only_downs: false,
 };
 
-const TICK_MS = 2000;
-
 let _buySeq = 0;
 
 interface TradeEntry {
@@ -50,11 +48,18 @@ interface TradeEntry {
     stake: number;
 }
 
+interface PendingDelay {
+    strategy: MultiKillerStrategy;
+    ticksNeeded: number;
+    resolve: () => void;
+    gen: number;
+}
+
 export const MultiKiller: React.FC = () => {
     const { transactions } = useStore();
     const [market, setMarket] = useState('R_100');
-    const [stake, setStake] = useState('10');
     const [selected, setSelected] = useState<MultiKillerStrategy[]>([]);
+    const [stakes, setStakes] = useState<Record<string, string>>({});
     const [barriers, setBarriers] = useState<Record<string, string>>({
         over: '5', under: '5', differs: '5',
     });
@@ -69,10 +74,12 @@ export const MultiKiller: React.FC = () => {
     const roundDoneRef = useRef(0);
     const roundTotalRef = useRef(0);
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
-    const stakeRef = useRef('10');
+    const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
     const genRef = useRef(0);
+    const tickCountRef = useRef(0);
+    const pendingDelaysRef = useRef<PendingDelay[]>([]);
 
     const log = useCallback((msg: string) => {
         const t = new Date().toLocaleTimeString();
@@ -81,11 +88,57 @@ export const MultiKiller: React.FC = () => {
 
     // Keep refs in sync
     useEffect(() => { selectedRef.current = selected; }, [selected]);
-    useEffect(() => { stakeRef.current = stake; }, [stake]);
+    useEffect(() => { stakesRef.current = stakes; }, [stakes]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
 
-    // Buy a single contract with unique req_id — bypasses sendViaNewSystemWithPromise
+    // Tick counter — listens for actual tick messages from Deriv WS
+    useEffect(() => {
+        if (!running) return;
+        tickCountRef.current = 0;
+        const unsub = onNewSystemMessage((event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.msg_type !== 'tick') return;
+                tickCountRef.current++;
+
+                // Check pending delayed buys
+                const pending = pendingDelaysRef.current;
+                for (let i = pending.length - 1; i >= 0; i--) {
+                    const p = pending[i];
+                    if (p.gen !== genRef.current) {
+                        pending.splice(i, 1);
+                        continue;
+                    }
+                    p.ticksNeeded--;
+                    if (p.ticksNeeded <= 0) {
+                        pending.splice(i, 1);
+                        p.resolve();
+                    }
+                }
+            } catch {}
+        });
+        return unsub;
+    }, [running]);
+
+    // Wait for N ticks
+    const waitForTicks = useCallback((ticks: number, gen: number): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (ticks <= 0) { resolve(true); return; }
+            pendingDelaysRef.current.push({
+                strategy: 'rise' as MultiKillerStrategy,
+                ticksNeeded: ticks,
+                resolve: () => resolve(true),
+                gen,
+            });
+        });
+    }, []);
+
+    const getStake = useCallback((strategy: MultiKillerStrategy): number => {
+        return parseFloat(stakesRef.current[strategy] ?? '10') || 10;
+    }, []);
+
+    // Buy a single contract with unique req_id
     const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
         return new Promise((resolve) => {
             const ws = window._newSystemWS;
@@ -137,10 +190,8 @@ export const MultiKiller: React.FC = () => {
 
                     const cid = String(data.buy?.contract_id ?? data.contract_id);
                     if (cid && cid !== 'undefined') {
-                        // Subscribe to settlement updates for this contract
                         ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
 
-                        // Register with main panel
                         try {
                             transactions.onBotContractEvent({
                                 contract_id: Number(cid),
@@ -195,9 +246,7 @@ export const MultiKiller: React.FC = () => {
                 tradesRef.current.splice(idx, 1);
                 roundDoneRef.current++;
 
-                // Update main panel with full tick data
                 try {
-                    const pip = market.startsWith('R_') ? 2 : 2;
                     transactions.onBotContractEvent({
                         contract_id: Number(cid),
                         transaction_ids: { buy: Number(cid) },
@@ -242,7 +291,7 @@ export const MultiKiller: React.FC = () => {
 
     const runRoundRef = useRef<() => Promise<void>>();
 
-    // Execute a round — fire ALL buys simultaneously
+    // Execute a round
     const runRound = useCallback(async () => {
         if (!runningRef.current) return;
         const gen = genRef.current;
@@ -254,36 +303,32 @@ export const MultiKiller: React.FC = () => {
             return;
         }
 
-        const stakeNum = parseFloat(stakeRef.current) || 10;
+        const totalCost = sel.reduce((sum, s) => sum + getStake(s), 0);
         roundTotalRef.current = 0;
         roundDoneRef.current = 0;
 
-        log(`🚀 Round: ${sel.length} × $${stakeNum} = $${(sel.length * stakeNum).toFixed(2)}`);
+        log(`🚀 Round: ${sel.length} contracts = $${totalCost.toFixed(2)} total`);
 
-        // Fire buys with tick delays
-        const promises = sel.map(s => {
+        // Fire buys — delayed ones wait for actual ticks
+        const promises = sel.map(async (s) => {
             const delayTicks = HAS_DELAY[s] ? (delaysRef.current[s] ?? 0) : 0;
             if (delayTicks > 0) {
-                log(`⏱ ${LABELS[s]} delayed ${delayTicks} tick${delayTicks > 1 ? 's' : ''}`);
-                return new Promise<{ cid: string; strategy: MultiKillerStrategy } | null>((resolve) => {
-                    setTimeout(async () => {
-                        if (genRef.current !== gen) { resolve(null); return; }
-                        const result = await buyOne(s, stakeNum);
-                        resolve(result);
-                    }, delayTicks * TICK_MS);
-                });
+                log(`⏱ ${LABELS[s]} waiting ${delayTicks} tick${delayTicks > 1 ? 's' : ''}...`);
+                const ok = await waitForTicks(delayTicks, gen);
+                if (!ok || genRef.current !== gen) return null;
+                log(`⏱ ${LABELS[s]} tick delay done — buying`);
             }
+            const stakeNum = getStake(s);
             return buyOne(s, stakeNum);
         });
+
         const results = await Promise.all(promises);
 
-        // Check if stopped during buys
         if (genRef.current !== gen) return;
 
-        // Build trade list from successful results
         const bought: TradeEntry[] = [];
         results.forEach(r => {
-            if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: stakeNum });
+            if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: getStake(r.strategy) });
         });
 
         if (bought.length === 0) {
@@ -296,7 +341,7 @@ export const MultiKiller: React.FC = () => {
         tradesRef.current.push(...bought);
         roundTotalRef.current = bought.length;
         log(`✅ ${bought.length} open — waiting for settlement`);
-    }, [buyOne, log]);
+    }, [buyOne, log, waitForTicks, getStake]);
 
     runRoundRef.current = runRound;
 
@@ -307,6 +352,7 @@ export const MultiKiller: React.FC = () => {
         runningRef.current = true;
         genRef.current++;
         tradesRef.current = [];
+        pendingDelaysRef.current = [];
         log('▶️ Started');
         runRoundRef.current?.();
     }, [running, selected, log]);
@@ -316,12 +362,14 @@ export const MultiKiller: React.FC = () => {
         runningRef.current = false;
         setRunning(false);
         tradesRef.current = [];
+        pendingDelaysRef.current = [];
         log('⏹ Stopped');
     }, [log]);
 
     const toggle = (s: MultiKillerStrategy) => {
         if (running) return;
         setSelected(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
+        if (!stakes[s]) setStakes(p => ({ ...p, [s]: '10' }));
     };
 
     return (
@@ -332,11 +380,6 @@ export const MultiKiller: React.FC = () => {
                     <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
                         {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
-                </div>
-                <div className='mw-field'>
-                    <label className='mw-label'>Stake ($)</label>
-                    <input className='mw-input' type='number' min='0.35' step='0.01'
-                        value={stake} onChange={e => setStake(e.target.value)} />
                 </div>
             </div>
 
@@ -365,6 +408,19 @@ export const MultiKiller: React.FC = () => {
                     ))}
                 </div>
             </div>
+
+            {selected.length > 0 && (
+                <div className='mw-killer__fields'>
+                    {selected.map(s => (
+                        <div key={s} className='mw-field'>
+                            <label className='mw-label'>{LABELS[s]} Stake ($)</label>
+                            <input className='mw-input' type='number' min='0.35' step='0.01'
+                                value={stakes[s] ?? '10'}
+                                onChange={e => setStakes(p => ({ ...p, [s]: e.target.value }))} />
+                        </div>
+                    ))}
+                </div>
+            )}
 
             {selected.some(s => NEEDS_BARRIER[s]) && (
                 <div className='mw-killer__fields'>
