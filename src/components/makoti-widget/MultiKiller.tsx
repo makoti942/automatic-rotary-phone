@@ -95,12 +95,13 @@ export const MultiKiller: React.FC = () => {
             };
             if (barrier !== undefined) params.barrier = barrier;
 
-            const toSend = {
+            const toSend: any = {
                 buy: '1',
                 price: stakeNum,
-                parameters: params,
+                parameters: { ...params, underlying_symbol: params.symbol },
                 req_id: reqId,
             };
+            delete toSend.parameters.symbol;
 
             log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' B' + barrier : ''} ${dur}t $${stakeNum}`);
 
