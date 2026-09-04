@@ -1,40 +1,5 @@
 @use 'components/shared/styles/devices' as *;
 
-@keyframes dc-tab-active-3d {
-    0% {
-        transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1);
-        box-shadow:
-            0 2px 10px rgba(0, 124, 240, 0.4),
-            0 1px 3px rgba(0, 0, 0, 0.25),
-            inset 0 1px 0 rgba(255, 255, 255, 0.15),
-            inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-    }
-    25% {
-        transform: perspective(600px) rotateX(5deg) rotateY(-5deg) scale(1.05);
-        box-shadow:
-            0 6px 20px rgba(0, 124, 240, 0.6),
-            0 3px 8px rgba(0, 0, 0, 0.3),
-            inset 0 1px 0 rgba(255, 255, 255, 0.2),
-            inset 0 -2px 0 rgba(0, 0, 0, 0.15);
-    }
-    75% {
-        transform: perspective(600px) rotateX(-3deg) rotateY(3deg) scale(1.03);
-        box-shadow:
-            0 4px 15px rgba(0, 223, 216, 0.5),
-            0 2px 6px rgba(0, 0, 0, 0.28),
-            inset 0 1px 0 rgba(255, 255, 255, 0.18),
-            inset 0 -1px 0 rgba(0, 0, 0, 0.12);
-    }
-    100% {
-        transform: perspective(600px) rotateX(0deg) rotateY(0deg) scale(1);
-        box-shadow:
-            0 2px 10px rgba(0, 124, 240, 0.4),
-            0 1px 3px rgba(0, 0, 0, 0.25),
-            inset 0 1px 0 rgba(255, 255, 255, 0.15),
-            inset 0 -1px 0 rgba(0, 0, 0, 0.1);
-    }
-}
-
 .dc-tabs {
     position: relative;
     display: grid;
@@ -235,9 +200,6 @@
         border-radius: 5px !important;
         position: relative;
         z-index: 1;
-        animation: dc-tab-active-3d 6s ease-in-out infinite !important;
-        transform-origin: center center !important;
-        will-change: transform, box-shadow !important;
         border-right: 1px solid var(--general-section-2) !important;
 
         * {
