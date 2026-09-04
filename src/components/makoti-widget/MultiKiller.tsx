@@ -183,33 +183,44 @@ export const MultiKiller: React.FC = () => {
                 tradesRef.current.splice(idx, 1);
                 roundDoneRef.current++;
 
-                // Update main panel
+                // Update main panel with full tick data
                 try {
+                    const pip = market.startsWith('R_') ? 2 : 2;
                     transactions.onBotContractEvent({
                         contract_id: Number(cid),
                         transaction_ids: { buy: Number(cid) },
                         buy_price: t.stake,
+                        sell_price: t.stake + profit,
                         currency: 'USD',
                         contract_type: CONTRACT_TYPE[t.strategy],
                         underlying: market,
                         display_name: market,
-                        date_start: Math.floor(Date.now() / 1000),
+                        date_start: poc.entry_tick_time || Math.floor(Date.now() / 1000),
+                        date_expiry: poc.exit_tick_time || Math.floor(Date.now() / 1000),
+                        entry_spot: poc.entry_tick != null ? String(poc.entry_tick) : undefined,
+                        entry_tick: poc.entry_tick != null ? String(poc.entry_tick) : undefined,
+                        entry_tick_time: poc.entry_tick_time || undefined,
+                        exit_spot: poc.exit_tick != null ? String(poc.exit_tick) : undefined,
+                        exit_tick: poc.exit_tick != null ? String(poc.exit_tick) : undefined,
+                        exit_tick_time: poc.exit_tick_time || undefined,
+                        profit,
+                        is_sold: true,
+                        is_completed: true,
                         status: 'sold',
-                        profit: profit,
                     } as any);
                 } catch {}
 
                 log(`  (${roundDoneRef.current}/${roundTotalRef.current} settled)`);
 
                 if (roundDoneRef.current >= roundTotalRef.current) {
-                    log(`🔄 Round complete — next round in 3s`);
+                    log(`🔄 Round complete — next round in 5s`);
                     if (runningRef.current) {
                         const gen = genRef.current;
                         setTimeout(() => {
                             if (runningRef.current && genRef.current === gen) {
                                 runRoundRef.current?.();
                             }
-                        }, 3000);
+                        }, 5000);
                     }
                 }
             } catch {}
