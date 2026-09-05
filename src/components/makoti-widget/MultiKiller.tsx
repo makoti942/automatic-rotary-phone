@@ -765,10 +765,12 @@ export const MultiKiller: React.FC = () => {
                     ? <button className='mw-btn mw-btn--stop' onClick={stop}>Stop</button>
                     : <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
                 }
-                <button className='mw-btn mw-btn--analyze' disabled={analyzing || running}
-                    onClick={analyzeVolatilities}>
-                    {analyzing ? '⏳ Analyzing...' : '📊 Analyze'}
-                </button>
+                {showTickDir && (
+                    <button className='mw-btn mw-btn--analyze' disabled={analyzing || running}
+                        onClick={analyzeVolatilities}>
+                        {analyzing ? '⏳ Analyzing...' : '📊 Analyze'}
+                    </button>
+                )}
             </div>
 
             {analyzeResult && (
