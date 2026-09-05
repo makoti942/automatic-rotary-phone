@@ -695,7 +695,9 @@ export const MultiKiller: React.FC = () => {
             }
 
             const totalScore = needBB ? Math.round(tickScore * 0.6 + bbScore * 0.4) : tickScore;
-            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore });
+            const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
+            const adjustedScore = needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore;
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore: adjustedScore });
         }
 
         results.sort((a, b) => b.totalScore - a.totalScore);
@@ -723,6 +725,7 @@ export const MultiKiller: React.FC = () => {
         setMarket(best.sym);
         setAnalyzing(false);
         setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
+        setTimeout(() => setAnalyzeResult(null), 5000);
     }, [selected]);
 
     const playClick = useCallback(() => {
@@ -851,33 +854,29 @@ export const MultiKiller: React.FC = () => {
             <div className='mw-killer__actions'>
                 {running ? (
                     <button className='mw-btn mw-btn--stop' onClick={stop}>
-                        {runPhase === 'waiting' && '⏳ Waiting...'}
-                        {runPhase === 'buying' && `📤 Buying ${buyProgress.done}/${buyProgress.total}`}
-                        {runPhase === 'settling' && `⏳ Settling ${settleProgress.done}/${settleProgress.total}`}
+                        <span className='mw-btn__text'>
+                            {runPhase === 'waiting' && '⏳ Waiting...'}
+                            {runPhase === 'buying' && `📤 Buying ${buyProgress.done}/${buyProgress.total}`}
+                            {runPhase === 'settling' && `⏳ Settling ${settleProgress.done}/${settleProgress.total}`}
+                        </span>
+                        {(buyProgress.total > 0 || settleProgress.total > 0) && (
+                            <span className='mw-btn__bar'>
+                                <span className='mw-btn__fill'
+                                    style={{
+                                        width: runPhase === 'buying'
+                                            ? `${buyProgress.total > 0 ? (buyProgress.done / buyProgress.total) * 100 : 0}%`
+                                            : `${settleProgress.total > 0 ? (settleProgress.done / settleProgress.total) * 100 : 0}%`,
+                                        background: runPhase === 'buying'
+                                            ? 'linear-gradient(90deg, #f97316, #fb923c)'
+                                            : 'linear-gradient(90deg, #22c55e, #4ade80)',
+                                    }} />
+                            </span>
+                        )}
                     </button>
                 ) : (
                     <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
                 )}
             </div>
-
-            {running && (buyProgress.total > 0 || settleProgress.total > 0) && (
-                <div className='mw-progress'>
-                    <div className='mw-progress__track'>
-                        {runPhase === 'buying' && (
-                            <div className='mw-progress__fill mw-progress__fill--buy'
-                                style={{ width: `${buyProgress.total > 0 ? (buyProgress.done / buyProgress.total) * 100 : 0}%` }} />
-                        )}
-                        {runPhase === 'settling' && (
-                            <div className='mw-progress__fill mw-progress__fill--settle'
-                                style={{ width: `${settleProgress.total > 0 ? (settleProgress.done / settleProgress.total) * 100 : 0}%` }} />
-                        )}
-                    </div>
-                    <div className='mw-progress__label'>
-                        {runPhase === 'buying' && `Buying contracts: ${buyProgress.done}/${buyProgress.total}`}
-                        {runPhase === 'settling' && `Settled: ${settleProgress.done}/${settleProgress.total}`}
-                    </div>
-                </div>
-            )}
 
             {analyzeResult && (
                 <div className='mw-analyze-result'>
