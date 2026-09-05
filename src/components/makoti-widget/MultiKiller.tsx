@@ -78,6 +78,7 @@ export const MultiKiller: React.FC = () => {
     const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
     const [buyProgress, setBuyProgress] = useState({ done: 0, total: 0 });
     const [settleProgress, setSettleProgress] = useState({ done: 0, total: 0 });
+    const [tickProgress, setTickProgress] = useState({ dir: '...', count: 0, target: 0 });
     const [analyzing, setAnalyzing] = useState(false);
     const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -183,6 +184,7 @@ export const MultiKiller: React.FC = () => {
 
                 if (upCount >= target) {
                     log(`📊 ${upCount} consecutive UP (${prevPrice}→${price}) — GO!`);
+                    setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
                     tickDirActiveRef.current = false;
@@ -194,6 +196,7 @@ export const MultiKiller: React.FC = () => {
 
                 if (downCount >= target) {
                     log(`📊 ${downCount} consecutive DOWN (${prevPrice}→${price}) — GO!`);
+                    setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
                     tickDirActiveRef.current = false;
@@ -204,8 +207,10 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 if (upCount > 0) {
+                    setTickProgress({ dir: 'UP', count: upCount, target });
                     log(`  ↑ UP ${upCount}/${target} (${prevPrice}→${price})`);
                 } else if (downCount > 0) {
+                    setTickProgress({ dir: 'DOWN', count: downCount, target });
                     log(`  ↓ DOWN ${downCount}/${target} (${prevPrice}→${price})`);
                 }
             } catch {}
@@ -512,6 +517,7 @@ export const MultiKiller: React.FC = () => {
         setRunPhase('waiting');
         setBuyProgress({ done: 0, total: 0 });
         setSettleProgress({ done: 0, total: 0 });
+        setTickProgress({ dir: '⏳', count: 0, target: 0 });
         setLogs([]);
         runningRef.current = true;
         genRef.current++;
@@ -556,6 +562,7 @@ export const MultiKiller: React.FC = () => {
         setRunPhase('idle');
         setBuyProgress({ done: 0, total: 0 });
         setSettleProgress({ done: 0, total: 0 });
+        setTickProgress({ dir: '...', count: 0, target: 0 });
         log('⏹ Stopped');
     }, [log]);
 
@@ -855,9 +862,11 @@ export const MultiKiller: React.FC = () => {
                 {running ? (
                     <button className='mw-btn mw-btn--stop' onClick={stop}>
                         <span className='mw-btn__text'>
-                            {runPhase === 'waiting' && '⏳ Waiting...'}
-                            {runPhase === 'buying' && `📤 Buying ${buyProgress.done}/${buyProgress.total}`}
-                            {runPhase === 'settling' && `⏳ Settling ${settleProgress.done}/${settleProgress.total}`}
+                            {runPhase === 'waiting' && tickProgress.target > 0 && tickProgress.dir !== 'GO!'
+                                ? `${tickProgress.dir} ${tickProgress.count}/${tickProgress.target}`
+                                : runPhase === 'waiting' && '⏳ Waiting...'}
+                            {runPhase === 'buying' && `📤 ${buyProgress.done}/${buyProgress.total}`}
+                            {runPhase === 'settling' && `⏳ ${settleProgress.done}/${settleProgress.total}`}
                         </span>
                         {(buyProgress.total > 0 || settleProgress.total > 0) && (
                             <span className='mw-btn__bar'>

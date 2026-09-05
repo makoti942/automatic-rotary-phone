@@ -41,6 +41,9 @@ export const MakotiWidget: React.FC = () => {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
     const [tabOpen, setTabOpen] = useState(false);
+    const [winSize, setWinSize] = useState({ w: 300, h: 420 });
+    const resizing = useRef(false);
+    const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
@@ -266,6 +269,29 @@ export const MakotiWidget: React.FC = () => {
         setOpen(o => !o);
     };
 
+    /* ── Window resize handle ─────────────────────────────── */
+    const onResizePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        resizing.current = true;
+        resizeStart.current = { x: e.clientX, y: e.clientY, w: winSize.w, h: winSize.h };
+        const onMove = (ev: PointerEvent) => {
+            if (!resizing.current) return;
+            const dx = ev.clientX - resizeStart.current.x;
+            const dy = ev.clientY - resizeStart.current.y;
+            const newW = Math.max(260, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
+            const newH = Math.max(300, Math.min(window.innerHeight - 60, resizeStart.current.h + dy));
+            setWinSize({ w: newW, h: newH });
+        };
+        const onUp = () => {
+            resizing.current = false;
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+        };
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+    };
+
     /* ── Window header pointer down ───────────────────────── */
     const onWinPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
         const target = e.target as HTMLElement;
@@ -304,7 +330,13 @@ export const MakotiWidget: React.FC = () => {
             <div
                 ref={winRef}
                 className={`mw-window${open ? '' : ' mw-window--closed'}${minimized ? ' mw-window--hidden' : ''}`}
-                style={{ position: 'fixed', left: winPosRef.current.x + 'px', top: winPosRef.current.y + 'px' }}
+                style={{
+                    position: 'fixed',
+                    left: winPosRef.current.x + 'px',
+                    top: winPosRef.current.y + 'px',
+                    width: winSize.w + 'px',
+                    maxHeight: winSize.h + 'px',
+                }}
                 onPointerDown={onWinPointerDown}
             >
                 <div className='mw-win-header'>
@@ -377,6 +409,12 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'differs_auto' && <DiffersAuto />}
                     {tab === 'ai_analyst' && <AiAnalystStrategy />}
                     {tab === 'multi_killer' && <MultiKiller />}
+                </div>
+
+                <div className='mw-resize-handle' onPointerDown={onResizePointerDown}>
+                    <svg width='12' height='12' viewBox='0 0 12 12' fill='none'>
+                        <path d='M11 1L1 11M11 5L5 11M11 9L9 11' stroke='currentColor' strokeWidth='1.5' strokeLinecap='round'/>
+                    </svg>
                 </div>
             </div>
 

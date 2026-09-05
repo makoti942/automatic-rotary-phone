@@ -76,9 +76,6 @@ $mw-radius:   10px;
 .mw-window {
     position: fixed;
     z-index: 99998;
-    width: 300px;
-    max-width: calc(100vw - 16px);
-    max-height: min(420px, calc(100vh - 80px));
     background: $mw-bg;
     border: 1px solid $mw-border;
     border-radius: $mw-radius;
@@ -96,11 +93,6 @@ $mw-radius:   10px;
 
     &--closed {
         display: none !important;
-    }
-
-    @media (max-width: 600px) {
-        width: 250px;
-        max-height: min(340px, calc(100vh - 80px));
     }
 }
 
@@ -340,6 +332,29 @@ $mw-radius:   10px;
 }
 
 // ─── BODY ─────────────────────────────────────────────────────────────────────
+
+.mw-resize-handle {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.15);
+    transition: color 0.15s;
+    z-index: 10;
+
+    &:hover {
+        color: rgba(249,115,22,0.6);
+    }
+
+    svg {
+        pointer-events: none;
+    }
+}
 
 .mw-win-body {
     overflow-y: auto;
