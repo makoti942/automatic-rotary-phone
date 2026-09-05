@@ -650,22 +650,35 @@ export const MultiKiller: React.FC = () => {
             let bbPosition = 'N/A';
             let bbScore = 50;
             const bb = needBB ? calcBB(candles) : null;
-            if (bb && candles.length > 0) {
-                const last = candles[candles.length - 1];
+            if (bb && candles.length >= 2) {
+                const last2 = candles.slice(-2);
                 const bbRange = bb.upper - bb.lower;
                 if (bbRange > 0) {
-                    const pos = (last.close - bb.lower) / bbRange;
-                    if (pos >= 0.9) bbPosition = 'UPPER BB';
-                    else if (pos <= 0.1) bbPosition = 'LOWER BB';
-                    else if (pos >= 0.7) bbPosition = 'near upper';
-                    else if (pos <= 0.3) bbPosition = 'near lower';
-                    else bbPosition = 'middle';
+                    let bestPos = 0;
+                    for (const c of last2) {
+                        const pos = (c.close - bb.lower) / bbRange;
+                        if (Math.abs(pos - bestPos) > Math.abs(pos - 0.5)) bestPos = pos;
+                    }
+                    const touchDist = 0.05;
+                    const nearDist = 0.15;
 
-                    if (hasDowns && pos >= 0.9) bbScore = 100;
-                    else if (hasDowns && pos >= 0.7) bbScore = 75;
-                    else if (hasUps && pos <= 0.1) bbScore = 100;
-                    else if (hasUps && pos <= 0.3) bbScore = 75;
-                    else bbScore = 20;
+                    if (hasDowns) {
+                        const touchedUpper = last2.some(c => c.high >= bb.upper);
+                        const nearUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - nearDist));
+                        const almostUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - touchDist));
+                        if (touchedUpper) { bbPosition = 'TOUCHING UPPER'; bbScore = 100; }
+                        else if (almostUpper) { bbPosition = 'almost upper'; bbScore = 90; }
+                        else if (nearUpper) { bbPosition = 'near upper'; bbScore = 70; }
+                        else { bbPosition = 'not near upper'; bbScore = 20; }
+                    } else if (hasUps) {
+                        const touchedLower = last2.some(c => c.low <= bb.lower);
+                        const nearLower = last2.some(c => (c.low - bb.lower) / bbRange <= nearDist);
+                        const almostLower = last2.some(c => (c.low - bb.lower) / bbRange <= touchDist);
+                        if (touchedLower) { bbPosition = 'TOUCHING LOWER'; bbScore = 100; }
+                        else if (almostLower) { bbPosition = 'almost lower'; bbScore = 90; }
+                        else if (nearLower) { bbPosition = 'near lower'; bbScore = 70; }
+                        else { bbPosition = 'not near lower'; bbScore = 20; }
+                    }
                 }
             }
 
