@@ -75,6 +75,8 @@ export const MultiKiller: React.FC = () => {
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>('any');
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
+    const [analyzing, setAnalyzing] = useState(false);
+    const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
 
     const tradesRef = useRef<TradeEntry[]>([]);
     const runningRef = useRef(false);
@@ -539,6 +541,138 @@ export const MultiKiller: React.FC = () => {
         log('⏹ Stopped');
     }, [log]);
 
+    const analyzeVolatilities = useCallback(async () => {
+        const ws = window._newSystemWS;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            setAnalyzeResult('❌ WebSocket not connected');
+            return;
+        }
+
+        setAnalyzing(true);
+        setAnalyzeResult(null);
+        setLogs(p => ['📊 Analyzing all volatilities...', ...p].slice(0, 80));
+
+        const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100'];
+        const TICKS_NEEDED = 100;
+        const MAX_STREAK = 4;
+
+        // Collect ticks for each symbol
+        const collected: Record<string, number[]> = {};
+        VOL_SYMBOLS.forEach(s => { collected[s] = []; });
+
+        const unsub = onNewSystemMessage((event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.msg_type !== 'tick') return;
+                const sym = data.tick?.symbol;
+                const price = parseFloat(data.tick?.quote);
+                if (!sym || !collected[sym] || isNaN(price)) return;
+                collected[sym].push(price);
+            } catch {}
+        });
+
+        // Subscribe to all volatility ticks
+        VOL_SYMBOLS.forEach(sym => {
+            ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: TICKS_NEEDED, end: 'latest', subscribe: 1 }));
+        });
+
+        // Wait for enough ticks (max 15s timeout)
+        const start = Date.now();
+        while (Date.now() - start < 15000) {
+            const total = Object.values(collected).reduce((s, arr) => s + arr.length, 0);
+            if (total >= VOL_SYMBOLS.length * TICKS_NEEDED) break;
+            await new Promise(r => setTimeout(r, 200));
+        }
+
+        unsub();
+
+        // Analyze each symbol
+        const results: Array<{
+            sym: string;
+            label: string;
+            maxStreak: number;
+            avgStreak: number;
+            streaksOver4: number;
+            totalTicks: number;
+        }> = [];
+
+        for (const sym of VOL_SYMBOLS) {
+            const prices = collected[sym];
+            if (prices.length < 10) {
+                results.push({ sym, label: sym, maxStreak: 0, avgStreak: 0, streaksOver4: 0, totalTicks: prices.length });
+                continue;
+            }
+
+            // Calculate consecutive direction streaks
+            let maxStreak = 0;
+            let currentStreak = 0;
+            let streakSum = 0;
+            let streakCount = 0;
+            let streaksOver4 = 0;
+            let streakDir = 0; // 1=up, -1=down, 0=none
+
+            for (let i = 1; i < prices.length; i++) {
+                const diff = prices[i] - prices[i - 1];
+                let dir = 0;
+                if (diff > 0) dir = 1;
+                else if (diff < 0) dir = -1;
+
+                if (dir === streakDir && dir !== 0) {
+                    currentStreak++;
+                } else {
+                    if (currentStreak > 0) {
+                        streakSum += currentStreak;
+                        streakCount++;
+                        if (currentStreak > maxStreak) maxStreak = currentStreak;
+                        if (currentStreak >= MAX_STREAK) streaksOver4++;
+                    }
+                    currentStreak = dir !== 0 ? 1 : 0;
+                    streakDir = dir;
+                }
+            }
+            // Final streak
+            if (currentStreak > 0) {
+                streakSum += currentStreak;
+                streakCount++;
+                if (currentStreak > maxStreak) maxStreak = currentStreak;
+                if (currentStreak >= MAX_STREAK) streaksOver4++;
+            }
+
+            const avgStreak = streakCount > 0 ? streakSum / streakCount : 0;
+            const label = `Volatility ${sym.replace('R_', '')}`;
+            results.push({ sym, label, maxStreak, avgStreak, streaksOver4, totalTicks: prices.length });
+        }
+
+        // Sort by: fewest streaks over 4, then lowest max streak, then lowest avg
+        results.sort((a, b) => {
+            if (a.streaksOver4 !== b.streaksOver4) return a.streaksOver4 - b.streaksOver4;
+            if (a.maxStreak !== b.maxStreak) return a.maxStreak - b.maxStreak;
+            return a.avgStreak - b.avgStreak;
+        });
+
+        // Build result text
+        let msg = '📊 ANALYSIS RESULTS (based on ' + TICKS_NEEDED + ' ticks each)\n\n';
+        results.forEach((r, i) => {
+            const rank = i === 0 ? '🏆 BEST' : i === 1 ? '✅ 2nd' : i === 2 ? '✅ 3rd' : '  ';
+            const danger = r.maxStreak > 4 ? ' ⚠️' : '';
+            msg += `${rank} ${r.label}: max streak ${r.maxStreak}, avg ${r.avgStreak.toFixed(1)}, streaks≥4: ${r.streaksOver4}${danger}\n`;
+        });
+
+        const best = results[0];
+        const safe = results.filter(r => r.maxStreak <= 4);
+        msg += `\n💡 RECOMMENDATION:\n`;
+        if (safe.length > 0) {
+            msg += `Best: ${best.label} (max ${best.maxStreak} ticks, only ${best.streaksOver4} streaks ≥4)\n`;
+            msg += `Set tick direction to ${Math.max(2, best.maxStreak - 1)} for reliable triggers`;
+        } else {
+            msg += `All volatilities showed streaks > 4. Use tick direction ≤ 3 for safety.`;
+        }
+
+        setAnalyzeResult(msg);
+        setAnalyzing(false);
+        setLogs(p => ['📊 Analysis complete — see results below', ...p].slice(0, 80));
+    }, []);
+
     const toggle = (s: MultiKillerStrategy) => {
         if (running) return;
         setSelected(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
@@ -631,7 +765,17 @@ export const MultiKiller: React.FC = () => {
                     ? <button className='mw-btn mw-btn--stop' onClick={stop}>Stop</button>
                     : <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
                 }
+                <button className='mw-btn mw-btn--analyze' disabled={analyzing || running}
+                    onClick={analyzeVolatilities}>
+                    {analyzing ? '⏳ Analyzing...' : '📊 Analyze'}
+                </button>
             </div>
+
+            {analyzeResult && (
+                <div className='mw-analyze-result'>
+                    <pre>{analyzeResult}</pre>
+                </div>
+            )}
 
             <div className='mw-killer__logs'>
                 <div className='mw-killer__logs-head'>Log</div>
