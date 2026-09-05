@@ -669,8 +669,9 @@ export const MultiKiller: React.FC = () => {
         }
 
         setAnalyzeResult(msg);
+        setMarket(best.sym);
         setAnalyzing(false);
-        setLogs(p => ['📊 Analysis complete — see results below', ...p].slice(0, 80));
+        setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
     }, []);
 
     const toggle = (s: MultiKillerStrategy) => {
