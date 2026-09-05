@@ -75,6 +75,9 @@ export const MultiKiller: React.FC = () => {
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>('any');
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
+    const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
+    const [buyProgress, setBuyProgress] = useState({ done: 0, total: 0 });
+    const [settleProgress, setSettleProgress] = useState({ done: 0, total: 0 });
     const [analyzing, setAnalyzing] = useState(false);
     const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
@@ -356,6 +359,7 @@ export const MultiKiller: React.FC = () => {
                 log(`${icon} ${LABELS[t.strategy]}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$ bet)`);
                 tradesRef.current.splice(idx, 1);
                 settledCountRef.current++;
+                setSettleProgress({ done: settledCountRef.current, total: expectedSettlementsRef.current });
 
                 try {
                     transactions.onBotContractEvent({
@@ -420,11 +424,14 @@ export const MultiKiller: React.FC = () => {
         buyPhaseDoneRef.current = false;
         expectedSettlementsRef.current = 0;
         settledCountRef.current = 0;
-        // Clean up any stale buy listeners from previous round
         buyListenersRef.current.forEach(c => c());
         buyListenersRef.current = [];
 
-        const promises = sel.map(async (s) => {
+        setRunPhase('buying');
+        setBuyProgress({ done: 0, total: sel.length });
+        setSettleProgress({ done: 0, total: 0 });
+
+        const promises = sel.map(async (s, idx) => {
             const delayTicks = HAS_DELAY[s] ? (delaysRef.current[s] ?? 0) : 0;
             if (delayTicks > 0) {
                 log(`⏱ ${LABELS[s]} waiting ${delayTicks} tick${delayTicks > 1 ? 's' : ''}...`);
@@ -432,7 +439,9 @@ export const MultiKiller: React.FC = () => {
                 if (genRef.current !== gen) return null;
                 log(`⏱ ${LABELS[s]} tick delay done — buying`);
             }
-            return buyOne(s, getStake(s), myRound);
+            const result = await buyOne(s, getStake(s), myRound);
+            setBuyProgress(prev => ({ ...prev, done: prev.done + 1 }));
+            return result;
         });
 
         const results = await Promise.all(promises);
@@ -455,6 +464,8 @@ export const MultiKiller: React.FC = () => {
         tradesRef.current.push(...bought);
         expectedSettlementsRef.current = bought.length;
         buyPhaseDoneRef.current = true;
+        setRunPhase('settling');
+        setSettleProgress({ done: 0, total: bought.length });
         log(`✅ ${bought.length} open — waiting for all settlements`);
 
         // ── SETTLEMENT PHASE ──
@@ -498,6 +509,9 @@ export const MultiKiller: React.FC = () => {
     const start = useCallback(() => {
         if (running || selected.length === 0) return;
         setRunning(true);
+        setRunPhase('waiting');
+        setBuyProgress({ done: 0, total: 0 });
+        setSettleProgress({ done: 0, total: 0 });
         setLogs([]);
         runningRef.current = true;
         genRef.current++;
@@ -539,6 +553,9 @@ export const MultiKiller: React.FC = () => {
             roundCompleteResolveRef.current();
             roundCompleteResolveRef.current = null;
         }
+        setRunPhase('idle');
+        setBuyProgress({ done: 0, total: 0 });
+        setSettleProgress({ done: 0, total: 0 });
         log('⏹ Stopped');
     }, [log]);
 
@@ -832,11 +849,35 @@ export const MultiKiller: React.FC = () => {
             )}
 
             <div className='mw-killer__actions'>
-                {running
-                    ? <button className='mw-btn mw-btn--stop' onClick={stop}>Stop</button>
-                    : <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
-                }
+                {running ? (
+                    <button className='mw-btn mw-btn--stop' onClick={stop}>
+                        {runPhase === 'waiting' && '⏳ Waiting...'}
+                        {runPhase === 'buying' && `📤 Buying ${buyProgress.done}/${buyProgress.total}`}
+                        {runPhase === 'settling' && `⏳ Settling ${settleProgress.done}/${settleProgress.total}`}
+                    </button>
+                ) : (
+                    <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
+                )}
             </div>
+
+            {running && (buyProgress.total > 0 || settleProgress.total > 0) && (
+                <div className='mw-progress'>
+                    <div className='mw-progress__track'>
+                        {runPhase === 'buying' && (
+                            <div className='mw-progress__fill mw-progress__fill--buy'
+                                style={{ width: `${buyProgress.total > 0 ? (buyProgress.done / buyProgress.total) * 100 : 0}%` }} />
+                        )}
+                        {runPhase === 'settling' && (
+                            <div className='mw-progress__fill mw-progress__fill--settle'
+                                style={{ width: `${settleProgress.total > 0 ? (settleProgress.done / settleProgress.total) * 100 : 0}%` }} />
+                        )}
+                    </div>
+                    <div className='mw-progress__label'>
+                        {runPhase === 'buying' && `Buying contracts: ${buyProgress.done}/${buyProgress.total}`}
+                        {runPhase === 'settling' && `Settled: ${settleProgress.done}/${settleProgress.total}`}
+                    </div>
+                </div>
+            )}
 
             {analyzeResult && (
                 <div className='mw-analyze-result'>

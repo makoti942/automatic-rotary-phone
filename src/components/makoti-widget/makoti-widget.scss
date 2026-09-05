@@ -1836,7 +1836,50 @@ $mw-radius:   10px;
     background: linear-gradient(90deg, #374151, #4b5563);
     color: #fff;
     box-shadow: none;
+    font-size: 10px;
+    min-width: 180px;
+    text-align: center;
     &:hover { filter: brightness(1.1); }
+}
+
+.mw-progress {
+    margin-top: 6px;
+}
+
+.mw-progress__track {
+    width: 100%;
+    height: 6px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.mw-progress__fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    &--buy {
+        background: linear-gradient(90deg, #f97316, #fb923c);
+        animation: mw-progress-pulse 1.2s ease-in-out infinite;
+    }
+
+    &--settle {
+        background: linear-gradient(90deg, #22c55e, #4ade80);
+        animation: mw-progress-pulse 1.5s ease-in-out infinite;
+    }
+}
+
+@keyframes mw-progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.mw-progress__label {
+    font-size: 9px;
+    color: $mw-muted;
+    margin-top: 3px;
+    text-align: center;
 }
 
 .mw-btn--analyze {
