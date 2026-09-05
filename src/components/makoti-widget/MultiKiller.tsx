@@ -594,36 +594,38 @@ export const MultiKiller: React.FC = () => {
             }
 
             let maxStreak = 0;
-            let currentStreak = 1;
+            let currentStreak = 0;
             let over4Count = 0;
             let streakDir = 0;
             let upCount = 0;
             let downCount = 0;
             let totalMovement = 0;
+            let realMoves = 0;
 
             for (let i = 1; i < prices.length; i++) {
                 const diff = prices[i] - prices[i - 1];
-                let dir = 0;
-                if (diff > 0) { dir = 1; upCount++; }
-                else if (diff < 0) { dir = -1; downCount++; }
-                totalMovement += Math.abs(diff);
+                if (diff === 0) continue;
 
-                if (dir === streakDir && dir !== 0) {
+                const dir = diff > 0 ? 1 : -1;
+                if (dir > 0) upCount++; else downCount++;
+                totalMovement += Math.abs(diff);
+                realMoves++;
+
+                if (dir === streakDir) {
                     currentStreak++;
                 } else {
                     if (currentStreak > maxStreak) maxStreak = currentStreak;
                     if (currentStreak > 4) over4Count++;
-                    currentStreak = dir !== 0 ? 1 : 0;
+                    currentStreak = 1;
                     streakDir = dir;
                 }
             }
             if (currentStreak > maxStreak) maxStreak = currentStreak;
             if (currentStreak > 4) over4Count++;
 
-            const totalMoves = prices.length - 1;
-            const over4Pct = totalMoves > 0 ? Math.round((over4Count / totalMoves) * 100) : 100;
-            const avgMove = totalMoves > 0 ? totalMovement / totalMoves : 0;
-            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves, over4Pct, upCount, downCount, avgMove });
+            const over4Pct = realMoves > 0 ? Math.round((over4Count / realMoves) * 100) : 100;
+            const avgMove = realMoves > 0 ? totalMovement / realMoves : 0;
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves: realMoves, over4Pct, upCount, downCount, avgMove });
         }
 
         results.sort((a, b) => a.over4Pct - b.over4Pct || a.maxStreak - b.maxStreak);
