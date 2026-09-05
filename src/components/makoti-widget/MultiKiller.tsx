@@ -583,7 +583,7 @@ export const MultiKiller: React.FC = () => {
                 } catch { resolve([]); }
             };
             window.addEventListener('newSystemMessage', handler);
-            ws.send(JSON.stringify({ candles_history: sym, style: 'candles', timeframe: 60, count: 30, end: 'latest', req_id: id }));
+            ws.send(JSON.stringify({ ticks_history: sym, style: 'candles', granularity: 60, count: 30, end: 'latest', req_id: id }));
             setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
         });
 
@@ -718,30 +718,22 @@ export const MultiKiller: React.FC = () => {
 
     return (
         <div className='mw-killer'>
-            <div className='mw-killer__fields'>
-                <div className='mw-field'>
+            <div className='mw-killer__top-row'>
+                <div className='mw-field mw-field--grow'>
                     <label className='mw-label'>Market</label>
-                    <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
-                        {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
+                    <div className='mw-select-wrap'>
+                        <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
+                            {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <span className='mw-select-arrow'></span>
+                    </div>
                 </div>
                 {showTickDir && (
-                    <div className='mw-field'>
-                        <label className='mw-label'>Tick Direction</label>
-                        <div className='mw-tickdir-row'>
-                            <input className='mw-input' type='number' min='1' max='20' step='1'
-                                value={tickDirection}
-                                onChange={e => setTickDirection(e.target.value)} />
-                            <select className='mw-input mw-tickdir-select'
-                                value={tickDirMode}
-                                onChange={e => setTickDirMode(e.target.value as any)}>
-                                <option value='any'>Any</option>
-                                <option value='ups'>Ups Only</option>
-                                <option value='downs'>Downs Only</option>
-                            </select>
-                        </div>
-                        <span className='mw-hint'>0 = off</span>
-                    </div>
+                    <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
+                        disabled={analyzing || running}
+                        onClick={analyzeVolatilities}>
+                        {analyzing ? '⏳' : '📊'} Analyze
+                    </button>
                 )}
             </div>
 
@@ -749,33 +741,60 @@ export const MultiKiller: React.FC = () => {
                 <label className='mw-label'>Strategies</label>
                 <div className='mw-types-row'>
                     {(Object.keys(LABELS) as MultiKillerStrategy[]).map(s => (
-                        <label key={s} className='mw-type-cb'>
+                        <label key={s} className={`mw-type-chip ${selected.includes(s) ? 'mw-type-chip--active' : ''}`}>
                             <input type='checkbox' checked={selected.includes(s)}
                                 onChange={() => toggle(s)} disabled={running} />
-                            <span>{LABELS[s]}</span>
+                            <span className='mw-type-chip__label'>{LABELS[s]}</span>
                             {HAS_DELAY[s] && selected.includes(s) && (
-                                <select
-                                    className='mw-type-delay'
-                                    value={delays[s] ?? 0}
-                                    onChange={e => setDelays(p => ({ ...p, [s]: Number(e.target.value) }))}
-                                    disabled={running}
-                                    onClick={e => e.stopPropagation()}
-                                >
-                                    <option value={0}>0t</option>
-                                    <option value={1}>1t</option>
-                                    <option value={2}>2t</option>
-                                </select>
+                                <div className='mw-select-wrap mw-select-wrap--sm'>
+                                    <select
+                                        className='mw-input mw-type-delay'
+                                        value={delays[s] ?? 0}
+                                        onChange={e => setDelays(p => ({ ...p, [s]: Number(e.target.value) }))}
+                                        disabled={running}
+                                        onClick={e => e.stopPropagation()}
+                                    >
+                                        <option value={0}>0t</option>
+                                        <option value={1}>1t</option>
+                                        <option value={2}>2t</option>
+                                    </select>
+                                    <span className='mw-select-arrow mw-select-arrow--sm'></span>
+                                </div>
                             )}
                         </label>
                     ))}
                 </div>
             </div>
 
+            {showTickDir && (
+                <div className='mw-killer__fields'>
+                    <div className='mw-field mw-field--grow'>
+                        <label className='mw-label'>Wait Ticks</label>
+                        <input className='mw-input' type='number' min='1' max='20' step='1'
+                            value={tickDirection}
+                            onChange={e => setTickDirection(e.target.value)} />
+                        <span className='mw-hint'>0 = off</span>
+                    </div>
+                    <div className='mw-field mw-field--grow'>
+                        <label className='mw-label'>Direction</label>
+                        <div className='mw-select-wrap'>
+                            <select className='mw-input' value={tickDirMode}
+                                onChange={e => setTickDirMode(e.target.value as any)}>
+                                <option value='any'>Any</option>
+                                <option value='ups'>Ups Only</option>
+                                <option value='downs'>Downs Only</option>
+                            </select>
+                            <span className='mw-select-arrow'></span>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {selected.length > 0 && (
                 <div className='mw-killer__fields'>
                     {selected.map(s => (
-                        <div key={s} className='mw-field'>
-                            <label className='mw-label'>{LABELS[s]} Stake ($)</label>
+                        <div key={s} className='mw-field mw-field--grow'>
+                            <label className='mw-label'>{LABELS[s]} Stake</label>
                             <input className='mw-input' type='number' min='0.35' step='0.01'
                                 value={stakes[s] ?? '10'}
                                 onChange={e => setStakes(p => ({ ...p, [s]: e.target.value }))} />
@@ -787,7 +806,7 @@ export const MultiKiller: React.FC = () => {
             {selected.some(s => NEEDS_BARRIER[s]) && (
                 <div className='mw-killer__fields'>
                     {selected.filter(s => NEEDS_BARRIER[s]).map(s => (
-                        <div key={s} className='mw-field'>
+                        <div key={s} className='mw-field mw-field--grow'>
                             <label className='mw-label'>{LABELS[s]} Barrier</label>
                             <input className='mw-input' type='number' min='0' max='9' step='1'
                                 value={barriers[s] ?? '5'}
@@ -802,13 +821,6 @@ export const MultiKiller: React.FC = () => {
                     ? <button className='mw-btn mw-btn--stop' onClick={stop}>Stop</button>
                     : <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
                 }
-                {showTickDir && (
-                    <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
-                        disabled={analyzing || running}
-                        onClick={analyzeVolatilities}>
-                        {analyzing ? '⏳ Loading...' : '📊 Analyze'}
-                    </button>
-                )}
             </div>
 
             {analyzeResult && (
