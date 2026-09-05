@@ -1767,13 +1767,13 @@ $mw-radius:   10px;
 
 .mw-killer__top-row {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: stretch;
     margin-bottom: 8px;
-    position: relative;
-    z-index: 1;
 
     .mw-field--grow {
+        flex: 1;
+        min-width: 0;
         position: relative;
         z-index: 2;
     }
@@ -1781,8 +1781,8 @@ $mw-radius:   10px;
     .mw-btn--analyze {
         flex: 0 0 auto;
         white-space: nowrap;
-        align-self: flex-end;
-        margin-bottom: 1px;
+        height: auto;
+        min-height: 36px;
         position: relative;
         z-index: 1;
     }

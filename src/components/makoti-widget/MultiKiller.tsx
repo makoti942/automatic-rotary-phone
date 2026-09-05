@@ -560,34 +560,42 @@ export const MultiKiller: React.FC = () => {
 
         const fetchTicks = (sym: string): Promise<number[]> => new Promise((resolve) => {
             const id = Date.now() + Math.random();
+            let resolved = false;
             const handler = (e: Event) => {
                 try {
                     const data = JSON.parse((e as CustomEvent).detail.data);
-                    if (data.req_id !== id) return;
+                    if (resolved) return;
+                    const match = data.req_id == id || (data.echo_req?.ticks_history === sym && data.msg_type === 'history');
+                    if (!match) return;
+                    resolved = true;
                     window.removeEventListener('newSystemMessage', handler);
-                    resolve((data.history?.prices || []).map(Number));
-                } catch { resolve([]); }
+                    const prices = data.history?.prices || data.prices || [];
+                    resolve(prices.map(Number));
+                } catch {}
             };
             window.addEventListener('newSystemMessage', handler);
             ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 200, end: 'latest', req_id: id }));
-            setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
+            setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('newSystemMessage', handler); resolve([]); } }, 10000);
         });
 
         const fetchCandles = (sym: string): Promise<Array<{ open: number; high: number; low: number; close: number }>> => new Promise((resolve) => {
             const id = Date.now() + Math.random();
+            let resolved = false;
             const handler = (e: Event) => {
                 try {
-                    const raw = (e as CustomEvent).detail.data;
-                    const data = JSON.parse(raw);
-                    if (data.req_id !== id) return;
+                    const data = JSON.parse((e as CustomEvent).detail.data);
+                    if (resolved) return;
+                    const match = data.req_id == id || (data.echo_req?.ticks_history === sym && data.msg_type === 'candles');
+                    if (!match) return;
+                    resolved = true;
                     window.removeEventListener('newSystemMessage', handler);
                     const candles = data.candles || [];
                     resolve(candles.map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close })));
-                } catch { resolve([]); }
+                } catch {}
             };
             window.addEventListener('newSystemMessage', handler);
             ws.send(JSON.stringify({ ticks_history: sym, style: 'candles', granularity: 60, count: 30, end: 'latest', req_id: id }));
-            setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
+            setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('newSystemMessage', handler); resolve([]); } }, 10000);
         });
 
         const allData = await Promise.all(VOL_SYMBOLS.map(async (sym) => {
