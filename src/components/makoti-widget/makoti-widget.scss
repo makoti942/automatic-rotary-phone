@@ -362,12 +362,24 @@ $mw-radius:   10px;
     display: flex;
     gap: 4px;
 
-    .mw-input { flex: 1; min-width: 0; }
+    .mw-input { flex: 1; min-width: 0; font-size: 14px; }
 }
 
 .mw-tickdir-select {
     width: 80px;
     flex: 0 0 80px !important;
+    font-size: 14px;
+}
+
+@media (max-width: 480px) {
+    .mw-tickdir-row {
+        flex-direction: column;
+
+        .mw-tickdir-select {
+            width: 100%;
+            flex: 1 1 auto !important;
+        }
+    }
 }
 
 .mw-label {
@@ -398,6 +410,11 @@ $mw-radius:   10px;
     &::-webkit-inner-spin-button,
     &::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
     -moz-appearance: textfield;
+
+    @media (max-width: 480px) {
+        font-size: 14px;
+        padding: 10px 12px;
+    }
 }
 
 .mw-sel {
