@@ -40,12 +40,18 @@ const HAS_DELAY: Record<MultiKillerStrategy, boolean> = {
     differs: false, only_ups: false, only_downs: false,
 };
 
+const USES_TICK_DIR: Record<MultiKillerStrategy, boolean> = {
+    over: false, under: false, rise: true, fall: true,
+    differs: false, only_ups: true, only_downs: true,
+};
+
 let _buySeq = 0;
 
 interface TradeEntry {
     contractId: string;
     strategy: MultiKillerStrategy;
     stake: number;
+    roundId: number;
 }
 
 interface PendingDelay {
@@ -75,15 +81,17 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
-    const tickDirectionRef = useRef(0);
     const genRef = useRef(0);
+    const roundIdRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
 
     // Tick direction tracking
     const lastTickPriceRef = useRef<number | null>(null);
-    const consecutiveDirRef = useRef(0);
+    const consecutiveUpRef = useRef(0);
+    const consecutiveDownRef = useRef(0);
     const tickDirResolveRef = useRef<(() => void) | null>(null);
     const tickDirTargetRef = useRef(0);
+    const tickDirActiveRef = useRef(false);
 
     // Round lifecycle
     const expectedSettlementsRef = useRef(0);
@@ -101,13 +109,12 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { stakesRef.current = stakes; }, [stakes]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
-    useEffect(() => { tickDirectionRef.current = parseInt(tickDirection) || 0; }, [tickDirection]);
 
-    // Tick listener — handles BOTH tick delays AND tick direction monitoring
+    const showTickDir = selected.some(s => USES_TICK_DIR[s]);
+
+    // Tick listener — handles tick delays AND tick direction
     useEffect(() => {
         if (!running) return;
-        lastTickPriceRef.current = null;
-        consecutiveDirRef.current = 0;
 
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -115,6 +122,10 @@ export const MultiKiller: React.FC = () => {
                 if (data.msg_type !== 'tick') return;
                 const price = parseFloat(data.tick?.quote ?? data.tick?.price);
                 if (isNaN(price)) return;
+
+                // ── Always update lastTickPrice for next comparison ──
+                const prevPrice = lastTickPriceRef.current;
+                lastTickPriceRef.current = price;
 
                 // ── Tick delay resolution (Rise/Fall 0t/1t/2t) ──
                 const pending = pendingDelaysRef.current;
@@ -132,47 +143,52 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 // ── Tick direction tracking ──
+                if (!tickDirActiveRef.current) return;
+                if (prevPrice === null) return; // first tick, no comparison yet
+
                 const target = tickDirTargetRef.current;
-                if (target > 0 && tickDirResolveRef.current) {
-                    const last = lastTickPriceRef.current;
-                    if (last !== null) {
-                        if (price > last) {
-                            // UP tick
-                            if (consecutiveDirRef.current > 0) {
-                                consecutiveDirRef.current++;
-                            } else {
-                                consecutiveDirRef.current = 1;
-                            }
-                        } else if (price < last) {
-                            // DOWN tick
-                            if (consecutiveDirRef.current < 0) {
-                                consecutiveDirRef.current--;
-                            } else {
-                                consecutiveDirRef.current = -1;
-                            }
-                        }
-                        // price === last: no change, keep counter
+                if (target <= 0 || !tickDirResolveRef.current) return;
 
-                        const absCount = Math.abs(consecutiveDirRef.current);
-                        const dir = consecutiveDirRef.current > 0 ? 'UP' : 'DOWN';
+                if (price > prevPrice) {
+                    // UP tick
+                    consecutiveUpRef.current++;
+                    consecutiveDownRef.current = 0;
+                } else if (price < prevPrice) {
+                    // DOWN tick
+                    consecutiveDownRef.current++;
+                    consecutiveUpRef.current = 0;
+                }
+                // price === prevPrice: no change
 
-                        if (absCount >= target) {
-                            log(`📊 Tick direction: ${absCount} ${dir} — executing round!`);
-                            const resolve = tickDirResolveRef.current;
-                            tickDirResolveRef.current = null;
-                            consecutiveDirRef.current = 0;
-                            lastTickPriceRef.current = price;
-                            resolve();
-                            return;
-                        }
+                const upCount = consecutiveUpRef.current;
+                const downCount = consecutiveDownRef.current;
 
-                        if (absCount > 1) {
-                            log(`📊 Ticks ${dir}: ${absCount}/${target}`);
-                        }
-                    }
-                    lastTickPriceRef.current = price;
-                } else {
-                    lastTickPriceRef.current = price;
+                if (upCount >= target) {
+                    log(`📊 ${upCount} consecutive UP ticks — executing round!`);
+                    const resolve = tickDirResolveRef.current;
+                    tickDirResolveRef.current = null;
+                    tickDirActiveRef.current = false;
+                    consecutiveUpRef.current = 0;
+                    consecutiveDownRef.current = 0;
+                    resolve();
+                    return;
+                }
+
+                if (downCount >= target) {
+                    log(`📊 ${downCount} consecutive DOWN ticks — executing round!`);
+                    const resolve = tickDirResolveRef.current;
+                    tickDirResolveRef.current = null;
+                    tickDirActiveRef.current = false;
+                    consecutiveUpRef.current = 0;
+                    consecutiveDownRef.current = 0;
+                    resolve();
+                    return;
+                }
+
+                if (upCount > 0) {
+                    log(`  ↑ UP: ${upCount}/${target}`);
+                } else if (downCount > 0) {
+                    log(`  ↓ DOWN: ${downCount}/${target}`);
                 }
             } catch {}
         });
@@ -184,8 +200,10 @@ export const MultiKiller: React.FC = () => {
         return new Promise((resolve) => {
             if (target <= 0) { resolve(true); return; }
             tickDirTargetRef.current = target;
-            consecutiveDirRef.current = 0;
-            lastTickPriceRef.current = null;
+            tickDirActiveRef.current = true;
+            consecutiveUpRef.current = 0;
+            consecutiveDownRef.current = 0;
+            lastTickPriceRef.current = null; // reset so first tick establishes baseline
             tickDirResolveRef.current = () => {
                 if (genRef.current === gen) resolve(true);
                 else resolve(false);
@@ -206,7 +224,7 @@ export const MultiKiller: React.FC = () => {
     }, []);
 
     // Buy a single contract
-    const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
+    const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
         return new Promise((resolve) => {
             const ws = window._newSystemWS;
             if (!ws || ws.readyState !== WebSocket.OPEN) {
@@ -293,7 +311,7 @@ export const MultiKiller: React.FC = () => {
         });
     }, [market, log, transactions]);
 
-    // Settlement listener
+    // Settlement listener — only counts contracts from current round
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -304,7 +322,8 @@ export const MultiKiller: React.FC = () => {
                 const cid = String(poc.contract_id);
                 const profit = parseFloat(poc.profit) || 0;
 
-                const idx = tradesRef.current.findIndex(t => t.contractId === cid);
+                const currentRound = roundIdRef.current;
+                const idx = tradesRef.current.findIndex(t => t.contractId === cid && t.roundId === currentRound);
                 if (idx === -1) return;
                 const t = tradesRef.current[idx];
 
@@ -365,7 +384,11 @@ export const MultiKiller: React.FC = () => {
             return;
         }
 
-        const tdTarget = parseInt(tickDirectionRef.current.toString()) || 0;
+        // Increment round ID — old contracts from previous rounds are ignored
+        roundIdRef.current++;
+        const myRound = roundIdRef.current;
+
+        const tdTarget = showTickDir ? (parseInt(tickDirection) || 0) : 0;
 
         // ── TICK DIRECTION PHASE ──
         if (tdTarget > 0) {
@@ -376,7 +399,7 @@ export const MultiKiller: React.FC = () => {
         }
 
         const totalCost = sel.reduce((sum, s) => sum + getStake(s), 0);
-        log(`🚀 Round: ${sel.length} contracts = $${totalCost.toFixed(2)} total`);
+        log(`🚀 Round #${myRound}: ${sel.length} contracts = $${totalCost.toFixed(2)} total`);
 
         // ── BUY PHASE ──
         buyPhaseDoneRef.current = false;
@@ -391,16 +414,17 @@ export const MultiKiller: React.FC = () => {
                 if (genRef.current !== gen) return null;
                 log(`⏱ ${LABELS[s]} tick delay done — buying`);
             }
-            return buyOne(s, getStake(s));
+            return buyOne(s, getStake(s), myRound);
         });
 
         const results = await Promise.all(promises);
 
         if (genRef.current !== gen) return;
 
+        // Register bought contracts — tagged with roundId
         const bought: TradeEntry[] = [];
         results.forEach(r => {
-            if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: getStake(r.strategy) });
+            if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: getStake(r.strategy), roundId: myRound });
         });
 
         if (bought.length === 0) {
@@ -417,7 +441,7 @@ export const MultiKiller: React.FC = () => {
 
         // ── SETTLEMENT PHASE ──
         if (settledCountRef.current >= expectedSettlementsRef.current) {
-            log(`🔄 Round complete — next round in 5s`);
+            log(`🔄 Round #${myRound} complete — next round in 5s`);
             await new Promise<void>(r => {
                 const g = genRef.current;
                 setTimeout(() => {
@@ -437,7 +461,7 @@ export const MultiKiller: React.FC = () => {
 
         if (genRef.current !== gen) return;
 
-        log(`🔄 Round complete — next round in 5s`);
+        log(`🔄 Round #${myRound} complete — next round in 5s`);
         await new Promise<void>(r => {
             const g = genRef.current;
             setTimeout(() => {
@@ -449,7 +473,7 @@ export const MultiKiller: React.FC = () => {
         if (genRef.current === gen && runningRef.current) {
             runRoundRef.current?.();
         }
-    }, [buyOne, log, waitForTicks, waitForTickDirection, getStake]);
+    }, [buyOne, log, waitForTicks, waitForTickDirection, getStake, showTickDir, tickDirection]);
 
     runRoundRef.current = runRound;
 
@@ -465,7 +489,9 @@ export const MultiKiller: React.FC = () => {
         expectedSettlementsRef.current = 0;
         settledCountRef.current = 0;
         tickDirResolveRef.current = null;
-        consecutiveDirRef.current = 0;
+        tickDirActiveRef.current = false;
+        consecutiveUpRef.current = 0;
+        consecutiveDownRef.current = 0;
         lastTickPriceRef.current = null;
         log('▶️ Started');
         runRoundRef.current?.();
@@ -478,6 +504,7 @@ export const MultiKiller: React.FC = () => {
         tradesRef.current = [];
         pendingDelaysRef.current = [];
         buyPhaseDoneRef.current = false;
+        tickDirActiveRef.current = false;
         tickDirResolveRef.current = null;
         if (roundCompleteResolveRef.current) {
             roundCompleteResolveRef.current();
@@ -501,13 +528,15 @@ export const MultiKiller: React.FC = () => {
                         {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
                 </div>
-                <div className='mw-field'>
-                    <label className='mw-label'>Tick Direction</label>
-                    <input className='mw-input' type='number' min='0' max='20' step='1'
-                        value={tickDirection}
-                        onChange={e => setTickDirection(e.target.value)} />
-                    <span className='mw-hint'>0 = off</span>
-                </div>
+                {showTickDir && (
+                    <div className='mw-field'>
+                        <label className='mw-label'>Tick Direction</label>
+                        <input className='mw-input' type='number' min='0' max='20' step='1'
+                            value={tickDirection}
+                            onChange={e => setTickDirection(e.target.value)} />
+                        <span className='mw-hint'>0 = off, else wait N same-dir ticks</span>
+                    </div>
+                )}
             </div>
 
             <div className='mw-killer__types'>
