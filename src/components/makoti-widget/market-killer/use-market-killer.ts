@@ -10,7 +10,6 @@ import {
     MAX_TICKS,
     MIN_TICKS,
     TRADE_COOLDOWN_MS,
-    VIRTUAL_RESOLVE_DELAY_MS,
 } from './constants';
 import type {
     ContractEntry,
@@ -510,10 +509,8 @@ export const useMarketKiller = (): MarketKillerEngine => {
                 vt.ticksElapsed++;
                 if (vt.ticksElapsed >= 1 && !vt.resolved) {
                     vt.resolved = true;
-                    const capturedPrice = sd.prices[sd.prices.length - 1];
-                    setTimeout(() => {
-                        resolveVirtualTrade(vt.symbol, capturedPrice);
-                    }, VIRTUAL_RESOLVE_DELAY_MS);
+                    const exitPrice = sd.prices[sd.prices.length - 1];
+                    resolveVirtualTrade(vt.symbol, exitPrice);
                 }
             }
             return;

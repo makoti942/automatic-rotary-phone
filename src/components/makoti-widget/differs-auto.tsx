@@ -439,10 +439,7 @@ export const DiffersAuto: React.FC = () => {
                         vt.ticksElapsed++;
                         if (vt.ticksElapsed >= 1 && !vt.resolved) {
                             vt.resolved = true;
-                            const capturedPrice = numPrice;
-                            setTimeout(() => {
-                                resolveVirtualTrade(sym, capturedPrice);
-                            }, 1000);
+                            resolveVirtualTrade(sym, numPrice);
                         }
                     }
                     return;
