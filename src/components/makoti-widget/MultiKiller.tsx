@@ -85,6 +85,7 @@ export const MultiKiller: React.FC = () => {
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
+    const buyListenersRef = useRef<Array<() => void>>([]);
 
     // Tick direction tracking
     const lastTickPriceRef = useRef<number | null>(null);
@@ -273,11 +274,17 @@ export const MultiKiller: React.FC = () => {
 
             log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' B' + barrier : ''} ${dur}t $${stakeNum}`);
 
+            const cleanup = () => {
+                window.removeEventListener('newSystemMessage', handler);
+                const idx = buyListenersRef.current.indexOf(cleanup);
+                if (idx !== -1) buyListenersRef.current.splice(idx, 1);
+            };
+
             const handler = (event: any) => {
                 try {
                     const data = JSON.parse(event.detail?.data ?? event.data);
                     if (data.req_id !== reqId) return;
-                    window.removeEventListener('newSystemMessage', handler);
+                    cleanup();
 
                     if (data.error) {
                         log(`❌ ${LABELS[strategy]}: ${data.error.message || 'error'}`);
@@ -314,11 +321,12 @@ export const MultiKiller: React.FC = () => {
                 } catch {}
             };
 
+            buyListenersRef.current.push(cleanup);
             window.addEventListener('newSystemMessage', handler);
             ws.send(JSON.stringify(toSend));
 
             setTimeout(() => {
-                window.removeEventListener('newSystemMessage', handler);
+                cleanup();
                 log(`❌ ${LABELS[strategy]}: timeout`);
                 resolve(null);
             }, 15000);
@@ -409,6 +417,9 @@ export const MultiKiller: React.FC = () => {
         buyPhaseDoneRef.current = false;
         expectedSettlementsRef.current = 0;
         settledCountRef.current = 0;
+        // Clean up any stale buy listeners from previous round
+        buyListenersRef.current.forEach(c => c());
+        buyListenersRef.current = [];
 
         const promises = sel.map(async (s) => {
             const delayTicks = HAS_DELAY[s] ? (delaysRef.current[s] ?? 0) : 0;
@@ -509,6 +520,8 @@ export const MultiKiller: React.FC = () => {
         buyPhaseDoneRef.current = false;
         tickDirActiveRef.current = false;
         // Unblock all waiting promises
+        buyListenersRef.current.forEach(c => c());
+        buyListenersRef.current = [];
         pendingDelaysRef.current.forEach(p => p.resolve());
         pendingDelaysRef.current = [];
         if (tickDirResolveRef.current) {
