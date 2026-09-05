@@ -598,7 +598,6 @@ export const MultiKiller: React.FC = () => {
 
         const allData: Array<{ sym: string; prices: number[]; candles: Array<{ open: number; high: number; low: number; close: number }> }> = [];
         for (const sym of VOL_SYMBOLS) {
-            setLogs(p => [`📊 Loading ${sym}...`, ...p].slice(0, 80));
             const prices = await fetchTicks(sym);
             const candles = await fetchCandles(sym);
             allData.push({ sym, prices, candles });
