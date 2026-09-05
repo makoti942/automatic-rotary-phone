@@ -77,6 +77,7 @@ export const MultiKiller: React.FC = () => {
     const [logs, setLogs] = useState<string[]>([]);
     const [analyzing, setAnalyzing] = useState(false);
     const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
 
     const tradesRef = useRef<TradeEntry[]>([]);
     const runningRef = useRef(false);
@@ -576,10 +577,12 @@ export const MultiKiller: React.FC = () => {
             const id = Date.now() + Math.random();
             const handler = (e: Event) => {
                 try {
-                    const data = JSON.parse((e as CustomEvent).detail.data);
+                    const raw = (e as CustomEvent).detail.data;
+                    const data = JSON.parse(raw);
                     if (data.req_id !== id) return;
                     window.removeEventListener('newSystemMessage', handler);
-                    resolve((data.candles || []).map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close })));
+                    const candles = data.candles || [];
+                    resolve(candles.map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close })));
                 } catch { resolve([]); }
             };
             window.addEventListener('newSystemMessage', handler);
@@ -692,10 +695,15 @@ export const MultiKiller: React.FC = () => {
         if (hasDowns) mode = 'Only Downs → looking for upper BB';
         else if (hasUps) mode = 'Only Ups → looking for lower BB';
 
-        let msg = `📊 ANALYSIS — ${mode}\n\n`;
+        let msg = `📊 ANALYSIS — ${mode}\n`;
+        if (needBB) {
+            const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
+            msg += `Candles loaded: ${candleCounts}\n`;
+        }
+        msg += '\n';
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
-            const bbInfo = needBB ? ` | BB: ${r.bbPosition} (${r.totalScore})` : '';
+            const bbInfo = needBB ? ` | BB: ${r.bbPosition} (tick:${r.tickScore} bb:${r.bbScore} total:${r.totalScore})` : ` | score: ${r.totalScore}`;
             msg += `${rank} ${r.label}: streaks >4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)}${bbInfo}\n`;
         });
 
@@ -843,6 +851,14 @@ export const MultiKiller: React.FC = () => {
 
             {analyzeResult && (
                 <div className='mw-analyze-result'>
+                    <div className='mw-analyze-head'>
+                        <span>Analysis Result</span>
+                        <button className='mw-copy-btn' onClick={() => {
+                            navigator.clipboard.writeText(analyzeResult);
+                            setCopied(true);
+                            setTimeout(() => setCopied(false), 2000);
+                        }}>{copied ? '✓ Copied' : '📋 Copy'}</button>
+                    </div>
                     <pre>{analyzeResult}</pre>
                 </div>
             )}

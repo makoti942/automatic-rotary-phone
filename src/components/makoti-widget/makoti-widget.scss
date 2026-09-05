@@ -1768,13 +1768,23 @@ $mw-radius:   10px;
 .mw-killer__top-row {
     display: flex;
     gap: 8px;
-    align-items: flex-end;
+    align-items: stretch;
     margin-bottom: 8px;
+    position: relative;
+    z-index: 1;
+
+    .mw-field--grow {
+        position: relative;
+        z-index: 2;
+    }
 
     .mw-btn--analyze {
         flex: 0 0 auto;
         white-space: nowrap;
+        align-self: flex-end;
         margin-bottom: 1px;
+        position: relative;
+        z-index: 1;
     }
 }
 
@@ -1891,6 +1901,32 @@ $mw-radius:   10px;
         word-break: break-word;
         font-family: inherit;
     }
+}
+
+.mw-analyze-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: #3b82f6;
+}
+
+.mw-copy-btn {
+    padding: 3px 8px;
+    font-size: 9px;
+    font-weight: 600;
+    color: #3b82f6;
+    background: rgba(59,130,246,0.1);
+    border: 1px solid rgba(59,130,246,0.3);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+
+    &:hover { background: rgba(59,130,246,0.2); }
 }
 
 .mw-killer__progress {
