@@ -206,7 +206,7 @@ export const MultiKiller: React.FC = () => {
         return unsub;
     }, [running, log]);
 
-    // Wait for N ticks in same direction
+    // Wait for N ticks in same direction — returns true if matched, false if cancelled
     const waitForTickDirection = useCallback((target: number, gen: number): Promise<boolean> => {
         return new Promise((resolve) => {
             if (target <= 0) { resolve(true); return; }
@@ -214,7 +214,8 @@ export const MultiKiller: React.FC = () => {
             tickDirActiveRef.current = true;
             consecutiveUpRef.current = 0;
             consecutiveDownRef.current = 0;
-            lastTickPriceRef.current = null; // reset so first tick establishes baseline
+            lastTickPriceRef.current = null;
+            // Store resolve so stop() can call it to unblock
             tickDirResolveRef.current = () => {
                 if (genRef.current === gen) resolve(true);
                 else resolve(false);
@@ -505,10 +506,19 @@ export const MultiKiller: React.FC = () => {
         runningRef.current = false;
         setRunning(false);
         tradesRef.current = [];
-        pendingDelaysRef.current = [];
         buyPhaseDoneRef.current = false;
         tickDirActiveRef.current = false;
-        tickDirResolveRef.current = null;
+        // Unblock all waiting promises
+        pendingDelaysRef.current.forEach(p => p.resolve());
+        pendingDelaysRef.current = [];
+        if (tickDirResolveRef.current) {
+            tickDirResolveRef.current();
+            tickDirResolveRef.current = null;
+        }
+        if (tickDirResolveRef.current) {
+            tickDirResolveRef.current();
+            tickDirResolveRef.current = null;
+        }
         if (roundCompleteResolveRef.current) {
             roundCompleteResolveRef.current();
             roundCompleteResolveRef.current = null;
