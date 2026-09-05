@@ -65,6 +65,7 @@ export const MultiKiller: React.FC = () => {
     const [delays, setDelays] = useState<Record<string, number>>({
         rise: 0, fall: 0,
     });
+    const [tickDirection, setTickDirection] = useState('0');
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
 
@@ -74,10 +75,17 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
+    const tickDirectionRef = useRef(0);
     const genRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
 
-    // Round lifecycle: tracks buy phase vs settlement phase
+    // Tick direction tracking
+    const lastTickPriceRef = useRef<number | null>(null);
+    const consecutiveDirRef = useRef(0);
+    const tickDirResolveRef = useRef<(() => void) | null>(null);
+    const tickDirTargetRef = useRef(0);
+
+    // Round lifecycle
     const expectedSettlementsRef = useRef(0);
     const settledCountRef = useRef(0);
     const buyPhaseDoneRef = useRef(false);
@@ -93,15 +101,22 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { stakesRef.current = stakes; }, [stakes]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
+    useEffect(() => { tickDirectionRef.current = parseInt(tickDirection) || 0; }, [tickDirection]);
 
-    // Tick counter — listens for actual tick messages from Deriv WS
+    // Tick listener — handles BOTH tick delays AND tick direction monitoring
     useEffect(() => {
         if (!running) return;
+        lastTickPriceRef.current = null;
+        consecutiveDirRef.current = 0;
+
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.msg_type !== 'tick') return;
+                const price = parseFloat(data.tick?.quote ?? data.tick?.price);
+                if (isNaN(price)) return;
 
+                // ── Tick delay resolution (Rise/Fall 0t/1t/2t) ──
                 const pending = pendingDelaysRef.current;
                 for (let i = pending.length - 1; i >= 0; i--) {
                     const p = pending[i];
@@ -115,11 +130,70 @@ export const MultiKiller: React.FC = () => {
                         p.resolve();
                     }
                 }
+
+                // ── Tick direction tracking ──
+                const target = tickDirTargetRef.current;
+                if (target > 0 && tickDirResolveRef.current) {
+                    const last = lastTickPriceRef.current;
+                    if (last !== null) {
+                        if (price > last) {
+                            // UP tick
+                            if (consecutiveDirRef.current > 0) {
+                                consecutiveDirRef.current++;
+                            } else {
+                                consecutiveDirRef.current = 1;
+                            }
+                        } else if (price < last) {
+                            // DOWN tick
+                            if (consecutiveDirRef.current < 0) {
+                                consecutiveDirRef.current--;
+                            } else {
+                                consecutiveDirRef.current = -1;
+                            }
+                        }
+                        // price === last: no change, keep counter
+
+                        const absCount = Math.abs(consecutiveDirRef.current);
+                        const dir = consecutiveDirRef.current > 0 ? 'UP' : 'DOWN';
+
+                        if (absCount >= target) {
+                            log(`📊 Tick direction: ${absCount} ${dir} — executing round!`);
+                            const resolve = tickDirResolveRef.current;
+                            tickDirResolveRef.current = null;
+                            consecutiveDirRef.current = 0;
+                            lastTickPriceRef.current = price;
+                            resolve();
+                            return;
+                        }
+
+                        if (absCount > 1) {
+                            log(`📊 Ticks ${dir}: ${absCount}/${target}`);
+                        }
+                    }
+                    lastTickPriceRef.current = price;
+                } else {
+                    lastTickPriceRef.current = price;
+                }
             } catch {}
         });
         return unsub;
-    }, [running]);
+    }, [running, log]);
 
+    // Wait for N ticks in same direction
+    const waitForTickDirection = useCallback((target: number, gen: number): Promise<boolean> => {
+        return new Promise((resolve) => {
+            if (target <= 0) { resolve(true); return; }
+            tickDirTargetRef.current = target;
+            consecutiveDirRef.current = 0;
+            lastTickPriceRef.current = null;
+            tickDirResolveRef.current = () => {
+                if (genRef.current === gen) resolve(true);
+                else resolve(false);
+            };
+        });
+    }, []);
+
+    // Wait for N ticks (for Rise/Fall delay)
     const waitForTicks = useCallback((ticks: number, gen: number): Promise<void> => {
         return new Promise((resolve) => {
             if (ticks <= 0) { resolve(); return; }
@@ -219,7 +293,7 @@ export const MultiKiller: React.FC = () => {
         });
     }, [market, log, transactions]);
 
-    // Settlement listener — only triggers next round when buy phase is DONE and all settled
+    // Settlement listener
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -266,7 +340,6 @@ export const MultiKiller: React.FC = () => {
 
                 log(`  (${settledCountRef.current}/${expectedSettlementsRef.current} settled)`);
 
-                // Only complete round when buy phase is done AND all settled
                 if (buyPhaseDoneRef.current && settledCountRef.current >= expectedSettlementsRef.current) {
                     if (roundCompleteResolveRef.current) {
                         roundCompleteResolveRef.current();
@@ -280,7 +353,7 @@ export const MultiKiller: React.FC = () => {
 
     const runRoundRef = useRef<() => Promise<void>>();
 
-    // Execute a round — buy phase then settlement phase
+    // Execute a round — tick direction → buy phase → settlement phase
     const runRound = useCallback(async () => {
         if (!runningRef.current) return;
         const gen = genRef.current;
@@ -290,6 +363,16 @@ export const MultiKiller: React.FC = () => {
             runningRef.current = false;
             setRunning(false);
             return;
+        }
+
+        const tdTarget = parseInt(tickDirectionRef.current.toString()) || 0;
+
+        // ── TICK DIRECTION PHASE ──
+        if (tdTarget > 0) {
+            log(`📊 Waiting for ${tdTarget} ticks in same direction...`);
+            const ok = await waitForTickDirection(tdTarget, gen);
+            if (genRef.current !== gen || !runningRef.current) return;
+            if (!ok) return;
         }
 
         const totalCost = sel.reduce((sum, s) => sum + getStake(s), 0);
@@ -315,7 +398,6 @@ export const MultiKiller: React.FC = () => {
 
         if (genRef.current !== gen) return;
 
-        // Register bought contracts
         const bought: TradeEntry[] = [];
         results.forEach(r => {
             if (r) bought.push({ contractId: r.cid, strategy: r.strategy, stake: getStake(r.strategy) });
@@ -334,7 +416,6 @@ export const MultiKiller: React.FC = () => {
         log(`✅ ${bought.length} open — waiting for all settlements`);
 
         // ── SETTLEMENT PHASE ──
-        // If all already settled (unlikely but possible for fast contracts), skip wait
         if (settledCountRef.current >= expectedSettlementsRef.current) {
             log(`🔄 Round complete — next round in 5s`);
             await new Promise<void>(r => {
@@ -350,7 +431,6 @@ export const MultiKiller: React.FC = () => {
             return;
         }
 
-        // Wait for all settlements
         await new Promise<void>((resolve) => {
             roundCompleteResolveRef.current = resolve;
         });
@@ -369,7 +449,7 @@ export const MultiKiller: React.FC = () => {
         if (genRef.current === gen && runningRef.current) {
             runRoundRef.current?.();
         }
-    }, [buyOne, log, waitForTicks, getStake]);
+    }, [buyOne, log, waitForTicks, waitForTickDirection, getStake]);
 
     runRoundRef.current = runRound;
 
@@ -384,6 +464,9 @@ export const MultiKiller: React.FC = () => {
         buyPhaseDoneRef.current = false;
         expectedSettlementsRef.current = 0;
         settledCountRef.current = 0;
+        tickDirResolveRef.current = null;
+        consecutiveDirRef.current = 0;
+        lastTickPriceRef.current = null;
         log('▶️ Started');
         runRoundRef.current?.();
     }, [running, selected, log]);
@@ -395,6 +478,7 @@ export const MultiKiller: React.FC = () => {
         tradesRef.current = [];
         pendingDelaysRef.current = [];
         buyPhaseDoneRef.current = false;
+        tickDirResolveRef.current = null;
         if (roundCompleteResolveRef.current) {
             roundCompleteResolveRef.current();
             roundCompleteResolveRef.current = null;
@@ -416,6 +500,13 @@ export const MultiKiller: React.FC = () => {
                     <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
                         {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
+                </div>
+                <div className='mw-field'>
+                    <label className='mw-label'>Tick Direction</label>
+                    <input className='mw-input' type='number' min='0' max='20' step='1'
+                        value={tickDirection}
+                        onChange={e => setTickDirection(e.target.value)} />
+                    <span className='mw-hint'>0 = off</span>
                 </div>
             </div>
 
