@@ -120,7 +120,7 @@ export const MultiKiller: React.FC = () => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.msg_type !== 'tick') return;
-                const price = parseFloat(data.tick?.quote ?? data.tick?.price);
+                const price = parseFloat(data.tick?.quote ?? data.tick?.bid ?? data.tick?.ask);
                 if (isNaN(price)) return;
 
                 // ── Always update lastTickPrice for next comparison ──
@@ -144,27 +144,29 @@ export const MultiKiller: React.FC = () => {
 
                 // ── Tick direction tracking ──
                 if (!tickDirActiveRef.current) return;
-                if (prevPrice === null) return; // first tick, no comparison yet
+                if (prevPrice === null) {
+                    log(`📊 Baseline: ${price}`);
+                    return;
+                }
 
                 const target = tickDirTargetRef.current;
                 if (target <= 0 || !tickDirResolveRef.current) return;
 
-                if (price > prevPrice) {
-                    // UP tick
+                const diff = price - prevPrice;
+                if (diff > 0) {
                     consecutiveUpRef.current++;
                     consecutiveDownRef.current = 0;
-                } else if (price < prevPrice) {
-                    // DOWN tick
+                } else if (diff < 0) {
                     consecutiveDownRef.current++;
                     consecutiveUpRef.current = 0;
                 }
-                // price === prevPrice: no change
+                // diff === 0: no change to counters
 
                 const upCount = consecutiveUpRef.current;
                 const downCount = consecutiveDownRef.current;
 
                 if (upCount >= target) {
-                    log(`📊 ${upCount} consecutive UP ticks — executing round!`);
+                    log(`📊 ${upCount} consecutive UP (${prevPrice}→${price}) — GO!`);
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
                     tickDirActiveRef.current = false;
@@ -175,7 +177,7 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 if (downCount >= target) {
-                    log(`📊 ${downCount} consecutive DOWN ticks — executing round!`);
+                    log(`📊 ${downCount} consecutive DOWN (${prevPrice}→${price}) — GO!`);
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
                     tickDirActiveRef.current = false;
@@ -186,9 +188,9 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 if (upCount > 0) {
-                    log(`  ↑ UP: ${upCount}/${target}`);
+                    log(`  ↑ UP ${upCount}/${target} (${prevPrice}→${price})`);
                 } else if (downCount > 0) {
-                    log(`  ↓ DOWN: ${downCount}/${target}`);
+                    log(`  ↓ DOWN ${downCount}/${target} (${prevPrice}→${price})`);
                 }
             } catch {}
         });
@@ -288,6 +290,8 @@ export const MultiKiller: React.FC = () => {
                                 display_name: market,
                                 date_start: Math.floor(Date.now() / 1000),
                                 status: 'open',
+                                entry_tick: data.buy?.entry_tick,
+                                entry_tick_time: data.buy?.entry_tick_time,
                             } as any);
                         } catch {}
 
@@ -334,26 +338,16 @@ export const MultiKiller: React.FC = () => {
 
                 try {
                     transactions.onBotContractEvent({
-                        contract_id: Number(cid),
-                        transaction_ids: { buy: Number(cid) },
+                        ...poc,
+                        contract_id: cid,
+                        transaction_ids: { buy: poc.transaction_ids?.buy ?? cid },
                         buy_price: t.stake,
                         sell_price: t.stake + profit,
-                        currency: 'USD',
-                        contract_type: CONTRACT_TYPE[t.strategy],
-                        underlying: market,
-                        display_name: market,
-                        date_start: poc.entry_tick_time || Math.floor(Date.now() / 1000),
-                        date_expiry: poc.exit_tick_time || Math.floor(Date.now() / 1000),
-                        entry_spot: poc.entry_tick != null ? String(poc.entry_tick) : undefined,
-                        entry_tick: poc.entry_tick != null ? String(poc.entry_tick) : undefined,
-                        entry_tick_time: poc.entry_tick_time || undefined,
-                        exit_spot: poc.exit_tick != null ? String(poc.exit_tick) : undefined,
-                        exit_tick: poc.exit_tick != null ? String(poc.exit_tick) : undefined,
-                        exit_tick_time: poc.exit_tick_time || undefined,
+                        display_name: poc.display_name ?? market,
+                        status: 'sold',
                         profit,
                         is_sold: true,
                         is_completed: true,
-                        status: 'sold',
                     } as any);
                 } catch {}
 
