@@ -553,7 +553,7 @@ export const MultiKiller: React.FC = () => {
         setAnalyzeResult(null);
         setLogs(p => ['📊 Analyzing volatilities...', ...p].slice(0, 80));
 
-        const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100'];
+        const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100', '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
         const hasDowns = selected.includes('downs');
         const hasUps = selected.includes('ups');
         const needBB = hasDowns || hasUps;
@@ -576,7 +576,7 @@ export const MultiKiller: React.FC = () => {
         for (const sym of VOL_SYMBOLS) {
             setLogs(p => [`📊 Loading ${sym}...`, ...p].slice(0, 80));
             const prices = await fetchTicks(sym);
-            const candles = needBB ? await fetchCandles(sym) : [];
+            const candles = await fetchCandles(sym);
             allData.push({ sym, prices, candles });
             await new Promise(r => setTimeout(r, 300));
         }
@@ -638,35 +638,41 @@ export const MultiKiller: React.FC = () => {
 
             let bbPosition = 'N/A';
             let bbScore = 50;
-            const bb = needBB ? calcBB(candles) : null;
+            const bb = calcBB(candles);
             if (bb && candles.length >= 2) {
                 const last2 = candles.slice(-2);
                 const bbRange = bb.upper - bb.lower;
                 if (bbRange > 0) {
-                    let bestPos = 0;
-                    for (const c of last2) {
-                        const pos = (c.close - bb.lower) / bbRange;
-                        if (Math.abs(pos - bestPos) > Math.abs(pos - 0.5)) bestPos = pos;
-                    }
                     const touchDist = 0.05;
                     const nearDist = 0.15;
 
+                    const touchedUpper = last2.some(c => c.high >= bb.upper);
+                    const almostUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - touchDist));
+                    const nearUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - nearDist));
+                    const touchedLower = last2.some(c => c.low <= bb.lower);
+                    const almostLower = last2.some(c => (c.low - bb.lower) / bbRange <= touchDist);
+                    const nearLower = last2.some(c => (c.low - bb.lower) / bbRange <= nearDist);
+
+                    if (touchedUpper) bbPosition = '🔴 UPPER';
+                    else if (almostUpper) bbPosition = '🟠 near upper';
+                    else if (nearUpper) bbPosition = '🟡 mid-upper';
+                    else if (touchedLower) bbPosition = '🟢 LOWER';
+                    else if (almostLower) bbPosition = '🟢 near lower';
+                    else if (nearLower) bbPosition = '🟡 mid-lower';
+                    else bbPosition = '⚪ middle';
+
                     if (hasDowns) {
-                        const touchedUpper = last2.some(c => c.high >= bb.upper);
-                        const nearUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - nearDist));
-                        const almostUpper = last2.some(c => (c.high - bb.lower) / bbRange >= (1 - touchDist));
-                        if (touchedUpper) { bbPosition = 'TOUCHING UPPER'; bbScore = 100; }
-                        else if (almostUpper) { bbPosition = 'almost upper'; bbScore = 90; }
-                        else if (nearUpper) { bbPosition = 'near upper'; bbScore = 70; }
-                        else { bbPosition = 'not near upper'; bbScore = 20; }
+                        if (touchedUpper) bbScore = 100;
+                        else if (almostUpper) bbScore = 90;
+                        else if (nearUpper) bbScore = 70;
+                        else bbScore = 20;
                     } else if (hasUps) {
-                        const touchedLower = last2.some(c => c.low <= bb.lower);
-                        const nearLower = last2.some(c => (c.low - bb.lower) / bbRange <= nearDist);
-                        const almostLower = last2.some(c => (c.low - bb.lower) / bbRange <= touchDist);
-                        if (touchedLower) { bbPosition = 'TOUCHING LOWER'; bbScore = 100; }
-                        else if (almostLower) { bbPosition = 'almost lower'; bbScore = 90; }
-                        else if (nearLower) { bbPosition = 'near lower'; bbScore = 70; }
-                        else { bbPosition = 'not near lower'; bbScore = 20; }
+                        if (touchedLower) bbScore = 100;
+                        else if (almostLower) bbScore = 90;
+                        else if (nearLower) bbScore = 70;
+                        else bbScore = 20;
+                    } else {
+                        bbScore = 50;
                     }
                 }
             }
@@ -682,15 +688,13 @@ export const MultiKiller: React.FC = () => {
         else if (hasUps) mode = 'Only Ups → looking for lower BB';
 
         let msg = `📊 ANALYSIS — ${mode}\n`;
-        if (needBB) {
-            const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
-            msg += `Candles loaded: ${candleCounts}\n`;
-        }
-        msg += '\n';
+        const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
+        msg += `Candles: ${candleCounts}\n\n`;
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
-            const bbInfo = needBB ? ` | BB: ${r.bbPosition} (tick:${r.tickScore} bb:${r.bbScore} total:${r.totalScore})` : ` | score: ${r.totalScore}`;
-            msg += `${rank} ${r.label}: streaks >4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)}${bbInfo}\n`;
+            msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}`;
+            if (needBB) msg += ` (${r.totalScore})`;
+            msg += '\n';
         });
 
         const best = results[0];
