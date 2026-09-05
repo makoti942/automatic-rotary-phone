@@ -316,7 +316,7 @@ $mw-radius:   10px;
     font-weight: 600;
     letter-spacing: 0.5px;
     text-transform: uppercase;
-    color: $mw-muted;
+    color: $mw-text;
     background: transparent;
     border: none;
     text-align: left;
@@ -325,7 +325,7 @@ $mw-radius:   10px;
 
     &:hover {
         background: rgba(249,115,22,0.12);
-        color: $mw-text;
+        color: #fff;
     }
 
     &--active {
