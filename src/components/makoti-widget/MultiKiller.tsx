@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
-import { onNewSystemMessage } from '@/auth/NewDerivAuth';
+import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
 
@@ -558,50 +558,28 @@ export const MultiKiller: React.FC = () => {
         const hasUps = selected.includes('ups');
         const needBB = hasDowns || hasUps;
 
-        const fetchTicks = (sym: string): Promise<number[]> => new Promise((resolve) => {
-            const id = Date.now() + Math.random();
-            let resolved = false;
-            const handler = (e: Event) => {
-                try {
-                    const data = JSON.parse((e as CustomEvent).detail.data);
-                    if (resolved) return;
-                    const match = data.req_id == id || (data.echo_req?.ticks_history === sym && data.msg_type === 'history');
-                    if (!match) return;
-                    resolved = true;
-                    window.removeEventListener('newSystemMessage', handler);
-                    const prices = data.history?.prices || data.prices || [];
-                    resolve(prices.map(Number));
-                } catch {}
-            };
-            window.addEventListener('newSystemMessage', handler);
-            ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 200, end: 'latest', req_id: id }));
-            setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('newSystemMessage', handler); resolve([]); } }, 10000);
-        });
+        const fetchTicks = async (sym: string): Promise<number[]> => {
+            try {
+                const data = await sendViaNewSystemWithPromise({ ticks_history: sym, style: 'ticks', count: 200, end: 'latest' });
+                return (data.history?.prices || data.prices || []).map(Number);
+            } catch { return []; }
+        };
 
-        const fetchCandles = (sym: string): Promise<Array<{ open: number; high: number; low: number; close: number }>> => new Promise((resolve) => {
-            const id = Date.now() + Math.random();
-            let resolved = false;
-            const handler = (e: Event) => {
-                try {
-                    const data = JSON.parse((e as CustomEvent).detail.data);
-                    if (resolved) return;
-                    const match = data.req_id == id || (data.echo_req?.ticks_history === sym && data.msg_type === 'candles');
-                    if (!match) return;
-                    resolved = true;
-                    window.removeEventListener('newSystemMessage', handler);
-                    const candles = data.candles || [];
-                    resolve(candles.map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close })));
-                } catch {}
-            };
-            window.addEventListener('newSystemMessage', handler);
-            ws.send(JSON.stringify({ ticks_history: sym, style: 'candles', granularity: 60, count: 30, end: 'latest', req_id: id }));
-            setTimeout(() => { if (!resolved) { resolved = true; window.removeEventListener('newSystemMessage', handler); resolve([]); } }, 10000);
-        });
+        const fetchCandles = async (sym: string): Promise<Array<{ open: number; high: number; low: number; close: number }>> => {
+            try {
+                const data = await sendViaNewSystemWithPromise({ ticks_history: sym, style: 'candles', granularity: 60, count: 30, end: 'latest' });
+                return (data.candles || []).map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close }));
+            } catch { return []; }
+        };
 
-        const allData = await Promise.all(VOL_SYMBOLS.map(async (sym) => {
-            const [prices, candles] = await Promise.all([fetchTicks(sym), needBB ? fetchCandles(sym) : Promise.resolve([])]);
-            return { sym, prices, candles };
-        }));
+        const allData: Array<{ sym: string; prices: number[]; candles: Array<{ open: number; high: number; low: number; close: number }> }> = [];
+        for (const sym of VOL_SYMBOLS) {
+            setLogs(p => [`📊 Loading ${sym}...`, ...p].slice(0, 80));
+            const prices = await fetchTicks(sym);
+            const candles = needBB ? await fetchCandles(sym) : [];
+            allData.push({ sym, prices, candles });
+            await new Promise(r => setTimeout(r, 300));
+        }
 
         const calcBB = (candles: Array<{ close: number }>): { upper: number; middle: number; lower: number } | null => {
             if (candles.length < 20) return null;
@@ -752,24 +730,23 @@ export const MultiKiller: React.FC = () => {
 
     return (
         <div className='mw-killer'>
-            <div className='mw-killer__top-row'>
-                <div className='mw-field mw-field--grow'>
-                    <label className='mw-label'>Market</label>
-                    <div className='mw-select-wrap'>
-                        <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
-                            {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                        <span className='mw-select-arrow'></span>
-                    </div>
+            <div className='mw-field'>
+                <label className='mw-label'>Market</label>
+                <div className='mw-select-wrap'>
+                    <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
+                        {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <span className='mw-select-arrow'></span>
                 </div>
-                {showTickDir && (
-                    <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
-                        disabled={analyzing || running}
-                        onClick={analyzeVolatilities}>
-                        {analyzing ? '⏳' : '📊'} Analyze
-                    </button>
-                )}
             </div>
+
+            {showTickDir && (
+                <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
+                    disabled={analyzing || running}
+                    onClick={analyzeVolatilities}>
+                    {analyzing ? '⏳ Analyzing...' : '📊 Analyze Volatility'}
+                </button>
+            )}
 
             <div className='mw-killer__types'>
                 <label className='mw-label'>Strategies</label>
