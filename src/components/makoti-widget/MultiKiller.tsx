@@ -556,9 +556,9 @@ export const MultiKiller: React.FC = () => {
 
         const fetchTicks = (sym: string): Promise<number[]> => new Promise((resolve) => {
             const id = Date.now() + Math.random();
-            const handler = (event: MessageEvent) => {
+            const handler = (e: Event) => {
                 try {
-                    const data = JSON.parse(event.data);
+                    const data = JSON.parse((e as CustomEvent).detail.data);
                     if (data.req_id !== id) return;
                     window.removeEventListener('newSystemMessage', handler);
                     const ticks = data.history?.prices || [];
@@ -582,11 +582,14 @@ export const MultiKiller: React.FC = () => {
             over4Count: number;
             totalMoves: number;
             over4Pct: number;
+            upCount: number;
+            downCount: number;
+            avgMove: number;
         }> = [];
 
         for (const { sym, prices } of allData) {
             if (prices.length < 20) {
-                results.push({ sym, label: sym, maxStreak: 0, over4Count: 0, totalMoves: 0, over4Pct: 100 });
+                results.push({ sym, label: sym, maxStreak: 0, over4Count: 0, totalMoves: 0, over4Pct: 100, upCount: 0, downCount: 0, avgMove: 0 });
                 continue;
             }
 
@@ -594,12 +597,16 @@ export const MultiKiller: React.FC = () => {
             let currentStreak = 1;
             let over4Count = 0;
             let streakDir = 0;
+            let upCount = 0;
+            let downCount = 0;
+            let totalMovement = 0;
 
             for (let i = 1; i < prices.length; i++) {
                 const diff = prices[i] - prices[i - 1];
                 let dir = 0;
-                if (diff > 0) dir = 1;
-                else if (diff < 0) dir = -1;
+                if (diff > 0) { dir = 1; upCount++; }
+                else if (diff < 0) { dir = -1; downCount++; }
+                totalMovement += Math.abs(diff);
 
                 if (dir === streakDir && dir !== 0) {
                     currentStreak++;
@@ -615,16 +622,17 @@ export const MultiKiller: React.FC = () => {
 
             const totalMoves = prices.length - 1;
             const over4Pct = totalMoves > 0 ? Math.round((over4Count / totalMoves) * 100) : 100;
-            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves, over4Pct });
+            const avgMove = totalMoves > 0 ? totalMovement / totalMoves : 0;
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves, over4Pct, upCount, downCount, avgMove });
         }
 
         results.sort((a, b) => a.over4Pct - b.over4Pct || a.maxStreak - b.maxStreak);
 
-        let msg = '📊 LAST 200 TICKS ANALYSIS\n\n';
+        let msg = '📊 TICK MOVEMENT ANALYSIS\n\n';
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
             const warn = r.over4Pct > 10 ? ' ⚠️' : '';
-            msg += `${rank} ${r.label}: streaks >4 = ${r.over4Pct}% | max streak ${r.maxStreak}${warn}\n`;
+            msg += `${rank} ${r.label}: up ${r.upCount} | down ${r.downCount} | avg move ${r.avgMove.toFixed(2)} | streaks >4: ${r.over4Pct}%${warn}\n`;
         });
 
         const best = results[0];
