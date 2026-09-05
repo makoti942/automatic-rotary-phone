@@ -550,9 +550,12 @@ export const MultiKiller: React.FC = () => {
 
         setAnalyzing(true);
         setAnalyzeResult(null);
-        setLogs(p => ['📊 Loading last 200 ticks from all volatilities...', ...p].slice(0, 80));
+        setLogs(p => ['📊 Analyzing volatilities...', ...p].slice(0, 80));
 
         const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100'];
+        const hasDowns = selected.includes('downs');
+        const hasUps = selected.includes('ups');
+        const needBB = hasDowns || hasUps;
 
         const fetchTicks = (sym: string): Promise<number[]> => new Promise((resolve) => {
             const id = Date.now() + Math.random();
@@ -561,8 +564,7 @@ export const MultiKiller: React.FC = () => {
                     const data = JSON.parse((e as CustomEvent).detail.data);
                     if (data.req_id !== id) return;
                     window.removeEventListener('newSystemMessage', handler);
-                    const ticks = data.history?.prices || [];
-                    resolve(ticks.map(Number));
+                    resolve((data.history?.prices || []).map(Number));
                 } catch { resolve([]); }
             };
             window.addEventListener('newSystemMessage', handler);
@@ -570,29 +572,49 @@ export const MultiKiller: React.FC = () => {
             setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
         });
 
+        const fetchCandles = (sym: string): Promise<Array<{ open: number; high: number; low: number; close: number }>> => new Promise((resolve) => {
+            const id = Date.now() + Math.random();
+            const handler = (e: Event) => {
+                try {
+                    const data = JSON.parse((e as CustomEvent).detail.data);
+                    if (data.req_id !== id) return;
+                    window.removeEventListener('newSystemMessage', handler);
+                    resolve((data.candles || []).map((c: any) => ({ open: +c.open, high: +c.high, low: +c.low, close: +c.close })));
+                } catch { resolve([]); }
+            };
+            window.addEventListener('newSystemMessage', handler);
+            ws.send(JSON.stringify({ candles_history: sym, style: 'candles', timeframe: 60, count: 30, end: 'latest', req_id: id }));
+            setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
+        });
+
         const allData = await Promise.all(VOL_SYMBOLS.map(async (sym) => {
-            const prices = await fetchTicks(sym);
-            return { sym, prices };
+            const [prices, candles] = await Promise.all([fetchTicks(sym), needBB ? fetchCandles(sym) : Promise.resolve([])]);
+            return { sym, prices, candles };
         }));
+
+        const calcBB = (candles: Array<{ close: number }>): { upper: number; middle: number; lower: number } | null => {
+            if (candles.length < 20) return null;
+            const closes = candles.slice(-20).map(c => c.close);
+            const sma = closes.reduce((a, b) => a + b, 0) / 20;
+            const variance = closes.reduce((a, b) => a + Math.pow(b - sma, 2), 0) / 20;
+            return { upper: sma + 2 * Math.sqrt(variance), middle: sma, lower: sma - 2 * Math.sqrt(variance) };
+        };
 
         const results: Array<{
             sym: string;
             label: string;
             maxStreak: number;
-            over4Count: number;
-            totalMoves: number;
             over4Pct: number;
             upCount: number;
             downCount: number;
             avgMove: number;
+            bbPosition: string;
+            tickScore: number;
+            bbScore: number;
+            totalScore: number;
         }> = [];
 
-        for (const { sym, prices } of allData) {
-            if (prices.length < 20) {
-                results.push({ sym, label: sym, maxStreak: 0, over4Count: 0, totalMoves: 0, over4Pct: 100, upCount: 0, downCount: 0, avgMove: 0 });
-                continue;
-            }
-
+        for (const { sym, prices, candles } of allData) {
             let maxStreak = 0;
             let currentStreak = 0;
             let over4Count = 0;
@@ -605,12 +627,10 @@ export const MultiKiller: React.FC = () => {
             for (let i = 1; i < prices.length; i++) {
                 const diff = prices[i] - prices[i - 1];
                 if (diff === 0) continue;
-
                 const dir = diff > 0 ? 1 : -1;
                 if (dir > 0) upCount++; else downCount++;
                 totalMovement += Math.abs(diff);
                 realMoves++;
-
                 if (dir === streakDir) {
                     currentStreak++;
                 } else {
@@ -625,27 +645,57 @@ export const MultiKiller: React.FC = () => {
 
             const over4Pct = realMoves > 0 ? Math.round((over4Count / realMoves) * 100) : 100;
             const avgMove = realMoves > 0 ? totalMovement / realMoves : 0;
-            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves: realMoves, over4Pct, upCount, downCount, avgMove });
+            const tickScore = Math.max(0, 100 - over4Pct * 3);
+
+            let bbPosition = 'N/A';
+            let bbScore = 50;
+            const bb = needBB ? calcBB(candles) : null;
+            if (bb && candles.length > 0) {
+                const last = candles[candles.length - 1];
+                const bbRange = bb.upper - bb.lower;
+                if (bbRange > 0) {
+                    const pos = (last.close - bb.lower) / bbRange;
+                    if (pos >= 0.9) bbPosition = 'UPPER BB';
+                    else if (pos <= 0.1) bbPosition = 'LOWER BB';
+                    else if (pos >= 0.7) bbPosition = 'near upper';
+                    else if (pos <= 0.3) bbPosition = 'near lower';
+                    else bbPosition = 'middle';
+
+                    if (hasDowns && pos >= 0.9) bbScore = 100;
+                    else if (hasDowns && pos >= 0.7) bbScore = 75;
+                    else if (hasUps && pos <= 0.1) bbScore = 100;
+                    else if (hasUps && pos <= 0.3) bbScore = 75;
+                    else bbScore = 20;
+                }
+            }
+
+            const totalScore = needBB ? Math.round(tickScore * 0.6 + bbScore * 0.4) : tickScore;
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore });
         }
 
-        results.sort((a, b) => a.over4Pct - b.over4Pct || a.maxStreak - b.maxStreak);
+        results.sort((a, b) => b.totalScore - a.totalScore);
 
-        let msg = '📊 TICK MOVEMENT ANALYSIS\n\n';
+        let mode = 'Tick direction';
+        if (hasDowns) mode = 'Only Downs → looking for upper BB';
+        else if (hasUps) mode = 'Only Ups → looking for lower BB';
+
+        let msg = `📊 ANALYSIS — ${mode}\n\n`;
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
-            const warn = r.over4Pct > 10 ? ' ⚠️' : '';
-            msg += `${rank} ${r.label}: up ${r.upCount} | down ${r.downCount} | avg move ${r.avgMove.toFixed(2)} | streaks >4: ${r.over4Pct}%${warn}\n`;
+            const bbInfo = needBB ? ` | BB: ${r.bbPosition} (${r.totalScore})` : '';
+            msg += `${rank} ${r.label}: streaks >4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)}${bbInfo}\n`;
         });
 
         const best = results[0];
-        msg += `\n💡 BEST: ${best.label}\n`;
-        msg += `Only ${best.over4Pct}% of moves exceed 4 ticks — safest for tick direction`;
+        msg += `\n💡 BEST: ${best.label} (score ${best.totalScore})\n`;
+        if (needBB) msg += `BB position: ${best.bbPosition}\n`;
+        msg += `Tick streaks >4: ${best.over4Pct}%`;
 
         setAnalyzeResult(msg);
         setMarket(best.sym);
         setAnalyzing(false);
         setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
-    }, []);
+    }, [selected]);
 
     const toggle = (s: MultiKillerStrategy) => {
         if (running) return;
