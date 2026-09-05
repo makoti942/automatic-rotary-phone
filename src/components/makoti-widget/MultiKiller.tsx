@@ -710,8 +710,26 @@ export const MultiKiller: React.FC = () => {
         setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
     }, [selected]);
 
+    const playClick = useCallback(() => {
+        try {
+            const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(1200, ctx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(600, ctx.currentTime + 0.06);
+            gain.gain.setValueAtTime(0.15, ctx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.08);
+            osc.start(ctx.currentTime);
+            osc.stop(ctx.currentTime + 0.08);
+        } catch {}
+    }, []);
+
     const toggle = (s: MultiKillerStrategy) => {
         if (running) return;
+        playClick();
         setSelected(p => p.includes(s) ? p.filter(x => x !== s) : [...p, s]);
         if (!stakes[s]) setStakes(p => ({ ...p, [s]: '10' }));
     };
