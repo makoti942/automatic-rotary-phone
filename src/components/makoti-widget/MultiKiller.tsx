@@ -76,7 +76,6 @@ export const MultiKiller: React.FC = () => {
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
     const [analyzing, setAnalyzing] = useState(false);
-    const [analyzeProgress, setAnalyzeProgress] = useState('');
     const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
 
     const tradesRef = useRef<TradeEntry[]>([]);
@@ -551,66 +550,52 @@ export const MultiKiller: React.FC = () => {
 
         setAnalyzing(true);
         setAnalyzeResult(null);
-        setAnalyzeProgress('Subscribing...');
-        setLogs(p => ['📊 Collecting live ticks from all volatilities...', ...p].slice(0, 80));
+        setLogs(p => ['📊 Loading last 200 ticks from all volatilities...', ...p].slice(0, 80));
 
         const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100'];
-        const TICKS_NEEDED = 200;
 
-        const collected: Record<string, number[]> = {};
-        VOL_SYMBOLS.forEach(s => { collected[s] = []; });
-
-        const unsub = onNewSystemMessage((event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.msg_type !== 'tick') return;
-                const sym = data.tick?.symbol;
-                const price = parseFloat(data.tick?.quote);
-                if (!sym || !collected[sym] || isNaN(price)) return;
-                if (collected[sym].length < TICKS_NEEDED) collected[sym].push(price);
-            } catch {}
+        const fetchTicks = (sym: string): Promise<number[]> => new Promise((resolve) => {
+            const id = Date.now() + Math.random();
+            const handler = (event: MessageEvent) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.req_id !== id) return;
+                    window.removeEventListener('newSystemMessage', handler);
+                    const ticks = data.history?.prices || [];
+                    resolve(ticks.map(Number));
+                } catch { resolve([]); }
+            };
+            window.addEventListener('newSystemMessage', handler);
+            ws.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 200, end: 'latest', req_id: id }));
+            setTimeout(() => { window.removeEventListener('newSystemMessage', handler); resolve([]); }, 10000);
         });
 
-        VOL_SYMBOLS.forEach(sym => {
-            ws.send(JSON.stringify({ ticks: sym, subscribe: 1 }));
-        });
-
-        const start = Date.now();
-        while (Date.now() - start < 30000) {
-            const done = VOL_SYMBOLS.filter(s => collected[s].length >= TICKS_NEEDED);
-            const pct = Math.round((done.length / VOL_SYMBOLS.length) * 100);
-            const counts = VOL_SYMBOLS.map(s => `${s.replace('R_', '')}:${Math.min(collected[s].length, TICKS_NEEDED)}`).join('  ');
-            setAnalyzeProgress(`${pct}% — ${counts}`);
-            if (done.length === VOL_SYMBOLS.length) break;
-            await new Promise(r => setTimeout(r, 500));
-        }
-
-        unsub();
+        const allData = await Promise.all(VOL_SYMBOLS.map(async (sym) => {
+            const prices = await fetchTicks(sym);
+            return { sym, prices };
+        }));
 
         const results: Array<{
             sym: string;
             label: string;
-            trendPct: number;
-            avgStreak: number;
             maxStreak: number;
-            streaks2to4: number;
-            streaksOver6: number;
-            totalTicks: number;
-            score: number;
+            over4Count: number;
+            totalMoves: number;
+            over4Pct: number;
         }> = [];
 
-        for (const sym of VOL_SYMBOLS) {
-            const prices = collected[sym];
+        for (const { sym, prices } of allData) {
             if (prices.length < 20) {
-                results.push({ sym, label: sym, trendPct: 0, avgStreak: 0, maxStreak: 0, streaks2to4: 0, streaksOver6: 0, totalTicks: prices.length, score: 0 });
+                results.push({ sym, label: sym, maxStreak: 0, over4Count: 0, totalMoves: 0, over4Pct: 100 });
                 continue;
             }
 
-            const streaks: number[] = [];
+            let maxStreak = 0;
             let currentStreak = 1;
+            let over4Count = 0;
             let streakDir = 0;
 
-            for (let i = 2; i < prices.length; i++) {
+            for (let i = 1; i < prices.length; i++) {
                 const diff = prices[i] - prices[i - 1];
                 let dir = 0;
                 if (diff > 0) dir = 1;
@@ -619,41 +604,35 @@ export const MultiKiller: React.FC = () => {
                 if (dir === streakDir && dir !== 0) {
                     currentStreak++;
                 } else {
-                    if (currentStreak > 0) streaks.push(currentStreak);
+                    if (currentStreak > maxStreak) maxStreak = currentStreak;
+                    if (currentStreak > 4) over4Count++;
                     currentStreak = dir !== 0 ? 1 : 0;
                     streakDir = dir;
                 }
             }
-            if (currentStreak > 0) streaks.push(currentStreak);
+            if (currentStreak > maxStreak) maxStreak = currentStreak;
+            if (currentStreak > 4) over4Count++;
 
-            const totalMoves = streaks.length || 1;
-            const streaks2to4 = streaks.filter(s => s >= 2 && s <= 4).length;
-            const streaksOver6 = streaks.filter(s => s > 6).length;
-            const maxStreak = streaks.length > 0 ? Math.max(...streaks) : 0;
-            const avgStreak = streaks.length > 0 ? streaks.reduce((a, b) => a + b, 0) / streaks.length : 0;
-            const trendPct = Math.round((streaks2to4 / totalMoves) * 100);
-
-            const score = (trendPct * 0.5) + (avgStreak * 8) - (streaksOver6 * 5);
-
-            results.push({ sym, label: `Volatility ${sym.replace('R_', '')}`, trendPct, avgStreak, maxStreak, streaks2to4, streaksOver6, totalTicks: prices.length, score });
+            const totalMoves = prices.length - 1;
+            const over4Pct = totalMoves > 0 ? Math.round((over4Count / totalMoves) * 100) : 100;
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Count, totalMoves, over4Pct });
         }
 
-        results.sort((a, b) => b.score - a.score);
+        results.sort((a, b) => a.over4Pct - b.over4Pct || a.maxStreak - b.maxStreak);
 
-        let msg = '📊 ANALYSIS RESULTS\n\n';
+        let msg = '📊 LAST 200 TICKS ANALYSIS\n\n';
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
-            msg += `${rank} ${r.label}: trend ${r.trendPct}% | avg ${r.avgStreak.toFixed(1)} | max ${r.maxStreak} | score ${r.score.toFixed(1)}\n`;
+            const warn = r.over4Pct > 10 ? ' ⚠️' : '';
+            msg += `${rank} ${r.label}: streaks >4 = ${r.over4Pct}% | max streak ${r.maxStreak}${warn}\n`;
         });
 
         const best = results[0];
         msg += `\n💡 BEST: ${best.label}\n`;
-        msg += `Trend consistency ${best.trendPct}% (streaks of 2-4 ticks)\n`;
-        msg += `Recommended tick direction: ${Math.min(Math.round(best.avgStreak), 4)}`;
+        msg += `Only ${best.over4Pct}% of moves exceed 4 ticks — safest for tick direction`;
 
         setAnalyzeResult(msg);
         setMarket(best.sym);
-        setAnalyzeProgress('');
         setAnalyzing(false);
         setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
     }, []);
@@ -754,7 +733,7 @@ export const MultiKiller: React.FC = () => {
                     <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
                         disabled={analyzing || running}
                         onClick={analyzeVolatilities}>
-                        {analyzing ? `⏳ ${analyzeProgress || 'Analyzing...'}` : '📊 Analyze'}
+                        {analyzing ? '⏳ Loading...' : '📊 Analyze'}
                     </button>
                 )}
             </div>
