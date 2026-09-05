@@ -72,6 +72,7 @@ export const MultiKiller: React.FC = () => {
         rise: 0, fall: 0,
     });
     const [tickDirection, setTickDirection] = useState('0');
+    const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>('any');
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
 
@@ -92,6 +93,7 @@ export const MultiKiller: React.FC = () => {
     const tickDirResolveRef = useRef<(() => void) | null>(null);
     const tickDirTargetRef = useRef(0);
     const tickDirActiveRef = useRef(false);
+    const tickDirModeRef = useRef<'any' | 'ups' | 'downs'>('any');
 
     // Round lifecycle
     const expectedSettlementsRef = useRef(0);
@@ -109,6 +111,7 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { stakesRef.current = stakes; }, [stakes]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
+    useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
 
@@ -153,11 +156,17 @@ export const MultiKiller: React.FC = () => {
                 if (target <= 0 || !tickDirResolveRef.current) return;
 
                 const diff = price - prevPrice;
+                const mode = tickDirModeRef.current;
+
                 if (diff > 0) {
-                    consecutiveUpRef.current++;
+                    if (mode !== 'downs') {
+                        consecutiveUpRef.current++;
+                    }
                     consecutiveDownRef.current = 0;
                 } else if (diff < 0) {
-                    consecutiveDownRef.current++;
+                    if (mode !== 'ups') {
+                        consecutiveDownRef.current++;
+                    }
                     consecutiveUpRef.current = 0;
                 }
                 // diff === 0: no change to counters
@@ -525,10 +534,19 @@ export const MultiKiller: React.FC = () => {
                 {showTickDir && (
                     <div className='mw-field'>
                         <label className='mw-label'>Tick Direction</label>
-                        <input className='mw-input' type='number' min='0' max='20' step='1'
-                            value={tickDirection}
-                            onChange={e => setTickDirection(e.target.value)} />
-                        <span className='mw-hint'>0 = off, else wait N same-dir ticks</span>
+                        <div className='mw-tickdir-row'>
+                            <input className='mw-input' type='number' min='1' max='20' step='1'
+                                value={tickDirection}
+                                onChange={e => setTickDirection(e.target.value)} />
+                            <select className='mw-input mw-tickdir-select'
+                                value={tickDirMode}
+                                onChange={e => setTickDirMode(e.target.value as any)}>
+                                <option value='any'>Any</option>
+                                <option value='ups'>Ups Only</option>
+                                <option value='downs'>Downs Only</option>
+                            </select>
+                        </div>
+                        <span className='mw-hint'>0 = off</span>
                     </div>
                 )}
             </div>

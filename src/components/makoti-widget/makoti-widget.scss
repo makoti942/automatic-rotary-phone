@@ -358,6 +358,18 @@ $mw-radius:   10px;
     margin-top: -2px;
 }
 
+.mw-tickdir-row {
+    display: flex;
+    gap: 4px;
+
+    .mw-input { flex: 1; min-width: 0; }
+}
+
+.mw-tickdir-select {
+    width: 80px;
+    flex: 0 0 80px !important;
+}
+
 .mw-label {
     font-size: 10px;
     font-weight: 700;
