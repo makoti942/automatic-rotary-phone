@@ -903,15 +903,26 @@ export const MultiKiller: React.FC = () => {
         });
 
         const best = results[0];
-        msg += `\n💡 BEST: ${best.label} (score ${best.totalScore})\n`;
-        if (needBB) msg += `BB position: ${best.bbPosition}\n`;
-        msg += `Indicator signals: ${best.accuracySignals}/${best.totalStreaks} streaks confirmed\n`;
-        msg += `Tick streaks >4: ${best.over4Pct}%`;
+        if (needBB && best.totalScore === 0) {
+            const required = hasDowns ? 'UPPER' : hasUps ? 'LOWER' : 'any';
+            msg += `\n⚠️ NO VOLATILITY at ${required} BB — all filtered out\n`;
+            msg += `Available: ${results.map(r => `${r.label}(${r.bbPosition})`).join(', ')}\n`;
+            msg += `Try again later when candles reach the ${required} band`;
+        } else {
+            msg += `\n💡 BEST: ${best.label} (score ${best.totalScore})\n`;
+            if (needBB) msg += `BB position: ${best.bbPosition}\n`;
+            msg += `Indicator signals: ${best.accuracySignals}/${best.totalStreaks} streaks confirmed\n`;
+            msg += `Tick streaks >4: ${best.over4Pct}%`;
+        }
 
         setAnalyzeResult(msg);
-        setMarket(best.sym);
+        if (best.totalScore > 0) {
+            setMarket(best.sym);
+            setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
+        } else {
+            setLogs(p => [`⚠️ No volatility meets BB requirement — not auto-selecting`, ...p].slice(0, 80));
+        }
         setAnalyzing(false);
-        setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
         setTimeout(() => setAnalyzeResult(null), 10000);
     }, [selected]);
 
