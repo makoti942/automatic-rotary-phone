@@ -162,25 +162,28 @@ export const MultiKiller: React.FC = () => {
         return avgMove > 0 ? distance / avgMove : 0;
     }, []);
 
-    // Check if accuracy conditions are met
+    // Check if accuracy conditions are met (2-of-3 indicators)
     const checkAccuracy = useCallback((direction: 'up' | 'down'): boolean => {
         const prices = recentPricesRef.current;
         if (prices.length < 10) return false;
         const rsi = calcRSI(prices);
         const stretch = calcEMAStretch(prices);
         const lastPrice = prices[prices.length - 1];
-        const prevPrice = prices[prices.length - 2];
         const range = Math.max(...prices.slice(-10)) - Math.min(...prices.slice(-10));
         const atHigh = range > 0 && (lastPrice - Math.min(...prices.slice(-10))) / range > 0.85;
         const atLow = range > 0 && (Math.max(...prices.slice(-10)) - lastPrice) / range > 0.85;
 
+        let passed = 0;
         if (direction === 'up') {
-            // Price went up — check if overbought
-            return rsi > 75 && stretch > 1.0 && atHigh;
+            if (rsi > 70) passed++;
+            if (stretch > 1.0) passed++;
+            if (atHigh) passed++;
         } else {
-            // Price went down — check if oversold
-            return rsi < 25 && stretch > 1.0 && atLow;
+            if (rsi < 30) passed++;
+            if (stretch > 1.0) passed++;
+            if (atLow) passed++;
         }
+        return passed >= 2;
     }, [calcRSI, calcEMAStretch]);
 
     // Tick listener — handles tick delays AND tick direction
@@ -824,8 +827,12 @@ export const MultiKiller: React.FC = () => {
                                 const mx = Math.max(...slice);
                                 const rng = mx - mn;
                                 const atExtreme = rng > 0 && (sDir > 0 ? (last - mn) / rng > 0.85 : (mx - last) / rng > 0.85);
-                                const rsiOK = sDir > 0 ? rsi > 75 : rsi < 25;
-                                if (rsiOK && stretch > 1.0 && atExtreme) accuracySignals++;
+                                const rsiOK = sDir > 0 ? rsi > 70 : rsi < 30;
+                                let confirmCount = 0;
+                                if (rsiOK) confirmCount++;
+                                if (stretch > 1.0) confirmCount++;
+                                if (atExtreme) confirmCount++;
+                                if (confirmCount >= 2) accuracySignals++;
                             }
                         }
                         sLen = 1;
@@ -979,7 +986,7 @@ export const MultiKiller: React.FC = () => {
                         </span>
                     </button>
                     <span className='mw-accuracy-hint'>
-                        {accuracy ? 'RSI + EMA confirmed' : 'Off — streak only'}
+                        {accuracy ? '2-of-3 indicators (RSI+EMA+Extreme)' : 'Off — streak only'}
                     </span>
                 </div>
             )}
