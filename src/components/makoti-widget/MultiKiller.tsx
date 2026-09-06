@@ -143,15 +143,16 @@ export const MultiKiller: React.FC = () => {
 
     // RSI(3) calculation from recent tick prices
     const calcRSI = useCallback((prices: number[]): number => {
-        if (prices.length < 5) return 50;
-        const period = 3;
+        if (prices.length < 4) return 50;
         let gains = 0;
         let losses = 0;
-        for (let i = prices.length - period; i < prices.length; i++) {
+        for (let i = prices.length - 3; i < prices.length; i++) {
+            if (i <= 0) continue;
             const diff = prices[i] - prices[i - 1];
             if (diff > 0) gains += diff;
-            else losses += Math.abs(diff);
+            else if (diff < 0) losses += Math.abs(diff);
         }
+        if (losses === 0 && gains === 0) return 50;
         if (losses === 0) return 100;
         const rs = gains / losses;
         return 100 - 100 / (1 + rs);
@@ -267,13 +268,24 @@ export const MultiKiller: React.FC = () => {
                 if (upCount >= target) {
                     const accuracyOn = accuracyRef.current;
                     if (accuracyOn) {
-                        const rsi = calcRSI(recentPricesRef.current);
-                        const stretch = calcEMAStretch(recentPricesRef.current);
-                        log(`  📐 RSI: ${rsi.toFixed(1)} | EMA stretch: ${stretch.toFixed(2)}x`);
+                        const prices = recentPricesRef.current;
+                        const rsi = calcRSI(prices);
+                        const stretch = calcEMAStretch(prices);
+                        const lastP = prices[prices.length - 1];
+                        const mn = Math.min(...prices.slice(-10));
+                        const mx = Math.max(...prices.slice(-10));
+                        const rng = mx - mn;
+                        const atHigh = rng > 0 && (lastP - mn) / rng > 0.85;
+                        const atLow = rng > 0 && (mx - lastP) / rng > 0.85;
+                        let cnt = 0;
+                        if (rsi > 70) cnt++; else if (rsi < 30) cnt++;
+                        if (stretch > 1.0) cnt++;
+                        if (atHigh) cnt++;
+                        log(`  📐 RSI: ${rsi.toFixed(1)} ${rsi > 70 ? '✅' : '❌'} | stretch: ${stretch.toFixed(2)}x ${stretch > 1.0 ? '✅' : '❌'} | atHigh: ${atHigh ? '✅' : '❌'} → ${cnt}/3`);
                     }
                     const passed = !accuracyOn || checkAccuracy('up');
                     if (accuracyOn && !passed) {
-                        log(`📊 ${upCount} UP — accuracy FAILED (need 2-of-3), waiting...`);
+                        log(`📊 ${upCount} UP — accuracy FAILED, waiting...`);
                         consecutiveUpRef.current = 0;
                         consecutiveDownRef.current = 0;
                         return;
@@ -293,13 +305,24 @@ export const MultiKiller: React.FC = () => {
                 if (downCount >= target) {
                     const accuracyOn = accuracyRef.current;
                     if (accuracyOn) {
-                        const rsi = calcRSI(recentPricesRef.current);
-                        const stretch = calcEMAStretch(recentPricesRef.current);
-                        log(`  📐 RSI: ${rsi.toFixed(1)} | EMA stretch: ${stretch.toFixed(2)}x`);
+                        const prices = recentPricesRef.current;
+                        const rsi = calcRSI(prices);
+                        const stretch = calcEMAStretch(prices);
+                        const lastP = prices[prices.length - 1];
+                        const mn = Math.min(...prices.slice(-10));
+                        const mx = Math.max(...prices.slice(-10));
+                        const rng = mx - mn;
+                        const atHigh = rng > 0 && (lastP - mn) / rng > 0.85;
+                        const atLow = rng > 0 && (mx - lastP) / rng > 0.85;
+                        let cnt = 0;
+                        if (rsi < 30) cnt++; else if (rsi > 70) cnt++;
+                        if (stretch > 1.0) cnt++;
+                        if (atLow) cnt++;
+                        log(`  📐 RSI: ${rsi.toFixed(1)} ${rsi < 30 ? '✅' : '❌'} | stretch: ${stretch.toFixed(2)}x ${stretch > 1.0 ? '✅' : '❌'} | atLow: ${atLow ? '✅' : '❌'} → ${cnt}/3`);
                     }
                     const passed = !accuracyOn || checkAccuracy('down');
                     if (accuracyOn && !passed) {
-                        log(`📊 ${downCount} DOWN — accuracy FAILED (need 2-of-3), waiting...`);
+                        log(`📊 ${downCount} DOWN — accuracy FAILED, waiting...`);
                         consecutiveUpRef.current = 0;
                         consecutiveDownRef.current = 0;
                         return;
@@ -869,12 +892,14 @@ export const MultiKiller: React.FC = () => {
             const totalScore = Math.round(baseScore);
             const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
 
-            // Strict BB filter: middle BB is never allowed for Only Downs/Only Ups
+            // Strict BB filter: only UPPER/near-upper for Only Downs, only LOWER/near-lower for Only Ups
             let bbPassesFilter = true;
             if (hasDowns || hasUps) {
                 bbPassesFilter = false;
-                if (hasDowns && (bbPosition.includes('UPPER') || bbPosition.includes('upper'))) bbPassesFilter = true;
-                if (hasUps && (bbPosition.includes('LOWER') || bbPosition.includes('lower'))) bbPassesFilter = true;
+                const isUpper = bbPosition === '🔴 UPPER' || bbPosition === '🟠 near upper';
+                const isLower = bbPosition === '🟢 LOWER' || bbPosition === '🟢 near lower';
+                if (hasDowns && isUpper) bbPassesFilter = true;
+                if (hasUps && isLower) bbPassesFilter = true;
             }
 
             const adjustedScore = !bbPassesFilter ? 0 : totalScore;
