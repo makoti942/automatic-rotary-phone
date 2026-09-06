@@ -73,6 +73,7 @@ export const MultiKiller: React.FC = () => {
     });
     const [tickDirection, setTickDirection] = useState('0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>('any');
+    const [accuracy, setAccuracy] = useState(false);
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
     const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
@@ -102,6 +103,7 @@ export const MultiKiller: React.FC = () => {
     const tickDirTargetRef = useRef(0);
     const tickDirActiveRef = useRef(false);
     const tickDirModeRef = useRef<'any' | 'ups' | 'downs'>('any');
+    const recentPricesRef = useRef<number[]>([]);
 
     // Round lifecycle
     const expectedSettlementsRef = useRef(0);
@@ -122,6 +124,64 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
+    const hasDirectional = selected.some(s => ['rise', 'fall', 'ups', 'downs'].includes(s));
+
+    // RSI(3) calculation from recent tick prices
+    const calcRSI = useCallback((prices: number[]): number => {
+        if (prices.length < 5) return 50;
+        const period = 3;
+        let gains = 0;
+        let losses = 0;
+        for (let i = prices.length - period; i < prices.length; i++) {
+            const diff = prices[i] - prices[i - 1];
+            if (diff > 0) gains += diff;
+            else losses += Math.abs(diff);
+        }
+        if (losses === 0) return 100;
+        const rs = gains / losses;
+        return 100 - 100 / (1 + rs);
+    }, []);
+
+    // EMA stretch — how far price is from its EMA (as multiplier of recent range)
+    const calcEMAStretch = useCallback((prices: number[]): number => {
+        if (prices.length < 10) return 0;
+        const emaPeriod = 9;
+        let ema = prices[0];
+        const k = 2 / (emaPeriod + 1);
+        for (let i = 1; i < prices.length; i++) {
+            ema = prices[i] * k + ema * (1 - k);
+        }
+        const lastPrice = prices[prices.length - 1];
+        const distance = Math.abs(lastPrice - ema);
+        // Normalize by average recent move
+        let avgMove = 0;
+        for (let i = 1; i < prices.length; i++) {
+            avgMove += Math.abs(prices[i] - prices[i - 1]);
+        }
+        avgMove /= (prices.length - 1);
+        return avgMove > 0 ? distance / avgMove : 0;
+    }, []);
+
+    // Check if accuracy conditions are met
+    const checkAccuracy = useCallback((direction: 'up' | 'down'): boolean => {
+        const prices = recentPricesRef.current;
+        if (prices.length < 10) return false;
+        const rsi = calcRSI(prices);
+        const stretch = calcEMAStretch(prices);
+        const lastPrice = prices[prices.length - 1];
+        const prevPrice = prices[prices.length - 2];
+        const range = Math.max(...prices.slice(-10)) - Math.min(...prices.slice(-10));
+        const atHigh = range > 0 && (lastPrice - Math.min(...prices.slice(-10))) / range > 0.85;
+        const atLow = range > 0 && (Math.max(...prices.slice(-10)) - lastPrice) / range > 0.85;
+
+        if (direction === 'up') {
+            // Price went up — check if overbought
+            return rsi > 75 && stretch > 1.0 && atHigh;
+        } else {
+            // Price went down — check if oversold
+            return rsi < 25 && stretch > 1.0 && atLow;
+        }
+    }, [calcRSI, calcEMAStretch]);
 
     // Tick listener — handles tick delays AND tick direction
     useEffect(() => {
@@ -137,6 +197,10 @@ export const MultiKiller: React.FC = () => {
                 // ── Always update lastTickPrice for next comparison ──
                 const prevPrice = lastTickPriceRef.current;
                 lastTickPriceRef.current = price;
+
+                // ── Store recent prices for indicator calculations ──
+                recentPricesRef.current.push(price);
+                if (recentPricesRef.current.length > 50) recentPricesRef.current.shift();
 
                 // ── Tick delay resolution (Rise/Fall 0t/1t/2t) ──
                 const pending = pendingDelaysRef.current;
@@ -183,7 +247,16 @@ export const MultiKiller: React.FC = () => {
                 const downCount = consecutiveDownRef.current;
 
                 if (upCount >= target) {
-                    log(`📊 ${upCount} consecutive UP (${prevPrice}→${price}) — GO!`);
+                    const accuracyOn = accuracy;
+                    const passed = !accuracyOn || checkAccuracy('up');
+                    if (accuracyOn && !passed) {
+                        log(`📊 ${upCount} UP — accuracy check failed (RSI/EMA not extreme), waiting...`);
+                        consecutiveUpRef.current = 0;
+                        consecutiveDownRef.current = 0;
+                        return;
+                    }
+                    const accTag = accuracyOn ? ' ✅' : '';
+                    log(`📊 ${upCount} consecutive UP (${prevPrice}→${price}) — GO!${accTag}`);
                     setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
@@ -195,7 +268,16 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 if (downCount >= target) {
-                    log(`📊 ${downCount} consecutive DOWN (${prevPrice}→${price}) — GO!`);
+                    const accuracyOn = accuracy;
+                    const passed = !accuracyOn || checkAccuracy('down');
+                    if (accuracyOn && !passed) {
+                        log(`📊 ${downCount} DOWN — accuracy check failed (RSI/EMA not extreme), waiting...`);
+                        consecutiveUpRef.current = 0;
+                        consecutiveDownRef.current = 0;
+                        return;
+                    }
+                    const accTag = accuracyOn ? ' ✅' : '';
+                    log(`📊 ${downCount} consecutive DOWN (${prevPrice}→${price}) — GO!${accTag}`);
                     setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
                     tickDirResolveRef.current = null;
@@ -624,6 +706,8 @@ export const MultiKiller: React.FC = () => {
             tickScore: number;
             bbScore: number;
             totalScore: number;
+            accuracySignals: number;
+            totalStreaks: number;
         }> = [];
 
         for (const { sym, prices, candles } of allData) {
@@ -703,7 +787,54 @@ export const MultiKiller: React.FC = () => {
             const totalScore = needBB ? Math.round(tickScore * 0.6 + bbScore * 0.4) : tickScore;
             const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
             const adjustedScore = needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore;
-            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore: adjustedScore });
+
+            // Accuracy: count how many streaks had RSI/EMA confirmation
+            let accuracySignals = 0;
+            let totalStreaks = 0;
+            if (accuracy) {
+                let sDir = 0;
+                let sLen = 0;
+                for (let i = 1; i < prices.length; i++) {
+                    const diff = prices[i] - prices[i - 1];
+                    if (diff === 0) continue;
+                    const d = diff > 0 ? 1 : -1;
+                    if (d === sDir) { sLen++; }
+                    else {
+                        if (sLen >= 3) {
+                            totalStreaks++;
+                            // Check RSI and EMA stretch at streak end
+                            const slice = prices.slice(Math.max(0, i - 14), i + 1);
+                            if (slice.length >= 5) {
+                                let g = 0, l = 0;
+                                for (let j = 1; j < slice.length; j++) {
+                                    const dd = slice[j] - slice[j - 1];
+                                    if (dd > 0) g += dd; else l += Math.abs(dd);
+                                }
+                                const rsi = l === 0 ? 100 : 100 - 100 / (1 + g / l);
+                                let ema = slice[0];
+                                const k = 2 / 10;
+                                for (let j = 1; j < slice.length; j++) ema = slice[j] * k + ema * (1 - k);
+                                const dist = Math.abs(slice[slice.length - 1] - ema);
+                                let avgM = 0;
+                                for (let j = 1; j < slice.length; j++) avgM += Math.abs(slice[j] - slice[j - 1]);
+                                avgM /= (slice.length - 1);
+                                const stretch = avgM > 0 ? dist / avgM : 0;
+                                const last = slice[slice.length - 1];
+                                const mn = Math.min(...slice);
+                                const mx = Math.max(...slice);
+                                const rng = mx - mn;
+                                const atExtreme = rng > 0 && (sDir > 0 ? (last - mn) / rng > 0.85 : (mx - last) / rng > 0.85);
+                                const rsiOK = sDir > 0 ? rsi > 75 : rsi < 25;
+                                if (rsiOK && stretch > 1.0 && atExtreme) accuracySignals++;
+                            }
+                        }
+                        sLen = 1;
+                        sDir = d;
+                    }
+                }
+            }
+
+            results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore: adjustedScore, accuracySignals, totalStreaks });
         }
 
         results.sort((a, b) => b.totalScore - a.totalScore);
@@ -711,6 +842,7 @@ export const MultiKiller: React.FC = () => {
         let mode = 'Tick direction';
         if (hasDowns) mode = 'Only Downs → looking for upper BB';
         else if (hasUps) mode = 'Only Ups → looking for lower BB';
+        if (accuracy) mode += ' + Accuracy (RSI+EMA)';
 
         let msg = `📊 ANALYSIS — ${mode}\n`;
         const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
@@ -718,6 +850,7 @@ export const MultiKiller: React.FC = () => {
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
             msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}`;
+            if (accuracy) msg += ` | acc: ${r.accuracySignals}/${r.totalStreaks}`;
             if (needBB) msg += ` (${r.totalScore})`;
             msg += '\n';
         });
@@ -725,6 +858,7 @@ export const MultiKiller: React.FC = () => {
         const best = results[0];
         msg += `\n💡 BEST: ${best.label} (score ${best.totalScore})\n`;
         if (needBB) msg += `BB position: ${best.bbPosition}\n`;
+        if (accuracy) msg += `Accuracy signals: ${best.accuracySignals}/${best.totalStreaks} streaks confirmed\n`;
         msg += `Tick streaks >4: ${best.over4Pct}%`;
 
         setAnalyzeResult(msg);
@@ -828,6 +962,25 @@ export const MultiKiller: React.FC = () => {
                             <span className='mw-select-arrow'></span>
                         </div>
                     </div>
+                </div>
+            )}
+
+            {hasDirectional && showTickDir && (
+                <div className='mw-accuracy-row'>
+                    <button
+                        className={`mw-accuracy-btn ${accuracy ? 'mw-accuracy-btn--on' : ''}`}
+                        onClick={() => setAccuracy(a => !a)}
+                        disabled={running}
+                    >
+                        <span className='mw-accuracy-icon'>{accuracy ? '🎯' : '🎯'}</span>
+                        <span>Accuracy</span>
+                        <span className={`mw-accuracy-toggle ${accuracy ? 'mw-accuracy-toggle--on' : ''}`}>
+                            <span className='mw-accuracy-knob' />
+                        </span>
+                    </button>
+                    <span className='mw-accuracy-hint'>
+                        {accuracy ? 'RSI + EMA confirmed' : 'Off — streak only'}
+                    </span>
                 </div>
             )}
 
