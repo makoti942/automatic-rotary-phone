@@ -97,6 +97,31 @@ export const MultiKiller: React.FC = () => {
         }));
     }, [market, selected, stakes, barriers, delays, tickDirection, tickDirMode, accuracy]);
 
+    // Auto-sync paired contracts: rise↔fall share delays, ups↔downs share stakes
+    useEffect(() => {
+        const hasRise = selected.includes('rise');
+        const hasFall = selected.includes('fall');
+        const hasUps = selected.includes('ups');
+        const hasDowns = selected.includes('downs');
+        if (hasRise && hasFall) {
+            setDelays(p => {
+                const r = p.rise ?? 0;
+                const f = p.fall ?? 0;
+                if (r !== f) return { ...p, fall: r };
+                return p;
+            });
+        }
+        if (hasUps && hasDowns) {
+            setStakes(p => {
+                const u = p.ups ?? '';
+                const d = p.downs ?? '';
+                if (u && !d) return { ...p, downs: u };
+                if (d && !u) return { ...p, ups: d };
+                return p;
+            });
+        }
+    }, [selected]);
+
     const tradesRef = useRef<TradeEntry[]>([]);
     const runningRef = useRef(false);
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
@@ -946,11 +971,26 @@ export const MultiKiller: React.FC = () => {
         if (best.totalScore > 0) {
             setMarket(best.sym);
             setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
+        } else if (hasDowns || hasUps) {
+            // No volatility at required BB — auto-switch to opposite
+            const opposite = results.find(r => {
+                if (hasDowns) return r.bbPosition.includes('LOWER') || r.bbPosition.includes('lower');
+                return r.bbPosition.includes('UPPER') || r.bbPosition.includes('upper');
+            });
+            if (opposite) {
+                const newMode = hasDowns ? 'downs' : 'ups';
+                setTickDirMode(newMode);
+                setMarket(opposite.sym);
+                setLogs(p => [`🔄 Switched to ${newMode} — ${opposite.label} at ${opposite.bbPosition}`, ...p].slice(0, 80));
+                msg += `\n\n🔄 AUTO-SWITCH: No volatility at ${hasDowns ? 'UPPER' : 'LOWER'} BB → switched to ${newMode === 'downs' ? 'Only Downs' : 'Only Ups'} → ${opposite.label}`;
+                setAnalyzeResult(msg);
+            } else {
+                setLogs(p => [`⚠️ No volatility meets BB requirement for either direction`, ...p].slice(0, 80));
+            }
         } else {
             setLogs(p => [`⚠️ No volatility meets BB requirement — not auto-selecting`, ...p].slice(0, 80));
         }
         setAnalyzing(false);
-        setTimeout(() => setAnalyzeResult(null), 10000);
     }, [selected]);
 
     const playClick = useCallback(() => {
@@ -1128,11 +1168,14 @@ export const MultiKiller: React.FC = () => {
                 <div className='mw-analyze-result'>
                     <div className='mw-analyze-head'>
                         <span>Analysis Result</span>
-                        <button className='mw-copy-btn' onClick={() => {
-                            navigator.clipboard.writeText(analyzeResult);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 2000);
-                        }}>{copied ? '✓ Copied' : '📋 Copy'}</button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                            <button className='mw-copy-btn' onClick={() => {
+                                navigator.clipboard.writeText(analyzeResult);
+                                setCopied(true);
+                                setTimeout(() => setCopied(false), 2000);
+                            }}>{copied ? '✓ Copied' : '📋 Copy'}</button>
+                            <button className='mw-copy-btn' onClick={() => setAnalyzeResult(null)}>✕</button>
+                        </div>
                     </div>
                     <pre>{analyzeResult}</pre>
                 </div>
