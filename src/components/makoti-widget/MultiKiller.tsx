@@ -181,13 +181,14 @@ export const MultiKiller: React.FC = () => {
     // Check if accuracy conditions are met (2-of-3 indicators)
     const checkAccuracy = useCallback((direction: 'up' | 'down'): boolean => {
         const prices = recentPricesRef.current;
-        if (prices.length < 10) return false;
+        if (prices.length < 4) return true;
         const rsi = calcRSI(prices);
         const stretch = calcEMAStretch(prices);
         const lastPrice = prices[prices.length - 1];
-        const range = Math.max(...prices.slice(-10)) - Math.min(...prices.slice(-10));
-        const atHigh = range > 0 && (lastPrice - Math.min(...prices.slice(-10))) / range > 0.85;
-        const atLow = range > 0 && (Math.max(...prices.slice(-10)) - lastPrice) / range > 0.85;
+        const slice10 = prices.slice(-10);
+        const range = Math.max(...slice10) - Math.min(...slice10);
+        const atHigh = range > 0 && (lastPrice - Math.min(...slice10)) / range > 0.85;
+        const atLow = range > 0 && (Math.max(...slice10) - lastPrice) / range > 0.85;
 
         let passed = 0;
         if (direction === 'up') {
