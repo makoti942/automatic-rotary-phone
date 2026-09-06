@@ -892,14 +892,15 @@ export const MultiKiller: React.FC = () => {
             const totalScore = Math.round(baseScore);
             const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
 
-            // Strict BB filter: only UPPER/near-upper for Only Downs, only LOWER/near-lower for Only Ups
+            // Strict BB filter: middle/mid-upper/mid-lower never allowed for directional trading
             let bbPassesFilter = true;
-            if (hasDowns || hasUps) {
-                bbPassesFilter = false;
+            if (needBB) {
                 const isUpper = bbPosition === '🔴 UPPER' || bbPosition === '🟠 near upper';
                 const isLower = bbPosition === '🟢 LOWER' || bbPosition === '🟢 near lower';
-                if (hasDowns && isUpper) bbPassesFilter = true;
-                if (hasUps && isLower) bbPassesFilter = true;
+                const isMiddle = bbPosition === '⚪ middle' || bbPosition === '🟡 mid-upper' || bbPosition === '🟡 mid-lower' || bbPosition === 'N/A';
+                if (isMiddle) bbPassesFilter = false;
+                if (hasDowns && !isUpper) bbPassesFilter = false;
+                if (hasUps && !isLower) bbPassesFilter = false;
             }
 
             const adjustedScore = !bbPassesFilter ? 0 : totalScore;
