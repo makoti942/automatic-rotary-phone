@@ -103,6 +103,7 @@ export const MultiKiller: React.FC = () => {
     const tickDirTargetRef = useRef(0);
     const tickDirActiveRef = useRef(false);
     const tickDirModeRef = useRef<'any' | 'ups' | 'downs'>('any');
+    const accuracyRef = useRef(false);
     const recentPricesRef = useRef<number[]>([]);
 
     // Round lifecycle
@@ -122,6 +123,7 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
     useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
+    useEffect(() => { accuracyRef.current = accuracy; }, [accuracy]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
     const hasDirectional = selected.some(s => ['rise', 'fall', 'ups', 'downs'].includes(s));
@@ -250,7 +252,7 @@ export const MultiKiller: React.FC = () => {
                 const downCount = consecutiveDownRef.current;
 
                 if (upCount >= target) {
-                    const accuracyOn = accuracy;
+                    const accuracyOn = accuracyRef.current;
                     const passed = !accuracyOn || checkAccuracy('up');
                     if (accuracyOn && !passed) {
                         log(`📊 ${upCount} UP — accuracy check failed (RSI/EMA not extreme), waiting...`);
@@ -271,7 +273,7 @@ export const MultiKiller: React.FC = () => {
                 }
 
                 if (downCount >= target) {
-                    const accuracyOn = accuracy;
+                    const accuracyOn = accuracyRef.current;
                     const passed = !accuracyOn || checkAccuracy('down');
                     if (accuracyOn && !passed) {
                         log(`📊 ${downCount} DOWN — accuracy check failed (RSI/EMA not extreme), waiting...`);
@@ -872,7 +874,7 @@ export const MultiKiller: React.FC = () => {
         setMarket(best.sym);
         setAnalyzing(false);
         setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
-        setTimeout(() => setAnalyzeResult(null), 5000);
+        setTimeout(() => setAnalyzeResult(null), 10000);
     }, [selected]);
 
     const playClick = useCallback(() => {
