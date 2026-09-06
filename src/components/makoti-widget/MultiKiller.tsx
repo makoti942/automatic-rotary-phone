@@ -972,51 +972,58 @@ export const MultiKiller: React.FC = () => {
             setMarket(best.sym);
             setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
         } else {
-            // No BB match — try to auto-switch each contract independently
-            const switches: string[] = [];
+            // No BB match — switch ALL contracts that need that band to opposite
             const upperVol = results.find(r => r.bbPosition.includes('UPPER') || r.bbPosition.includes('upper'));
             const lowerVol = results.find(r => r.bbPosition.includes('LOWER') || r.bbPosition.includes('lower'));
-
-            if (hasDowns && upperVol) {
-                setMarket(upperVol.sym);
-                switches.push(`Only Downs → ${upperVol.label} (${upperVol.bbPosition})`);
-            } else if (hasDowns && lowerVol) {
-                setTickDirMode('downs');
-                setMarket(lowerVol.sym);
-                switches.push(`Only Downs → switched to Only Ups → ${lowerVol.label} (${lowerVol.bbPosition})`);
-            }
-
-            if (hasUps && lowerVol) {
-                setMarket(lowerVol.sym);
-                switches.push(`Only Ups → ${lowerVol.label} (${lowerVol.bbPosition})`);
-            } else if (hasUps && upperVol) {
-                setTickDirMode('ups');
-                setMarket(upperVol.sym);
-                switches.push(`Only Ups → switched to Only Downs → ${upperVol.label} (${upperVol.bbPosition})`);
-            }
-
             const hasRise = selected.includes('rise');
             const hasFall = selected.includes('fall');
-            if (hasRise && !hasDowns && !hasUps && upperVol) {
-                setMarket(upperVol.sym);
-                switches.push(`Rise → ${upperVol.label} (${upperVol.bbPosition})`);
-            } else if (hasRise && !hasDowns && !hasUps && lowerVol) {
-                setSelected(p => p.map(s => s === 'rise' ? 'fall' : s));
-                setMarket(lowerVol.sym);
-                switches.push(`Rise → switched to Fall → ${lowerVol.label} (${lowerVol.bbPosition})`);
-            }
-            if (hasFall && !hasDowns && !hasUps && lowerVol) {
-                setMarket(lowerVol.sym);
-                switches.push(`Fall → ${lowerVol.label} (${lowerVol.bbPosition})`);
-            } else if (hasFall && !hasDowns && !hasUps && upperVol) {
-                setSelected(p => p.map(s => s === 'fall' ? 'rise' : s));
-                setMarket(upperVol.sym);
-                switches.push(`Fall → switched to Rise → ${upperVol.label} (${upperVol.bbPosition})`);
-            }
+            const hasUps = selected.includes('ups');
+            const hasDowns = selected.includes('downs');
 
-            if (switches.length > 0) {
-                setLogs(p => [`🔄 ${switches.join(' | ')}`, ...p].slice(0, 80));
-                msg += `\n\n🔄 AUTO-SWITCH:\n${switches.map(s => `  • ${s}`).join('\n')}`;
+            // Contracts needing upper BB: rise, downs
+            const needsUpper = hasRise || hasDowns;
+            // Contracts needing lower BB: fall, ups
+            const needsLower = hasFall || hasUps;
+
+            if (needsUpper && upperVol) {
+                // All upper-needing contracts found upper BB — use it
+                setMarket(upperVol.sym);
+                setLogs(p => [`📊 ${upperVol.label} (${upperVol.bbPosition}) — auto-selected`, ...p].slice(0, 80));
+            } else if (needsUpper && lowerVol) {
+                // No upper BB — flip ALL to opposite
+                const newSelected = selected.map(s => {
+                    if (s === 'rise') return 'fall';
+                    if (s === 'fall') return 'rise';
+                    if (s === 'ups') return 'downs';
+                    if (s === 'downs') return 'ups';
+                    return s;
+                });
+                setSelected(newSelected);
+                if (hasDowns) setTickDirMode('ups');
+                if (hasUps) setTickDirMode('downs');
+                setMarket(lowerVol.sym);
+                const switched = selected.filter(s => s === 'rise' || s === 'downs').map(s => s === 'rise' ? 'Fall' : 'Only Ups').join(', ');
+                setLogs(p => [`🔄 No upper BB → switched ${switched} → ${lowerVol.label} (${lowerVol.bbPosition})`, ...p].slice(0, 80));
+                msg += `\n\n🔄 AUTO-SWITCH: No upper BB → ${switched} → ${lowerVol.label}`;
+                setAnalyzeResult(msg);
+            } else if (needsLower && lowerVol) {
+                setMarket(lowerVol.sym);
+                setLogs(p => [`📊 ${lowerVol.label} (${lowerVol.bbPosition}) — auto-selected`, ...p].slice(0, 80));
+            } else if (needsLower && upperVol) {
+                const newSelected = selected.map(s => {
+                    if (s === 'rise') return 'fall';
+                    if (s === 'fall') return 'rise';
+                    if (s === 'ups') return 'downs';
+                    if (s === 'downs') return 'ups';
+                    return s;
+                });
+                setSelected(newSelected);
+                if (hasUps) setTickDirMode('downs');
+                if (hasDowns) setTickDirMode('ups');
+                setMarket(upperVol.sym);
+                const switched = selected.filter(s => s === 'fall' || s === 'ups').map(s => s === 'fall' ? 'Rise' : 'Only Downs').join(', ');
+                setLogs(p => [`🔄 No lower BB → switched ${switched} → ${upperVol.label} (${upperVol.bbPosition})`, ...p].slice(0, 80));
+                msg += `\n\n🔄 AUTO-SWITCH: No lower BB → ${switched} → ${upperVol.label}`;
                 setAnalyzeResult(msg);
             } else {
                 setLogs(p => [`⚠️ No volatility meets BB requirement for any direction`, ...p].slice(0, 80));
