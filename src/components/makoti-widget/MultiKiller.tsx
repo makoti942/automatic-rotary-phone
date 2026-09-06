@@ -253,14 +253,19 @@ export const MultiKiller: React.FC = () => {
 
                 if (upCount >= target) {
                     const accuracyOn = accuracyRef.current;
+                    if (accuracyOn) {
+                        const rsi = calcRSI(recentPricesRef.current);
+                        const stretch = calcEMAStretch(recentPricesRef.current);
+                        log(`  📐 RSI: ${rsi.toFixed(1)} | EMA stretch: ${stretch.toFixed(2)}x`);
+                    }
                     const passed = !accuracyOn || checkAccuracy('up');
                     if (accuracyOn && !passed) {
-                        log(`📊 ${upCount} UP — accuracy check failed (RSI/EMA not extreme), waiting...`);
+                        log(`📊 ${upCount} UP — accuracy FAILED (need 2-of-3), waiting...`);
                         consecutiveUpRef.current = 0;
                         consecutiveDownRef.current = 0;
                         return;
                     }
-                    const accTag = accuracyOn ? ' ✅' : '';
+                    const accTag = accuracyOn ? ' ✅ ACCURATE' : '';
                     log(`📊 ${upCount} consecutive UP (${prevPrice}→${price}) — GO!${accTag}`);
                     setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
@@ -274,14 +279,19 @@ export const MultiKiller: React.FC = () => {
 
                 if (downCount >= target) {
                     const accuracyOn = accuracyRef.current;
+                    if (accuracyOn) {
+                        const rsi = calcRSI(recentPricesRef.current);
+                        const stretch = calcEMAStretch(recentPricesRef.current);
+                        log(`  📐 RSI: ${rsi.toFixed(1)} | EMA stretch: ${stretch.toFixed(2)}x`);
+                    }
                     const passed = !accuracyOn || checkAccuracy('down');
                     if (accuracyOn && !passed) {
-                        log(`📊 ${downCount} DOWN — accuracy check failed (RSI/EMA not extreme), waiting...`);
+                        log(`📊 ${downCount} DOWN — accuracy FAILED (need 2-of-3), waiting...`);
                         consecutiveUpRef.current = 0;
                         consecutiveDownRef.current = 0;
                         return;
                     }
-                    const accTag = accuracyOn ? ' ✅' : '';
+                    const accTag = accuracyOn ? ' ✅ ACCURATE' : '';
                     log(`📊 ${downCount} consecutive DOWN (${prevPrice}→${price}) — GO!${accTag}`);
                     setTickProgress({ dir: 'GO!', count: target, target });
                     const resolve = tickDirResolveRef.current;
@@ -791,7 +801,16 @@ export const MultiKiller: React.FC = () => {
 
             const totalScore = needBB ? Math.round(tickScore * 0.6 + bbScore * 0.4) : tickScore;
             const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
-            const adjustedScore = needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore;
+
+            // Strict BB filter: Only Downs requires upper BB, Only Ups requires lower BB
+            let bbPassesFilter = true;
+            if (hasDowns) {
+                bbPassesFilter = bbPosition.includes('UPPER') || bbPosition.includes('upper');
+            } else if (hasUps) {
+                bbPassesFilter = bbPosition.includes('LOWER') || bbPosition.includes('lower');
+            }
+
+            const adjustedScore = !bbPassesFilter ? 0 : (needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore);
 
             // Accuracy: count how many streaks had RSI/EMA confirmation
             let accuracySignals = 0;
@@ -858,9 +877,11 @@ export const MultiKiller: React.FC = () => {
         msg += `Candles: ${candleCounts}\n\n`;
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
-            msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}`;
+            const bbOk = !needBB || r.totalScore > 0;
+            const bbTag = bbOk ? '' : ' ❌';
+            msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}${bbTag}`;
             if (accuracy) msg += ` | acc: ${r.accuracySignals}/${r.totalStreaks}`;
-            if (needBB) msg += ` (${r.totalScore})`;
+            if (needBB) msg += ` [${r.totalScore}]`;
             msg += '\n';
         });
 
