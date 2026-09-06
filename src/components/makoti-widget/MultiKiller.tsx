@@ -799,19 +799,6 @@ export const MultiKiller: React.FC = () => {
                 }
             }
 
-            const totalScore = needBB ? Math.round(tickScore * 0.6 + bbScore * 0.4) : tickScore;
-            const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
-
-            // Strict BB filter: Only Downs requires upper BB, Only Ups requires lower BB
-            let bbPassesFilter = true;
-            if (hasDowns) {
-                bbPassesFilter = bbPosition.includes('UPPER') || bbPosition.includes('upper');
-            } else if (hasUps) {
-                bbPassesFilter = bbPosition.includes('LOWER') || bbPosition.includes('lower');
-            }
-
-            const adjustedScore = !bbPassesFilter ? 0 : (needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore);
-
             let accuracySignals = 0;
             let totalStreaks = 0;
             {
@@ -860,6 +847,25 @@ export const MultiKiller: React.FC = () => {
                 }
             }
 
+            // Score: BB factor + indicator factor (when accuracy ON)
+            const bbRatio = needBB ? bbScore / 100 : 1;
+            const indRatio = totalStreaks > 0 ? accuracySignals / totalStreaks : 0;
+            let baseScore = tickScore * 0.4;
+            if (needBB) baseScore += bbScore * 0.3;
+            if (accuracy) baseScore += Math.round(indRatio * 100) * 0.3;
+            const totalScore = Math.round(baseScore);
+            const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
+
+            // Strict BB filter
+            let bbPassesFilter = true;
+            if (hasDowns) {
+                bbPassesFilter = bbPosition.includes('UPPER') || bbPosition.includes('upper');
+            } else if (hasUps) {
+                bbPassesFilter = bbPosition.includes('LOWER') || bbPosition.includes('lower');
+            }
+
+            const adjustedScore = !bbPassesFilter ? 0 : (needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore);
+
             results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore: adjustedScore, accuracySignals, totalStreaks });
         }
 
@@ -868,7 +874,7 @@ export const MultiKiller: React.FC = () => {
         let mode = 'Tick direction';
         if (hasDowns) mode = 'Only Downs → looking for upper BB';
         else if (hasUps) mode = 'Only Ups → looking for lower BB';
-        if (accuracy) mode += ' + Accuracy (exec only)';
+        if (accuracy) mode += ' + Accuracy (30% weight)';
 
         let msg = `📊 ANALYSIS — ${mode}\n`;
         const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
