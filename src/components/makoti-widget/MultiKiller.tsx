@@ -812,10 +812,9 @@ export const MultiKiller: React.FC = () => {
 
             const adjustedScore = !bbPassesFilter ? 0 : (needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore);
 
-            // Accuracy: count how many streaks had RSI/EMA confirmation
             let accuracySignals = 0;
             let totalStreaks = 0;
-            if (accuracy) {
+            {
                 let sDir = 0;
                 let sLen = 0;
                 for (let i = 1; i < prices.length; i++) {
@@ -826,7 +825,6 @@ export const MultiKiller: React.FC = () => {
                     else {
                         if (sLen >= 3) {
                             totalStreaks++;
-                            // Check RSI and EMA stretch at streak end
                             const slice = prices.slice(Math.max(0, i - 14), i + 1);
                             if (slice.length >= 5) {
                                 let g = 0, l = 0;
@@ -870,17 +868,17 @@ export const MultiKiller: React.FC = () => {
         let mode = 'Tick direction';
         if (hasDowns) mode = 'Only Downs → looking for upper BB';
         else if (hasUps) mode = 'Only Ups → looking for lower BB';
-        if (accuracy) mode += ' + Accuracy (RSI+EMA)';
+        if (accuracy) mode += ' + Accuracy (exec only)';
 
         let msg = `📊 ANALYSIS — ${mode}\n`;
         const candleCounts = allData.map(d => `${d.sym.replace('R_', '')}:${d.candles.length}`).join(' ');
-        msg += `Candles: ${candleCounts}\n\n`;
+        msg += `Candles: ${candleCounts}\n`;
+        msg += `Indicators: RSI(3) >70/<30 + EMA stretch >1x + 85% range extreme (2-of-3 needed)\n\n`;
         results.forEach((r, i) => {
             const rank = i === 0 ? '🏆' : i === 1 ? '✅' : '  ';
             const bbOk = !needBB || r.totalScore > 0;
             const bbTag = bbOk ? '' : ' ❌';
-            msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}${bbTag}`;
-            if (accuracy) msg += ` | acc: ${r.accuracySignals}/${r.totalStreaks}`;
+            msg += `${rank} ${r.label}: streaks>4: ${r.over4Pct}% | avg ${r.avgMove.toFixed(2)} | BB: ${r.bbPosition}${bbTag} | ind: ${r.accuracySignals}/${r.totalStreaks}`;
             if (needBB) msg += ` [${r.totalScore}]`;
             msg += '\n';
         });
@@ -888,7 +886,7 @@ export const MultiKiller: React.FC = () => {
         const best = results[0];
         msg += `\n💡 BEST: ${best.label} (score ${best.totalScore})\n`;
         if (needBB) msg += `BB position: ${best.bbPosition}\n`;
-        if (accuracy) msg += `Accuracy signals: ${best.accuracySignals}/${best.totalStreaks} streaks confirmed\n`;
+        msg += `Indicator signals: ${best.accuracySignals}/${best.totalStreaks} streaks confirmed\n`;
         msg += `Tick streaks >4: ${best.over4Pct}%`;
 
         setAnalyzeResult(msg);
