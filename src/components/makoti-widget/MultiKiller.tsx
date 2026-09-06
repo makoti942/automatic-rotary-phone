@@ -62,18 +62,24 @@ interface PendingDelay {
 
 export const MultiKiller: React.FC = () => {
     const { transactions } = useStore();
-    const [market, setMarket] = useState('R_100');
-    const [selected, setSelected] = useState<MultiKillerStrategy[]>([]);
-    const [stakes, setStakes] = useState<Record<string, string>>({});
-    const [barriers, setBarriers] = useState<Record<string, string>>({
+    const STORAGE_KEY = 'makoti_multikiller_config';
+    const loadConfig = () => {
+        try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
+    };
+    const cfg = loadConfig();
+
+    const [market, setMarket] = useState(cfg.market || 'R_100');
+    const [selected, setSelected] = useState<MultiKillerStrategy[]>(cfg.selected || []);
+    const [stakes, setStakes] = useState<Record<string, string>>(cfg.stakes || {});
+    const [barriers, setBarriers] = useState<Record<string, string>>(cfg.barriers || {
         over: '5', under: '5', differs: '5',
     });
-    const [delays, setDelays] = useState<Record<string, number>>({
+    const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
     });
-    const [tickDirection, setTickDirection] = useState('0');
-    const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>('any');
-    const [accuracy, setAccuracy] = useState(false);
+    const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
+    const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
+    const [accuracy, setAccuracy] = useState(cfg.accuracy ?? false);
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
     const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
@@ -83,6 +89,13 @@ export const MultiKiller: React.FC = () => {
     const [analyzing, setAnalyzing] = useState(false);
     const [analyzeResult, setAnalyzeResult] = useState<string | null>(null);
     const [copied, setCopied] = useState(false);
+
+    // Persist config to localStorage
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+            market, selected, stakes, barriers, delays, tickDirection, tickDirMode, accuracy,
+        }));
+    }, [market, selected, stakes, barriers, delays, tickDirection, tickDirMode, accuracy]);
 
     const tradesRef = useRef<TradeEntry[]>([]);
     const runningRef = useRef(false);
@@ -205,7 +218,7 @@ export const MultiKiller: React.FC = () => {
 
                 // ── Store recent prices for indicator calculations ──
                 recentPricesRef.current.push(price);
-                if (recentPricesRef.current.length > 50) recentPricesRef.current.shift();
+                if (recentPricesRef.current.length > 100) recentPricesRef.current.shift();
 
                 // ── Tick delay resolution (Rise/Fall 0t/1t/2t) ──
                 const pending = pendingDelaysRef.current;
@@ -856,15 +869,15 @@ export const MultiKiller: React.FC = () => {
             const totalScore = Math.round(baseScore);
             const bbMiddle = bbPosition === '⚪ middle' || bbPosition === 'N/A';
 
-            // Strict BB filter
+            // Strict BB filter: middle BB is never allowed for Only Downs/Only Ups
             let bbPassesFilter = true;
-            if (hasDowns) {
-                bbPassesFilter = bbPosition.includes('UPPER') || bbPosition.includes('upper');
-            } else if (hasUps) {
-                bbPassesFilter = bbPosition.includes('LOWER') || bbPosition.includes('lower');
+            if (hasDowns || hasUps) {
+                bbPassesFilter = false;
+                if (hasDowns && (bbPosition.includes('UPPER') || bbPosition.includes('upper'))) bbPassesFilter = true;
+                if (hasUps && (bbPosition.includes('LOWER') || bbPosition.includes('lower'))) bbPassesFilter = true;
             }
 
-            const adjustedScore = !bbPassesFilter ? 0 : (needBB && bbMiddle ? Math.round(totalScore * 0.3) : totalScore);
+            const adjustedScore = !bbPassesFilter ? 0 : totalScore;
 
             results.push({ sym, label: `Vol ${sym.replace('R_', '')}`, maxStreak, over4Pct, upCount, downCount, avgMove, bbPosition, tickScore, bbScore, totalScore: adjustedScore, accuracySignals, totalStreaks });
         }
