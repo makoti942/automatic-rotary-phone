@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState, createPortal } from 'react';
 import { Scanner } from './scanner';
 import { MarketKiller } from './market-killer';
 import { OverUnderKiller } from './over-under-killer';
@@ -45,6 +45,8 @@ export const MakotiWidget: React.FC = () => {
     const resizing = useRef(false);
     const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
+    const tabBtnRef = useRef<HTMLButtonElement>(null);
+    const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
 
     useEffect(() => {
         const check = () => setLoggedIn(isLoggedIn());
@@ -369,16 +371,23 @@ export const MakotiWidget: React.FC = () => {
                 <div className='mw-tabs'>
                     <div className='mw-tab-dropdown' ref={tabDropRef}>
                         <button
+                            ref={tabBtnRef}
                             className='mw-tab-dropdown__btn'
-                            onClick={() => setTabOpen(o => !o)}
+                            onClick={() => {
+                                if (!tabOpen && tabBtnRef.current) {
+                                    const r = tabBtnRef.current.getBoundingClientRect();
+                                    setDropPos({ top: r.bottom + 4, left: r.left, width: r.width });
+                                }
+                                setTabOpen(o => !o);
+                            }}
                         >
                             <span>{TAB_OPTIONS.find(o => o.value === tab)?.label}</span>
                             <svg className={`mw-tab-dropdown__arrow ${tabOpen ? 'mw-tab-dropdown__arrow--open' : ''}`} viewBox='0 0 12 8' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
                                 <path d='M1 1l5 5 5-5' />
                             </svg>
                         </button>
-                        {tabOpen && (
-                            <div className='mw-tab-dropdown__list'>
+                        {tabOpen && createPortal(
+                            <div className='mw-tab-dropdown__list' style={{ position: 'fixed', top: dropPos.top, left: dropPos.left, width: dropPos.width, zIndex: 999999 }}>
                                 {TAB_OPTIONS.map(opt => (
                                     <button
                                         key={opt.value}
@@ -388,7 +397,8 @@ export const MakotiWidget: React.FC = () => {
                                         {opt.label}
                                     </button>
                                 ))}
-                            </div>
+                            </div>,
+                            document.body
                         )}
                     </div>
                 </div>
