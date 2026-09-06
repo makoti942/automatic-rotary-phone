@@ -971,24 +971,56 @@ export const MultiKiller: React.FC = () => {
         if (best.totalScore > 0) {
             setMarket(best.sym);
             setLogs(p => [`📊 Best: ${best.label} — auto-selected`, ...p].slice(0, 80));
-        } else if (hasDowns || hasUps) {
-            // No volatility at required BB — auto-switch to opposite
-            const opposite = results.find(r => {
-                if (hasDowns) return r.bbPosition.includes('LOWER') || r.bbPosition.includes('lower');
-                return r.bbPosition.includes('UPPER') || r.bbPosition.includes('upper');
-            });
-            if (opposite) {
-                const newMode = hasDowns ? 'downs' : 'ups';
-                setTickDirMode(newMode);
-                setMarket(opposite.sym);
-                setLogs(p => [`🔄 Switched to ${newMode} — ${opposite.label} at ${opposite.bbPosition}`, ...p].slice(0, 80));
-                msg += `\n\n🔄 AUTO-SWITCH: No volatility at ${hasDowns ? 'UPPER' : 'LOWER'} BB → switched to ${newMode === 'downs' ? 'Only Downs' : 'Only Ups'} → ${opposite.label}`;
+        } else {
+            // No BB match — try to auto-switch each contract independently
+            const switches: string[] = [];
+            const upperVol = results.find(r => r.bbPosition.includes('UPPER') || r.bbPosition.includes('upper'));
+            const lowerVol = results.find(r => r.bbPosition.includes('LOWER') || r.bbPosition.includes('lower'));
+
+            if (hasDowns && upperVol) {
+                setMarket(upperVol.sym);
+                switches.push(`Only Downs → ${upperVol.label} (${upperVol.bbPosition})`);
+            } else if (hasDowns && lowerVol) {
+                setTickDirMode('downs');
+                setMarket(lowerVol.sym);
+                switches.push(`Only Downs → switched to Only Ups → ${lowerVol.label} (${lowerVol.bbPosition})`);
+            }
+
+            if (hasUps && lowerVol) {
+                setMarket(lowerVol.sym);
+                switches.push(`Only Ups → ${lowerVol.label} (${lowerVol.bbPosition})`);
+            } else if (hasUps && upperVol) {
+                setTickDirMode('ups');
+                setMarket(upperVol.sym);
+                switches.push(`Only Ups → switched to Only Downs → ${upperVol.label} (${upperVol.bbPosition})`);
+            }
+
+            const hasRise = selected.includes('rise');
+            const hasFall = selected.includes('fall');
+            if (hasRise && !hasDowns && !hasUps && upperVol) {
+                setMarket(upperVol.sym);
+                switches.push(`Rise → ${upperVol.label} (${upperVol.bbPosition})`);
+            } else if (hasRise && !hasDowns && !hasUps && lowerVol) {
+                setSelected(p => p.map(s => s === 'rise' ? 'fall' : s));
+                setMarket(lowerVol.sym);
+                switches.push(`Rise → switched to Fall → ${lowerVol.label} (${lowerVol.bbPosition})`);
+            }
+            if (hasFall && !hasDowns && !hasUps && lowerVol) {
+                setMarket(lowerVol.sym);
+                switches.push(`Fall → ${lowerVol.label} (${lowerVol.bbPosition})`);
+            } else if (hasFall && !hasDowns && !hasUps && upperVol) {
+                setSelected(p => p.map(s => s === 'fall' ? 'rise' : s));
+                setMarket(upperVol.sym);
+                switches.push(`Fall → switched to Rise → ${upperVol.label} (${upperVol.bbPosition})`);
+            }
+
+            if (switches.length > 0) {
+                setLogs(p => [`🔄 ${switches.join(' | ')}`, ...p].slice(0, 80));
+                msg += `\n\n🔄 AUTO-SWITCH:\n${switches.map(s => `  • ${s}`).join('\n')}`;
                 setAnalyzeResult(msg);
             } else {
-                setLogs(p => [`⚠️ No volatility meets BB requirement for either direction`, ...p].slice(0, 80));
+                setLogs(p => [`⚠️ No volatility meets BB requirement for any direction`, ...p].slice(0, 80));
             }
-        } else {
-            setLogs(p => [`⚠️ No volatility meets BB requirement — not auto-selecting`, ...p].slice(0, 80));
         }
         setAnalyzing(false);
     }, [selected]);
