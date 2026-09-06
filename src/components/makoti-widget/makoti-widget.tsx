@@ -1,4 +1,5 @@
-import React, { useCallback, useEffect, useRef, useState, createPortal } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Scanner } from './scanner';
 import { MarketKiller } from './market-killer';
 import { OverUnderKiller } from './over-under-killer';
