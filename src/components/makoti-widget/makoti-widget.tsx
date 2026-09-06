@@ -100,9 +100,10 @@ export const MakotiWidget: React.FC = () => {
     useEffect(() => {
         if (!tabOpen) return;
         const handler = (e: MouseEvent) => {
-            if (tabDropRef.current && !tabDropRef.current.contains(e.target as Node)) {
-                setTabOpen(false);
-            }
+            const target = e.target as Node;
+            if (tabDropRef.current && tabDropRef.current.contains(target)) return;
+            if (target instanceof Element && target.closest('.mw-tab-dropdown__list')) return;
+            setTabOpen(false);
         };
         document.addEventListener('pointerdown', handler);
         return () => document.removeEventListener('pointerdown', handler);
