@@ -239,8 +239,6 @@ const ManualTrade = observer(() => {
                             );
                         })}
                     </div>
-
-                    </div>
                 </div>
             </div>
 
