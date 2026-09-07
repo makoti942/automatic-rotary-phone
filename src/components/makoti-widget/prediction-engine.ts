@@ -1,5 +1,15 @@
 export type ContractType = 'CALL' | 'PUT' | 'DIGITOVER' | 'DIGITUNDER';
 
+export interface DigitAnalysis {
+    freq: number[];
+    recentFreq: number[];
+    dominantDigit: number;
+    rareDigit: number;
+    streakLen: number;
+    streakDigit: number;
+    reversalSignal: boolean;
+}
+
 export interface TradeSignal {
     contract_type: ContractType;
     barrier: string;
@@ -63,6 +73,7 @@ export function analyzeSignals(
     prices: number[],
     contractTypes: ContractType[],
     digitFreq?: number[],
+    digitAnalysis?: DigitAnalysis,
 ): TradeSignal | null {
     if (prices.length < 5) return null;
 
@@ -124,6 +135,33 @@ export function analyzeSignals(
             }
         }
 
+        // IMPROVEMENT 6: Use analyzeDigitPsychology data
+        if (digitAnalysis) {
+            // Reversal signal: dominant digit on long streak → boost UNDER (reversal likely)
+            if (digitAnalysis.reversalSignal) {
+                underScore += 8;
+                overScore -= 5;
+            }
+            // Current digit IS the dominant digit → overrepresented, boost UNDER
+            if (lastDigit === digitAnalysis.dominantDigit) {
+                underScore += 4;
+            }
+            // Current digit IS the rare digit → underrepresented, boost OVER
+            if (lastDigit === digitAnalysis.rareDigit) {
+                overScore += 4;
+            }
+            // Recent frequency diverging from overall → digit is "heating up", boost UNDER
+            if (digitAnalysis.recentFreq.length === 10 && digitAnalysis.freq.length === 10) {
+                const recentPct = digitAnalysis.recentFreq[lastDigit] ?? 10;
+                const overallPct = digitAnalysis.freq[lastDigit] ?? 10;
+                if (recentPct > overallPct * 1.5) {
+                    underScore += 5;
+                } else if (recentPct < overallPct * 0.5) {
+                    overScore += 5;
+                }
+            }
+        }
+
         // RSI confirmation
         if (lastDigit >= 7) underScore += 3;
         if (lastDigit <= 3) overScore += 3;
@@ -131,12 +169,14 @@ export function analyzeSignals(
         if (underScore > overScore && underScore > 55) {
             const conf = Math.min(90, underScore);
             if (conf > bestConfidence) {
-                bestSignal = { contract_type: 'DIGITUNDER', barrier: String(lastDigit), confidence: conf, reason: `DIGITUNDER ${lastDigit}`, details: `Digit psychology: ${lastDigit}×${streakLen}` };
+                const psych = digitAnalysis ? ` | dom:${digitAnalysis.dominantDigit} rare:${digitAnalysis.rareDigit}${digitAnalysis.reversalSignal ? ' REV' : ''}` : '';
+                bestSignal = { contract_type: 'DIGITUNDER', barrier: String(lastDigit), confidence: conf, reason: `DIGITUNDER ${lastDigit}`, details: `Digit psychology: ${lastDigit}×${streakLen}${psych}` };
             }
         } else if (overScore > 55) {
             const conf = Math.min(90, overScore);
             if (conf > bestConfidence) {
-                bestSignal = { contract_type: 'DIGITOVER', barrier: String(lastDigit), confidence: conf, reason: `DIGITOVER ${lastDigit}`, details: `Digit psychology: ${lastDigit}×${streakLen}` };
+                const psych = digitAnalysis ? ` | dom:${digitAnalysis.dominantDigit} rare:${digitAnalysis.rareDigit}${digitAnalysis.reversalSignal ? ' REV' : ''}` : '';
+                bestSignal = { contract_type: 'DIGITOVER', barrier: String(lastDigit), confidence: conf, reason: `DIGITOVER ${lastDigit}`, details: `Digit psychology: ${lastDigit}×${streakLen}${psych}` };
             }
         }
     }

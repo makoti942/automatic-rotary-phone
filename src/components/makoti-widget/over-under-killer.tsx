@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES, openMakotiWS, MakotiWS } from './makoti-ws';
-import { analyzeSignals, recordOutcome, TradeSignal } from './prediction-engine';
+import { analyzeSignals, recordOutcome, TradeSignal, DigitAnalysis } from './prediction-engine';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { MwSelect } from './mw-select';
@@ -12,6 +12,7 @@ interface SymbolState {
     ticks: number[];
     prices: number[];
     digitFreq: number[];
+    digitAnalysis: ReturnType<typeof analyzeDigitPsychology>;
     lastSignal: string;
     wins: number;
     losses: number;
@@ -462,7 +463,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         ALL_SYMBOLS.forEach(s => {
             const sd = symbolDataRef.current[s];
             if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) return;
-            const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER'], sd.digitFreq);
+            const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER'], sd.digitFreq, sd.digitAnalysis);
             if (sig && sig.confidence > bestConf) {
                 bestConf = sig.confidence;
                 bestSym  = s;
@@ -543,6 +544,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             ALL_SYMBOLS.forEach(sym => {
                 symbolDataRef.current[sym] = {
                     ticks: [], prices: [], digitFreq: new Array(10).fill(0),
+                    digitAnalysis: analyzeDigitPsychology([]),
                     lastSignal: '—', wins: 0, losses: 0, ready: false,
                 };
             });
@@ -607,6 +609,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     recentTicks.forEach(d => { if (d >= 0 && d <= 9) counts[d]++; });
                     const total = counts.reduce((a, v) => a + v, 0);
                     sd.digitFreq = total > 0 ? counts.map(c => (c / total) * 10) : counts;
+                    sd.digitAnalysis = analyzeDigitPsychology(sd.ticks);
                     sd.ready  = sd.ticks.length >= MIN_TICKS_BEFORE_TRADE;
                     lastTickSymRef.current = sym;
                     onTickRef.current();
