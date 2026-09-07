@@ -11,6 +11,7 @@ type ContractSide = 'DIGITOVER' | 'DIGITUNDER';
 interface SymbolState {
     ticks: number[];
     prices: number[];
+    digitFreq: number[];
     lastSignal: string;
     wins: number;
     losses: number;
@@ -27,6 +28,7 @@ interface LogEntry {
 const MAX_TICKS              = 1000;
 const MIN_TICKS_BEFORE_TRADE = 30;
 const CONFIDENCE_THRESHOLD   = 75;
+const MAX_CONSECUTIVE_LOSSES = 5;
 
 const CONTRACT_SIDES: { label: string; value: ContractSide }[] = [
     { label: 'Over',  value: 'DIGITOVER' },
@@ -149,6 +151,7 @@ export const OverUnderKiller: React.FC = () => {
     const cooldownTicksRef      = useRef(0);
     const signalHistoryRef      = useRef<{ sym: string; type: string; conf: number }[]>([]);
     const lastTickSymRef        = useRef('');
+    const pausedRef             = useRef(false);
 
     /* ── Persist ──────────────────────────────────────────────────────────── */
     useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate]);
@@ -286,6 +289,7 @@ export const OverUnderKiller: React.FC = () => {
                     }
                     consecutiveLossesRef.current = 0;
                     cooldownTicksRef.current = 0;
+                    pausedRef.current = false;
                     globalStakeRef.current = stakeParsed.current;
                     addLog(`✅ WON +$${profit.toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake reset to $${stakeParsed.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'win');
                 } else {
@@ -298,15 +302,19 @@ export const OverUnderKiller: React.FC = () => {
                     }
                     addLog(`❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake $${globalStakeRef.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
 
-                    if (recoveryRef.current) {
-                        handleRecovery(sym, Math.abs(profit));
-                        return;
-                    }
+                        if (recoveryRef.current) {
+                            handleRecovery(sym, Math.abs(profit));
+                            return;
+                        }
 if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
-                        inManualRecoveryRef.current = true;
-                        addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
+                            inManualRecoveryRef.current = true;
+                            addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
+                        }
+                        if (consecutiveLossesRef.current >= MAX_CONSECUTIVE_LOSSES) {
+                            pausedRef.current = true;
+                            addLog(`🛑 PAUSED — ${MAX_CONSECUTIVE_LOSSES} consecutive losses. Click START to resume.`, 'loss');
+                        }
                     }
-                }
 
                 flushDisplay(sym);
                 globalLock.current = false;
@@ -331,10 +339,10 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (!sd) return;
 
         if (signal.contract_type === 'DIGITOVER' || signal.contract_type === 'DIGITUNDER') {
-            const last3 = sd.ticks.slice(-3);
-            if (last3.length === 3) {
-                const rising = last3[0] < last3[1] && last3[1] < last3[2];
-                const falling = last3[0] > last3[1] && last3[1] > last3[2];
+            const last5 = sd.ticks.slice(-5);
+            if (last5.length === 5) {
+                const rising = last5[0] < last5[1] && last5[1] < last5[2] && last5[2] < last5[3] && last5[3] < last5[4];
+                const falling = last5[0] > last5[1] && last5[1] > last5[2] && last5[2] > last5[3] && last5[3] > last5[4];
                 if (signal.contract_type === 'DIGITOVER' && falling) return;
                 if (signal.contract_type === 'DIGITUNDER' && rising) return;
             }
@@ -443,6 +451,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
     /* ── onTickReceived (dep: executeTrade) ─────────────────────────────── */
     const onTickReceived = useCallback(() => {
         if (!runningRef.current) return;
+        if (pausedRef.current) return;
         if (globalLock.current) return;
         if (cooldownTicksRef.current > 0) { cooldownTicksRef.current--; return; }
 
@@ -453,7 +462,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         ALL_SYMBOLS.forEach(s => {
             const sd = symbolDataRef.current[s];
             if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) return;
-            const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER']);
+            const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER'], sd.digitFreq);
             if (sig && sig.confidence > bestConf) {
                 bestConf = sig.confidence;
                 bestSym  = s;
@@ -478,9 +487,9 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 
         if (bestSym && bestSig) {
             signalHistoryRef.current.push({ sym: bestSym, type: bestSig.contract_type, conf: bestSig.confidence });
-            if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
-            const last2 = signalHistoryRef.current;
-            const confirmed = last2.length === 2 && last2.every(s => s.sym === bestSym && s.type === bestSig.contract_type);
+            if (signalHistoryRef.current.length > 3) signalHistoryRef.current.shift();
+            const last3 = signalHistoryRef.current;
+            const confirmed = last3.length === 3 && last3.every(s => s.sym === bestSym && s.type === bestSig.contract_type);
             if (confirmed) {
                 signalHistoryRef.current = [];
                 executeTrade(bestSym, bestSig).catch(() => {});
@@ -513,6 +522,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         recoveryLossThresholdRef.current = isNaN(parsedRlt) ? 1 : Math.max(0, parsedRlt);
         automateRef.current = automate;
         inManualRecoveryRef.current = false;
+        pausedRef.current = false;
         globalLock.current       = false;
         lastTickSymRef.current   = '';
         activeContractsRef.current = 0;
@@ -532,8 +542,8 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             symbolDataRef.current = {};
             ALL_SYMBOLS.forEach(sym => {
                 symbolDataRef.current[sym] = {
-                    ticks: [], prices: [], lastSignal: '—',
-                    wins: 0, losses: 0, ready: false,
+                    ticks: [], prices: [], digitFreq: new Array(10).fill(0),
+                    lastSignal: '—', wins: 0, losses: 0, ready: false,
                 };
             });
         }
@@ -591,6 +601,12 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     const digit = Number(price.toFixed(pip).slice(-1));
                     sd.ticks  = [...sd.ticks.slice(-(MAX_TICKS - 1)), digit];
                     sd.prices = [...sd.prices.slice(-(MAX_TICKS - 1)), price];
+                    // Compute digit frequency from last 200 ticks
+                    const recentTicks = sd.ticks.slice(-200);
+                    const counts = new Array(10).fill(0);
+                    recentTicks.forEach(d => { if (d >= 0 && d <= 9) counts[d]++; });
+                    const total = counts.reduce((a, v) => a + v, 0);
+                    sd.digitFreq = total > 0 ? counts.map(c => (c / total) * 10) : counts;
                     sd.ready  = sd.ticks.length >= MIN_TICKS_BEFORE_TRADE;
                     lastTickSymRef.current = sym;
                     onTickRef.current();
@@ -645,6 +661,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                         }
                         consecutiveLossesRef.current = 0;
                         cooldownTicksRef.current = 0;
+                        pausedRef.current = false;
                         globalStakeRef.current = stakeParsed.current;
                         addLog(`✅ WON +$${profit.toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake reset to $${stakeParsed.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'win');
                     } else {
@@ -837,16 +854,31 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 
             <button
                 className={`mw-btn${running ? ' mw-btn--stop' : ' mw-btn--kill'}`}
-                onClick={running ? stopKiller : startKiller}
+                onClick={() => {
+                    if (running && pausedRef.current) {
+                        pausedRef.current = false;
+                        consecutiveLossesRef.current = 0;
+                        globalStakeRef.current = stakeParsed.current;
+                        addLog('▶ Resumed after pause', 'info');
+                    } else if (running) {
+                        stopKiller();
+                    } else {
+                        startKiller();
+                    }
+                }}
             >
                 {running
-                    ? <><span className='mw-pulse' /> STOP KILLER</>
+                    ? pausedRef.current
+                        ? <><span className='mw-pulse' /> PAUSED — CLICK TO RESUME</>
+                        : <><span className='mw-pulse' /> STOP KILLER</>
                     : '⚔ KILL MARKET'}
             </button>
 
             {running && (
                 <div className='mw-killer__mode-note'>
-                    {inManualRecoveryRef.current
+                    {pausedRef.current
+                        ? <span style={{color:'#ef4444'}}>⏸ PAUSED — {MAX_CONSECUTIVE_LOSSES} consecutive losses. Click button to resume.</span>
+                        : inManualRecoveryRef.current
                         ? <span style={{color:'#f97316'}}>🔴 MANUAL RECOVERY — {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current}</span>
                         : automateRef.current
                         ? <span style={{color:'#22c55e'}}>🤖 AUTOMATE — any signal / any barrier</span>

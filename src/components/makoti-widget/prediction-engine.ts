@@ -58,7 +58,12 @@ function calcMACDHistogram(prices: number[]): { hist: number; prevHist: number }
     return { hist, prevHist };
 }
 
-export function analyzeSignals(ticks: number[], prices: number[], contractTypes: ContractType[]): TradeSignal | null {
+export function analyzeSignals(
+    ticks: number[],
+    prices: number[],
+    contractTypes: ContractType[],
+    digitFreq?: number[],
+): TradeSignal | null {
     if (prices.length < 5) return null;
 
     const d1 = prices[prices.length - 1] - prices[prices.length - 2];
@@ -94,8 +99,35 @@ export function analyzeSignals(ticks: number[], prices: number[], contractTypes:
     }
 
     if (contractTypes.some(c => c === 'DIGITOVER' || c === 'DIGITUNDER')) {
-        const underScore = 100 - (lastDigit * 10) + streakLen * 2;
-        const overScore = lastDigit * 10 + streakLen * 2;
+        // Base: last digit scoring
+        let underScore = 100 - (lastDigit * 10);
+        let overScore = lastDigit * 10;
+
+        // IMPROVEMENT 2: Reverse streak logic — long streaks favor UNDER (reversal bias)
+        // Short streaks (1-2) = neutral, long streaks (3+) = boost UNDER
+        if (streakLen >= 3) {
+            underScore += streakLen * 4;
+            overScore -= streakLen * 2;
+        } else if (streakLen === 1) {
+            overScore += 2;
+            underScore += 2;
+        }
+
+        // IMPROVEMENT 1: Use digit frequency — rare digit appearing = OVER, dominant = UNDER
+        if (digitFreq && digitFreq.length === 10) {
+            const avgFreq = 10;
+            const digitPct = digitFreq[lastDigit] ?? avgFreq;
+            if (digitPct < avgFreq * 0.7) {
+                overScore += (avgFreq - digitPct) * 1.5;
+            } else if (digitPct > avgFreq * 1.3) {
+                underScore += (digitPct - avgFreq) * 1.5;
+            }
+        }
+
+        // RSI confirmation
+        if (lastDigit >= 7) underScore += 3;
+        if (lastDigit <= 3) overScore += 3;
+
         if (underScore > overScore && underScore > 55) {
             const conf = Math.min(90, underScore);
             if (conf > bestConfidence) {
