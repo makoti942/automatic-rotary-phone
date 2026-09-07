@@ -544,3 +544,64 @@ $radius:   10px;
     opacity: 0.6;
     &:hover { opacity: 1; }
 }
+
+/* ── Exit digit highlight (3s) ─────────────────────────────── */
+.mt-bar-col--exit {
+    .mt-bar-fill { background: linear-gradient(180deg, #f59e0b, #d97706) !important; }
+    .mt-bar-lbl { color: #f59e0b !important; font-weight: 700; }
+    .mt-bar-col--exit .mt-bar-pct { color: #f59e0b; }
+}
+
+/* ── Notification popups ───────────────────────────────────── */
+.mt-notifications {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 99999;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.mt-notif {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: $bg2;
+    border: 1px solid $border;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    animation: mt-notif-in 0.2s ease-out;
+    min-width: 220px;
+    pointer-events: auto;
+
+    &--opened { border-color: rgba($accent, 0.4); }
+    &--closed { border-color: rgba($win, 0.4); }
+    &--error { border-color: rgba($loss, 0.4); }
+}
+
+.mt-notif-icon { font-size: 20px; }
+
+.mt-notif-body {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mt-notif-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: $text;
+}
+
+.mt-notif-detail {
+    font-size: 11px;
+    color: $muted;
+}
+
+@keyframes mt-notif-in {
+    from { opacity: 0; transform: translateX(20px); }
+    to   { opacity: 1; transform: translateX(0); }
+}

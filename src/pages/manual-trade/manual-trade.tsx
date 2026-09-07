@@ -34,6 +34,7 @@ const ManualTrade = observer(() => {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, tradeFlash,
+        notifications, exitDigit,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
@@ -115,12 +116,13 @@ const ManualTrade = observer(() => {
                                 const growth = digitGrowth[i] ?? 0;
                                 const isSelected = i === selectedDigit && needsTarget;
                                 const isLive = i === lastDigit;
+                                const isExit = i === exitDigit;
                                 const flashCls =
                                     tradeFlash && tradeFlash.digit === i
                                         ? tradeFlash.win
                                             ? 'mt-bar-col--win'
                                             : 'mt-bar-col--loss'
-                                        : '';
+                                        : isExit ? 'mt-bar-col--exit' : '';
                                 const isHot = i === hotIdx && digitTotal > 0;
                                 const isLow = i === lowIdx && digitTotal > 0;
                                 // Scale bars relative to the hottest digit (baseline
@@ -238,19 +240,45 @@ const ManualTrade = observer(() => {
                         })}
                     </div>
 
-                    {buyResult && (
-                        <div className='mt-result mt-result--ok'>
-                            Purchased! Contract #{buyResult.contract_id} | Payout: ${buyResult.payout.toFixed(2)}
-                            <button className='mt-dismiss' onClick={clearBuyResult}>×</button>
-                        </div>
-                    )}
-                    {buyError && (
-                        <div className='mt-result mt-result--err'>
-                            {buyError}
-                            <button className='mt-dismiss' onClick={clearBuyResult}>×</button>
-                        </div>
-                    )}
+                    </div>
                 </div>
+            </div>
+
+            {/* Notification popups */}
+            <div className='mt-notifications'>
+                {notifications.map(n => (
+                    <div key={n.key} className={`mt-notif mt-notif--${n.type}`}>
+                        {n.type === 'opened' && (
+                            <>
+                                <span className='mt-notif-icon'>📤</span>
+                                <div className='mt-notif-body'>
+                                    <span className='mt-notif-title'>Contract Opened</span>
+                                    <span className='mt-notif-detail'>#{n.contractId} | {n.contractType} | ${n.stake?.toFixed(2)}</span>
+                                </div>
+                            </>
+                        )}
+                        {n.type === 'closed' && (
+                            <>
+                                <span className='mt-notif-icon'>{n.win ? '🏆' : '💔'}</span>
+                                <div className='mt-notif-body'>
+                                    <span className='mt-notif-title'>Contract Closed</span>
+                                    <span className='mt-notif-detail'>
+                                        Exit digit: {n.exitDigit} | {n.win ? '+' : ''}${n.profit?.toFixed(2)}
+                                    </span>
+                                </div>
+                            </>
+                        )}
+                        {n.type === 'error' && (
+                            <>
+                                <span className='mt-notif-icon'>❌</span>
+                                <div className='mt-notif-body'>
+                                    <span className='mt-notif-title'>Trade Failed</span>
+                                    <span className='mt-notif-detail'>{n.message}</span>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                ))}
             </div>
         </div>
     );

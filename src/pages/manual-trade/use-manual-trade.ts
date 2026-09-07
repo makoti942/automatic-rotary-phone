@@ -45,6 +45,19 @@ export interface TradeFlash {
     key: number;
 }
 
+export interface TradeNotification {
+    type: 'opened' | 'closed' | 'error';
+    contractId?: number;
+    contractType?: string;
+    stake?: number;
+    payout?: number;
+    profit?: number;
+    exitDigit?: number;
+    win?: boolean;
+    message?: string;
+    key: number;
+}
+
 function lastDigitOfPrice(v: number | string): number {
     const digits = String(v).match(/\d/g);
     return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
@@ -123,6 +136,8 @@ export function useManualTrade() {
     const [isLoading, setIsLoading] = useState(true);
     const [error] = useState<string | null>(null);
     const [tradeFlash, setTradeFlash] = useState<TradeFlash | null>(null);
+    const [notifications, setNotifications] = useState<TradeNotification[]>([]);
+    const [exitDigit, setExitDigit] = useState<number | null>(null);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -139,6 +154,7 @@ export function useManualTrade() {
     const isBuyingRef = useRef(false);
     const pocSubReqIdRef = useRef(0);
     const pocSubIdRef = useRef<string | null>(null);
+    const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
@@ -266,6 +282,25 @@ export function useManualTrade() {
                         flashTimerRef.current = setTimeout(() => {
                             if (mountedRef.current) setTradeFlash(null);
                         }, 4000);
+                        // Highlight exit digit for 3 seconds
+                        setExitDigit(freshFlash.digit);
+                        if (exitDigitTimerRef.current) clearTimeout(exitDigitTimerRef.current);
+                        exitDigitTimerRef.current = setTimeout(() => {
+                            if (mountedRef.current) setExitDigit(null);
+                        }, 3000);
+                        // Show closed notification
+                        const profit = Number(poc.profit ?? 0);
+                        const closedNotif: TradeNotification = {
+                            type: 'closed',
+                            contractId: poc.contract_id,
+                            profit,
+                            exitDigit: freshFlash.digit,
+                            win: profit > 0,
+                            stake: poc.buy_price ? Number(poc.buy_price) : undefined,
+                            key: Date.now(),
+                        };
+                        setNotifications(p => [...p, closedNotif]);
+                        setTimeout(() => setNotifications(p => p.filter(n => n.key !== closedNotif.key)), 3000);
                     }
                     return;
                 }
@@ -465,6 +500,17 @@ export function useManualTrade() {
                     balanceAfter: Number(buyRes.buy.balance_after),
                 });
                 setBuyError(null);
+                // Show opened notification
+                const notif: TradeNotification = {
+                    type: 'opened',
+                    contractId: buyRes.buy.contract_id,
+                    contractType: mode,
+                    stake: Number(buyRes.buy.buy_price),
+                    payout: Number(buyRes.buy.payout),
+                    key: Date.now(),
+                };
+                setNotifications(p => [...p, notif]);
+                setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
                 // Make sure a settlement stream exists so the win/loss flash
                 // fires even if our subscribe was passively shared earlier.
                 if (!pocSubIdRef.current && !pocSubReqIdRef.current) {
@@ -478,6 +524,9 @@ export function useManualTrade() {
         } catch (e: any) {
             const msg = e?.error?.message ?? e?.message ?? 'Trade failed.';
             setBuyError(msg);
+            const errNotif: TradeNotification = { type: 'error', message: msg, key: Date.now() };
+            setNotifications(p => [...p, errNotif]);
+            setTimeout(() => setNotifications(p => p.filter(n => n.key !== errNotif.key)), 3000);
         } finally {
             isBuyingRef.current = false;
             if (mountedRef.current) setIsBuying(false);
@@ -498,5 +547,6 @@ export function useManualTrade() {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
+        notifications, exitDigit,
     };
 }
