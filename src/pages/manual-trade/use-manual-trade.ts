@@ -260,43 +260,41 @@ export function useManualTrade() {
                     // first load are recorded silently — only fresh settlements
                     // flash.
                     let freshFlash: TradeFlash | null = null;
+                    let settledContract: any = null;
                     list.forEach((poc: any) => {
                         if (!poc.is_sold || poc.exit_tick == null) return;
                         const key = String(poc.contract_id);
                         if (seenSoldRef.current.has(key)) return;
                         seenSoldRef.current.add(key);
-                        if (pocLoadedRef.current && mountedRef.current) {
-                            freshFlash = {
-                                digit: lastDigitOfPrice(poc.exit_tick),
-                                win: Number(poc.profit ?? 0) > 0,
-                                key: Date.now(),
-                            };
-                        }
+                        freshFlash = {
+                            digit: lastDigitOfPrice(poc.exit_tick),
+                            win: Number(poc.profit ?? 0) > 0,
+                            key: Date.now(),
+                        };
+                        settledContract = poc;
                     });
                     if (seenSoldRef.current.size > 500) seenSoldRef.current = new Set();
                     pocLoadedRef.current = true;
 
-                    if (freshFlash) {
+                    if (freshFlash && settledContract) {
                         setTradeFlash(freshFlash);
                         if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
                         flashTimerRef.current = setTimeout(() => {
                             if (mountedRef.current) setTradeFlash(null);
                         }, 4000);
-                        // Highlight exit digit for 3 seconds
                         setExitDigit(freshFlash.digit);
                         if (exitDigitTimerRef.current) clearTimeout(exitDigitTimerRef.current);
                         exitDigitTimerRef.current = setTimeout(() => {
                             if (mountedRef.current) setExitDigit(null);
                         }, 3000);
-                        // Show closed notification
-                        const profit = Number(poc.profit ?? 0);
+                        const profit = Number(settledContract.profit ?? 0);
                         const closedNotif: TradeNotification = {
                             type: 'closed',
-                            contractId: poc.contract_id,
+                            contractId: settledContract.contract_id,
                             profit,
                             exitDigit: freshFlash.digit,
                             win: profit > 0,
-                            stake: poc.buy_price ? Number(poc.buy_price) : undefined,
+                            stake: settledContract.buy_price ? Number(settledContract.buy_price) : undefined,
                             key: Date.now(),
                         };
                         setNotifications(p => [...p, closedNotif]);
