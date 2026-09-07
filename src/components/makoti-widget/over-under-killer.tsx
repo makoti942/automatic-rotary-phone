@@ -28,8 +28,11 @@ interface LogEntry {
 /* ── Constants ─────────────────────────────────────────────────────────────── */
 const MAX_TICKS              = 1000;
 const MIN_TICKS_BEFORE_TRADE = 30;
-const CONFIDENCE_THRESHOLD   = 75;
+const CONFIDENCE_THRESHOLD   = 80;
+const AUTOMATE_CONFIDENCE    = 90;
 const MAX_CONSECUTIVE_LOSSES = 5;
+const SAFE_OVER_BARRIERS     = [1, 2, 3];
+const SAFE_UNDER_BARRIERS    = [6, 7, 8];
 
 const CONTRACT_SIDES: { label: string; value: ContractSide }[] = [
     { label: 'Over',  value: 'DIGITOVER' },
@@ -333,11 +336,22 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
     /* ── executeTrade (dep: addLog, flushDisplay) ────────────────────────── */
     const executeTrade = useCallback(async (sym: string, signal: TradeSignal) => {
         if (!runningRef.current) return;
-        const threshold = inManualRecoveryRef.current ? CONFIDENCE_THRESHOLD + 5 : CONFIDENCE_THRESHOLD;
+        const threshold = inManualRecoveryRef.current
+            ? CONFIDENCE_THRESHOLD + 5
+            : automateRef.current
+                ? AUTOMATE_CONFIDENCE
+                : CONFIDENCE_THRESHOLD;
         if (!signal || signal.confidence < threshold) return;
 
         const sd = symbolDataRef.current[sym];
         if (!sd) return;
+
+        // Automate: only trade safe barriers (OVER 1-3, UNDER 6-8)
+        if (automateRef.current) {
+            const barrier = Number(signal.barrier || predictionDigitRef.current);
+            if (signal.contract_type === 'DIGITOVER' && !SAFE_OVER_BARRIERS.includes(barrier)) return;
+            if (signal.contract_type === 'DIGITUNDER' && !SAFE_UNDER_BARRIERS.includes(barrier)) return;
+        }
 
         if (signal.contract_type === 'DIGITOVER' || signal.contract_type === 'DIGITUNDER') {
             const last5 = sd.ticks.slice(-5);
