@@ -374,6 +374,18 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             if (winRate < 0.4) return;
         }
 
+        // Final check: if losing digits dominate recent ticks, skip
+        if (sd.digitFreq && sd.digitFreq.length === 10) {
+            const b = Number(signal.barrier);
+            if (signal.contract_type === 'DIGITOVER') {
+                const losingPct = sd.digitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
+                if (losingPct > 60) return;
+            } else {
+                const losingPct = sd.digitFreq.slice(b).reduce((a, v) => a + v, 0);
+                if (losingPct > 60) return;
+            }
+        }
+
         if (signal.contract_type === 'DIGITOVER' || signal.contract_type === 'DIGITUNDER') {
             const last5 = sd.ticks.slice(-5);
             if (last5.length === 5) {
