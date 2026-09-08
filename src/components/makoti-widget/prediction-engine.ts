@@ -115,23 +115,27 @@ export function analyzeSignals(
         let overScore = lastDigit * 10;
 
         // IMPROVEMENT: Losing digit frequency check
-        // For OVER X: digits 0-X are losing digits. If they dominate recent ticks, block OVER.
-        // For UNDER X: digits X-9 are losing digits. If they dominate, block UNDER.
+        // Threshold scales with number of losing digits (fewer digits = lower threshold)
         if (digitFreq && digitFreq.length === 10) {
             const losingDigitsOver = digitFreq.slice(0, lastDigit + 1).reduce((a, b) => a + b, 0);
             const losingDigitsUnder = digitFreq.slice(lastDigit).reduce((a, b) => a + b, 0);
-            // If losing digits > 60% of recent ticks, penalize heavily
-            if (losingDigitsOver > 60) {
+            const numLosingOver = lastDigit + 1;
+            const numLosingUnder = 10 - lastDigit;
+            const expectedOver = numLosingOver * 10;
+            const expectedUnder = numLosingUnder * 10;
+            const threshOver = Math.min(70, expectedOver * 1.8);
+            const threshUnder = Math.min(70, expectedUnder * 1.8);
+
+            if (losingDigitsOver > threshOver) {
                 overScore -= 20;
             }
-            if (losingDigitsUnder > 60) {
+            if (losingDigitsUnder > threshUnder) {
                 underScore -= 20;
             }
-            // If losing digits > 70%, block entirely (return 0 confidence)
-            if (losingDigitsOver > 70 && overScore > underScore) {
+            if (losingDigitsOver > threshOver + 10 && overScore > underScore) {
                 return null;
             }
-            if (losingDigitsUnder > 70 && underScore > overScore) {
+            if (losingDigitsUnder > threshUnder + 10 && underScore > overScore) {
                 return null;
             }
         }

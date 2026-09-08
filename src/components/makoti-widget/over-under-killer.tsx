@@ -379,10 +379,12 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             const b = Number(signal.barrier);
             if (signal.contract_type === 'DIGITOVER') {
                 const losingPct = sd.digitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
-                if (losingPct > 60) return;
+                const expected = (b + 1) * 10;
+                if (losingPct > Math.min(70, expected * 1.8)) return;
             } else {
                 const losingPct = sd.digitFreq.slice(b).reduce((a, v) => a + v, 0);
-                if (losingPct > 60) return;
+                const expected = (10 - b) * 10;
+                if (losingPct > Math.min(70, expected * 1.8)) return;
             }
         }
 
