@@ -385,14 +385,36 @@ class DBot {
     }
 
     /**
-     * Resumes a paused bot interpreter.
+     * Resumes by destroying the paused interpreter and starting fresh.
+     * The JS-Interpreter's async callback chain cannot be reliably resumed
+     * after pause because callback(rv) resolves the internal step but loop()
+     * is never called, leaving corrupted state. A fresh restart is required.
      */
     resumeBot() {
-        if (this.interpreter && this.interpreter.resume) {
-            this.interpreter.resume();
-            this.is_bot_running = true;
-            api_base.setIsRunning(true);
+        // Synchronously destroy the old interpreter
+        if (this.interpreter) {
+            try {
+                const scope = this.interpreter.bot?.tradeEngine?.$scope;
+                if (scope) {
+                    scope.paused_ = false;
+                    scope.stopped = true;
+                }
+                const interp = this.interpreter.getInterpreter?.();
+                if (interp) {
+                    interp.paused_ = false;
+                }
+                api_base.clearSubscriptions();
+            } catch (e) {
+                // Ignore cleanup errors
+            }
+            this.is_bot_running = false;
+            forgetAccumulatorsProposalRequest(this);
+            this.interpreter = null;
         }
+
+        // Fresh interpreter + run
+        this.interpreter = Interpreter();
+        this.runBot();
     }
 
     /**
