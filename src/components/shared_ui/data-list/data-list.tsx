@@ -199,7 +199,7 @@ const DataList = React.memo(
                                                     : getRowSize || 0
                                             }
                                             rowRenderer={rowRenderer}
-                                            scrollingResetTimeInterval={0}
+                                            scrollingResetTimeInterval={150}
                                             width={width}
                                             {...(isDesktop()
                                                 ? { scrollTop: scroll_top, autoHeight: true }

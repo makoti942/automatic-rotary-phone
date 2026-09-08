@@ -67,7 +67,6 @@
         width: 35rem;
         background-color: var(--general-section-2);
         transition: height 0.25s ease, min-height 0.25s ease;
-        will-change: height;
 
         @include mobile-or-tablet-screen {
             margin: 0;
