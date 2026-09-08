@@ -408,6 +408,26 @@ $mw-radius:   10px;
 
     .mw-killer__fields {
         flex-direction: column;
+        gap: 4px;
+    }
+
+    .mw-killer__fields .mw-field {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+    }
+
+    .mw-killer__fields .mw-field .mw-label {
+        margin-bottom: 0;
+        white-space: nowrap;
+        min-width: 80px;
+    }
+
+    .mw-killer__fields .mw-field .mw-input,
+    .mw-killer__fields .mw-field .mw-sel {
+        flex: 1;
+        min-width: 0;
     }
 
     .mw-types-row {
@@ -417,6 +437,45 @@ $mw-radius:   10px;
     .mw-type-chip {
         padding: 6px 10px;
         font-size: 9px;
+    }
+
+    .mw-killer {
+        padding: 10px;
+        gap: 8px;
+    }
+
+    .mw-killer__vh {
+        padding: 4px 0;
+        gap: 4px;
+    }
+
+    .mw-killer__vh-toggle {
+        font-size: 10px;
+        gap: 6px;
+    }
+
+    .mw-btn {
+        padding: 8px;
+        font-size: 11px;
+    }
+
+    .mw-killer__mode-note {
+        font-size: 9px;
+        padding: 3px 6px;
+    }
+
+    .mw-killer__stats {
+        padding: 8px 10px;
+        gap: 8px;
+    }
+
+    .mw-killer__pnl {
+        font-size: 18px;
+    }
+
+    .mw-killer__meta {
+        font-size: 9px;
+        gap: 6px;
     }
 }
 
@@ -450,8 +509,8 @@ $mw-radius:   10px;
     -moz-appearance: textfield;
 
     @media (max-width: 480px) {
-        font-size: 14px;
-        padding: 10px 12px;
+        font-size: 12px;
+        padding: 7px 8px;
     }
 }
 
