@@ -61,6 +61,7 @@ const getStakeVariableCandidates = () => {
 export default Engine =>
     class Purchase extends Engine {
         async purchase(contract_type) {
+            if (this.$scope?.paused_) return;
             if (this.vh_state.enabled && this.vh_state.is_virtual) {
                 return this.virtualPurchase(contract_type);
             }
@@ -427,6 +428,7 @@ export default Engine =>
         }
 
         async realPurchase(contract_type) {
+            if (this.$scope?.paused_) return;
             this.setInterpreterVariable('BinaryBotPrivateLastTradeVirtual', false);
 
             if (this.store.getState().scope !== BEFORE_PURCHASE) {
