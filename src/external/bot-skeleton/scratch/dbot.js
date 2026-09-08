@@ -374,14 +374,12 @@ class DBot {
     }
 
     /**
-     * Pauses the bot. Terminates the current session to stop all trades
-     * and subscriptions immediately.
+     * Pauses the bot interpreter. In-flight trades complete naturally,
+     * but no new trades are initiated.
      */
     pauseBot() {
-        if (this.interpreter) {
-            if (this.interpreter.terminateSession) {
-                this.interpreter.terminateSession();
-            }
+        if (this.interpreter && this.interpreter.pause) {
+            this.interpreter.pause();
             this.is_bot_running = false;
             api_base.setIsRunning(false);
         }

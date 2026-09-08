@@ -250,9 +250,7 @@ export default class RunPanelStore {
 
     onPauseBotClick = () => {
         this.dbot.pauseBot();
-        this.is_paused = false;
-        this.setContractStage(contract_stages.NOT_RUNNING);
-        this.setIsRunning(false);
+        this.is_paused = true;
     };
 
     onResumeBotClick = () => {
