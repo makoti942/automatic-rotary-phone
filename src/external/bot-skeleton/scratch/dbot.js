@@ -386,11 +386,12 @@ class DBot {
     }
 
     /**
-     * Resumes a paused bot. Restarts with fresh code from the workspace
-     * so any config changes made while paused take effect.
+     * Resumes a paused bot. Creates a fresh interpreter with new code
+     * from the workspace so any config changes made while paused take effect.
      */
     resumeBot() {
         this.is_bot_running = false;
+        this.interpreter = Interpreter();
         this.runBot();
     }
 
