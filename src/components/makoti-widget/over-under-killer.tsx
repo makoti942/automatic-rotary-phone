@@ -12,6 +12,7 @@ interface SymbolState {
     ticks: number[];
     prices: number[];
     digitFreq: number[];
+    recentDigitFreq: number[];
     digitAnalysis: ReturnType<typeof analyzeDigitPsychology>;
     lastSignal: string;
     wins: number;
@@ -374,15 +375,15 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             if (winRate < 0.4) return;
         }
 
-        // Final check: if losing digits dominate recent ticks, skip
-        if (sd.digitFreq && sd.digitFreq.length === 10) {
+        // Final check: if losing digits dominate recent 50 ticks, skip
+        if (sd.recentDigitFreq && sd.recentDigitFreq.length === 10) {
             const b = Number(signal.barrier);
             if (signal.contract_type === 'DIGITOVER') {
-                const losingPct = sd.digitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
+                const losingPct = sd.recentDigitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
                 const expected = (b + 1) * 10;
                 if (losingPct > Math.min(70, expected * 1.8)) return;
             } else {
-                const losingPct = sd.digitFreq.slice(b).reduce((a, v) => a + v, 0);
+                const losingPct = sd.recentDigitFreq.slice(b).reduce((a, v) => a + v, 0);
                 const expected = (10 - b) * 10;
                 if (losingPct > Math.min(70, expected * 1.8)) return;
             }
@@ -594,7 +595,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             symbolDataRef.current = {};
             ALL_SYMBOLS.forEach(sym => {
                 symbolDataRef.current[sym] = {
-                    ticks: [], prices: [], digitFreq: new Array(10).fill(0),
+                    ticks: [], prices: [], digitFreq: new Array(10).fill(0), recentDigitFreq: new Array(10).fill(0),
                     digitAnalysis: analyzeDigitPsychology([]),
                     lastSignal: '—', wins: 0, losses: 0, ready: false,
                 };
@@ -654,12 +655,18 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     const digit = Number(price.toFixed(pip).slice(-1));
                     sd.ticks  = [...sd.ticks.slice(-(MAX_TICKS - 1)), digit];
                     sd.prices = [...sd.prices.slice(-(MAX_TICKS - 1)), price];
-                    // Compute digit frequency from last 200 ticks
-                    const recentTicks = sd.ticks.slice(-200);
+                    // Compute digit frequency from last 50 ticks (live) and 200 ticks (overall)
+                    const recentTicks = sd.ticks.slice(-50);
                     const counts = new Array(10).fill(0);
                     recentTicks.forEach(d => { if (d >= 0 && d <= 9) counts[d]++; });
                     const total = counts.reduce((a, v) => a + v, 0);
-                    sd.digitFreq = total > 0 ? counts.map(c => (c / total) * 10) : counts;
+                    sd.recentDigitFreq = total > 0 ? counts.map(c => (c / total) * 10) : counts;
+
+                    const allTicks = sd.ticks.slice(-200);
+                    const allCounts = new Array(10).fill(0);
+                    allTicks.forEach(d => { if (d >= 0 && d <= 9) allCounts[d]++; });
+                    const allTotal = allCounts.reduce((a, v) => a + v, 0);
+                    sd.digitFreq = allTotal > 0 ? allCounts.map(c => (c / allTotal) * 10) : allCounts;
                     sd.digitAnalysis = analyzeDigitPsychology(sd.ticks);
                     sd.ready  = sd.ticks.length >= MIN_TICKS_BEFORE_TRADE;
                     lastTickSymRef.current = sym;
