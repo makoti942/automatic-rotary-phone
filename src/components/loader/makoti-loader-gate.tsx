@@ -5,6 +5,7 @@ const MIN_DISPLAY_MS = 5000;
 
 let gateShowTime = 0;
 let gateDone = false;
+let gateHidden = false;
 let gateListeners: (() => void)[] = [];
 
 export function markLoaderDone() {
@@ -17,9 +18,8 @@ interface MakotiLoaderGateProps {
 }
 
 export default function MakotiLoaderGate({ message = 'Loading' }: MakotiLoaderGateProps) {
-    const [show, setShow] = useState(true);
+    const [show, setShow] = useState(!gateHidden);
     const startTimeRef = useRef(gateShowTime || Date.now());
-    const doneRef = useRef(gateDone);
 
     if (!gateShowTime) {
         gateShowTime = Date.now();
@@ -27,17 +27,26 @@ export default function MakotiLoaderGate({ message = 'Loading' }: MakotiLoaderGa
     }
 
     useEffect(() => {
+        if (gateHidden) {
+            setShow(false);
+            return;
+        }
+
         const check = () => {
             const elapsed = Date.now() - startTimeRef.current;
             if (gateDone && elapsed >= MIN_DISPLAY_MS) {
+                gateHidden = true;
                 setShow(false);
             } else if (gateDone) {
                 const remaining = MIN_DISPLAY_MS - elapsed;
-                setTimeout(() => setShow(false), remaining);
+                setTimeout(() => {
+                    gateHidden = true;
+                    setShow(false);
+                }, remaining);
             }
         };
 
-        if (doneRef.current) {
+        if (gateDone) {
             check();
             return;
         }
