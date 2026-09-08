@@ -233,17 +233,8 @@
             &--mobile {
                 display: flex;
                 flex-direction: column;
-                top: 0;
-                bottom: 0;
-                height: auto;
-                position: fixed;
-                width: 100vw;
-                padding: 0;
-
-                /* Fix for iOS devices to respect safe area */
-                @supports (-webkit-touch-callout: none) {
-                    bottom: env(safe-area-inset-bottom, 0);
-                }
+                height: 100%;
+                overflow-y: auto;
             }
 
             &--summary-tab {
