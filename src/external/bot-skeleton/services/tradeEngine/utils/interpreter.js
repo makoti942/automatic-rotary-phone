@@ -85,9 +85,7 @@ const Interpreter = () => {
             func(...function_args.map(arg => js_interpreter.pseudoToNative(arg)))
                 .then(rv => {
                     callback(js_interpreter.nativeToPseudo(rv));
-                    if (!interpreter.paused_) {
-                        loop();
-                    }
+                    loop();
                 })
                 .catch(e => {
                     // e.error for errors get from API, e for code errors
