@@ -392,7 +392,9 @@ class DBot {
     resumeBot() {
         this.is_bot_running = false;
         this.interpreter = Interpreter();
-        this.runBot();
+        this.interpreter.bot.tradeEngine.watchTicks(this.symbol).then(() => {
+            this.runBot();
+        });
     }
 
     /**
