@@ -391,7 +391,7 @@ class DBot {
      * is never called, leaving corrupted state. A fresh restart is required.
      */
     resumeBot() {
-        // Synchronously destroy the old interpreter
+        // Destroy the old interpreter
         if (this.interpreter) {
             try {
                 const scope = this.interpreter.bot?.tradeEngine?.$scope;
@@ -404,6 +404,7 @@ class DBot {
                     interp.paused_ = false;
                 }
                 api_base.clearSubscriptions();
+                this.interpreter.unsubscribeFromTicksService().catch(() => {});
             } catch (e) {
                 // Ignore cleanup errors
             }
