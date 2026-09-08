@@ -275,16 +275,18 @@ class DBot {
         api_base.is_stopping = false;
 
         try {
-            api_base.is_stopping = false;
             const code = this.generateCode();
-            if (!this.interpreter.bot.tradeEngine.checkTicksPromiseExists()) this.interpreter = Interpreter();
+
+            this.interpreter = Interpreter();
 
             this.is_bot_running = true;
 
             api_base.setIsRunning(true);
-            this.interpreter.run(code).catch(error => {
-                globalObserver.emit('Error', error);
-                this.stopBot();
+            this.interpreter.bot.tradeEngine.watchTicks(this.symbol).then(() => {
+                this.interpreter.run(code).catch(error => {
+                    globalObserver.emit('Error', error);
+                    this.stopBot();
+                });
             });
         } catch (error) {
             globalObserver.emit('Error', error);
@@ -374,8 +376,8 @@ class DBot {
     }
 
     /**
-     * Pauses the bot interpreter. In-flight trades complete naturally,
-     * but no new trades are initiated.
+     * Pauses the bot interpreter. Sets paused flags so purchase() returns
+     * early (no new trades). In-flight trades complete naturally.
      */
     pauseBot() {
         if (this.interpreter && this.interpreter.pause) {
@@ -386,15 +388,14 @@ class DBot {
     }
 
     /**
-     * Resumes a paused bot. Creates a fresh interpreter with new code
-     * from the workspace so any config changes made while paused take effect.
+     * Resumes a paused bot interpreter.
      */
     resumeBot() {
-        this.is_bot_running = false;
-        this.interpreter = Interpreter();
-        this.interpreter.bot.tradeEngine.watchTicks(this.symbol).then(() => {
-            this.runBot();
-        });
+        if (this.interpreter && this.interpreter.resume) {
+            this.interpreter.resume();
+            this.is_bot_running = true;
+            api_base.setIsRunning(true);
+        }
     }
 
     /**
