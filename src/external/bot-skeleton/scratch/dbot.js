@@ -374,11 +374,14 @@ class DBot {
     }
 
     /**
-     * Pauses the bot interpreter. Execution can be resumed later.
+     * Pauses the bot. Terminates the current session to stop all trades
+     * and subscriptions immediately.
      */
     pauseBot() {
-        if (this.interpreter && this.interpreter.pause) {
-            this.interpreter.pause();
+        if (this.interpreter) {
+            if (this.interpreter.terminateSession) {
+                this.interpreter.terminateSession();
+            }
             this.is_bot_running = false;
             api_base.setIsRunning(false);
         }
@@ -389,9 +392,6 @@ class DBot {
      * so any config changes made while paused take effect.
      */
     resumeBot() {
-        if (this.interpreter && this.interpreter.resume) {
-            this.interpreter.terminateSession();
-        }
         this.is_bot_running = false;
         this.runBot();
     }
