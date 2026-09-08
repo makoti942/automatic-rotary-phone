@@ -42,7 +42,7 @@ export const MakotiWidget: React.FC = () => {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
     const [tabOpen, setTabOpen] = useState(false);
-    const [winSize, setWinSize] = useState({ w: 300, h: 420 });
+    const [winSize, setWinSize] = useState({ w: 260, h: 300 });
     const resizing = useRef(false);
     const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
