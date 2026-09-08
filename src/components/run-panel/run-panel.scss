@@ -196,7 +196,7 @@
 
         .dc-tabs {
             min-height: 0;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .dc-tabs__content {
@@ -206,7 +206,7 @@
 
         .dc-tabs {
             &__item {
-                overflow: hidden;
+                overflow: visible;
                 text-overflow: ellipsis;
                 padding: 0 0.8rem;
             }
