@@ -150,12 +150,13 @@ export const OverUnderKiller: React.FC = () => {
     const globalLock            = useRef(false);
     const activeContractsRef    = useRef(0);
     const globalStakeRef        = useRef(0.35);
-    const contractMapRef        = useRef<Map<string, { symbol: string; stake: number; strategyNames: string[]; duration: number }>>(new Map());
+    const contractMapRef        = useRef<Map<string, { symbol: string; stake: number; strategyNames: string[]; duration: number; barrier: string }>>(new Map());
     const consecutiveLossesRef  = useRef(0);
     const cooldownTicksRef      = useRef(0);
     const signalHistoryRef      = useRef<{ sym: string; type: string; conf: number }[]>([]);
     const lastTickSymRef        = useRef('');
     const pausedRef             = useRef(false);
+    const barrierHistoryRef     = useRef<Map<string, { wins: number; losses: number }>>(new Map());
 
     /* ── Persist ──────────────────────────────────────────────────────────── */
     useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate]);
@@ -272,12 +273,24 @@ export const OverUnderKiller: React.FC = () => {
                 if (!entry) return;
                 contractMapRef.current.delete(cid);
 
-                const { symbol: sym, stake: tradeStake, strategyNames, duration } = entry;
+                const { symbol: sym, stake: tradeStake, strategyNames, duration, barrier } = entry;
                 const sd = symbolDataRef.current[sym];
                 if (!sd) return;
 
                 const profit = Number(c.profit);
                 const won = profit >= 0;
+
+                // Track barrier win rate
+                const barrierKey = `${sym}_${barrier}`;
+                if (!barrierHistoryRef.current.has(barrierKey)) barrierHistoryRef.current.set(barrierKey, { wins: 0, losses: 0 });
+                const bh = barrierHistoryRef.current.get(barrierKey)!;
+                if (won) bh.wins++; else bh.losses++;
+                // Keep only last 20 trades per barrier
+                if (bh.wins + bh.losses > 20) {
+                    const ratio = bh.wins / (bh.wins + bh.losses);
+                    bh.wins = Math.round(ratio * 10);
+                    bh.losses = 10 - bh.wins;
+                }
 
                 strategyNames.forEach(n => recordOutcome(n, won));
 
@@ -353,6 +366,14 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             if (signal.contract_type === 'DIGITUNDER' && !SAFE_UNDER_BARRIERS.includes(barrier)) return;
         }
 
+        // Skip if barrier win rate is too low (< 40% after 5+ trades)
+        const barrierKey = `${sym}_${signal.barrier}`;
+        const bh = barrierHistoryRef.current.get(barrierKey);
+        if (bh && (bh.wins + bh.losses) >= 5) {
+            const winRate = bh.wins / (bh.wins + bh.losses);
+            if (winRate < 0.4) return;
+        }
+
         if (signal.contract_type === 'DIGITOVER' || signal.contract_type === 'DIGITUNDER') {
             const last5 = sd.ticks.slice(-5);
             if (last5.length === 5) {
@@ -406,7 +427,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 const response = await sendViaNewSystemWithPromise({ buy: 1, price: tradeStake, parameters: params });
                 const contractId = response?.buy?.contract_id ?? response?.contract_id;
                 if (contractId) {
-                    contractMapRef.current.set(String(contractId), { symbol: sym, stake: tradeStake, strategyNames, duration });
+                    contractMapRef.current.set(String(contractId), { symbol: sym, stake: tradeStake, strategyNames, duration, barrier: String(actualBarrier) });
                     sd.lastSignal = label;
                     addLog(`🎯 [${confidence.toFixed(0)}%] ${SYMBOL_LABELS[sym]}: ${label} D${duration} @ $${tradeStake} — ${reason}`, 'trade');
                     addLog(`Contract ${contractId} open on ${SYMBOL_LABELS[sym]}`, 'info');
@@ -440,7 +461,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             wsRef.current.send({ buy: 1, price: tradeStake, parameters: params });
             sd.lastSignal = label;
             addLog(`🎯 [${confidence.toFixed(0)}%] ${SYMBOL_LABELS[sym]}: ${label} D${duration} @ $${tradeStake} — ${reason}`, 'trade');
-            contractMapRef.current.set(sym + Date.now(), { symbol: sym, stake: tradeStake, strategyNames, duration });
+            contractMapRef.current.set(sym + Date.now(), { symbol: sym, stake: tradeStake, strategyNames, duration, barrier: String(actualBarrier) });
             flushDisplay(sym);
             try {
                 transactions.onBotContractEvent({
@@ -502,9 +523,9 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 
         if (bestSym && bestSig) {
             signalHistoryRef.current.push({ sym: bestSym, type: bestSig.contract_type, conf: bestSig.confidence });
-            if (signalHistoryRef.current.length > 3) signalHistoryRef.current.shift();
-            const last3 = signalHistoryRef.current;
-            const confirmed = last3.length === 3 && last3.every(s => s.sym === bestSym && s.type === bestSig.contract_type);
+            if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
+            const last2 = signalHistoryRef.current;
+            const confirmed = last2.length === 2 && last2.every(s => s.sym === bestSym && s.type === bestSig.contract_type);
             if (confirmed) {
                 signalHistoryRef.current = [];
                 executeTrade(bestSym, bestSig).catch(() => {});
@@ -643,7 +664,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     if (!data.buy) { globalLock.current = false; activeContractsRef.current = 0; setActiveContracts(0); return; }
                     const cid = String(data.buy.contract_id);
                     if (!cid || cid === 'undefined') { globalLock.current = false; activeContractsRef.current = 0; setActiveContracts(0); return; }
-                    contractMapRef.current.set(cid, { symbol: sym, stake: globalStakeRef.current, strategyNames: ['ensemble'], duration: 1 });
+                    contractMapRef.current.set(cid, { symbol: sym, stake: globalStakeRef.current, strategyNames: ['ensemble'], duration: 1, barrier: String(data.echo_req?.parameters?.barrier ?? predictionDigitRef.current) });
                     addLog(`Contract ${cid} open on ${SYMBOL_LABELS[sym]}`, 'info');
                     break;
                 }
@@ -655,12 +676,24 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     if (!entry) return;
                     contractMapRef.current.delete(cid);
 
-                    const { symbol: sym, stake: tradeStake, strategyNames, duration } = entry;
+                    const { symbol: sym, stake: tradeStake, strategyNames, duration, barrier } = entry;
                     const sd = symbolDataRef.current[sym];
                     if (!sd) return;
 
                     const profit = Number(c.profit);
                     const won = profit >= 0;
+
+                    // Track barrier win rate
+                    const barrierKey = `${sym}_${barrier}`;
+                    if (!barrierHistoryRef.current.has(barrierKey)) barrierHistoryRef.current.set(barrierKey, { wins: 0, losses: 0 });
+                    const bh = barrierHistoryRef.current.get(barrierKey)!;
+                    if (won) bh.wins++; else bh.losses++;
+                    if (bh.wins + bh.losses > 20) {
+                        const ratio = bh.wins / (bh.wins + bh.losses);
+                        bh.wins = Math.round(ratio * 10);
+                        bh.losses = 10 - bh.wins;
+                    }
+
                     strategyNames.forEach(n => recordOutcome(n, won));
 
                     pnlRef.current += profit;

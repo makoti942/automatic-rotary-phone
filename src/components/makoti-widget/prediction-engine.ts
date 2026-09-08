@@ -114,6 +114,28 @@ export function analyzeSignals(
         let underScore = 100 - (lastDigit * 10);
         let overScore = lastDigit * 10;
 
+        // IMPROVEMENT: Losing digit frequency check
+        // For OVER X: digits 0-X are losing digits. If they dominate recent ticks, block OVER.
+        // For UNDER X: digits X-9 are losing digits. If they dominate, block UNDER.
+        if (digitFreq && digitFreq.length === 10) {
+            const losingDigitsOver = digitFreq.slice(0, lastDigit + 1).reduce((a, b) => a + b, 0);
+            const losingDigitsUnder = digitFreq.slice(lastDigit).reduce((a, b) => a + b, 0);
+            // If losing digits > 60% of recent ticks, penalize heavily
+            if (losingDigitsOver > 60) {
+                overScore -= 20;
+            }
+            if (losingDigitsUnder > 60) {
+                underScore -= 20;
+            }
+            // If losing digits > 70%, block entirely (return 0 confidence)
+            if (losingDigitsOver > 70 && overScore > underScore) {
+                return null;
+            }
+            if (losingDigitsUnder > 70 && underScore > overScore) {
+                return null;
+            }
+        }
+
         // IMPROVEMENT 2: Reverse streak logic — long streaks favor UNDER (reversal bias)
         // Short streaks (1-2) = neutral, long streaks (3+) = boost UNDER
         if (streakLen >= 3) {
