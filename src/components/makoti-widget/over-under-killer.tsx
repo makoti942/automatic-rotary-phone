@@ -381,11 +381,19 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             if (signal.contract_type === 'DIGITOVER') {
                 const losingPct = sd.recentDigitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
                 const expected = (b + 1) * 10;
-                if (losingPct > Math.min(70, expected * 1.8)) return;
+                const thresh = Math.min(65, expected * 1.3);
+                if (losingPct > thresh) {
+                    addLog(`🚫 BLOCKED OVER ${b} — losing digits 0-${b} at ${losingPct.toFixed(0)}% (threshold ${thresh.toFixed(0)}%)`, 'loss');
+                    return;
+                }
             } else {
                 const losingPct = sd.recentDigitFreq.slice(b).reduce((a, v) => a + v, 0);
                 const expected = (10 - b) * 10;
-                if (losingPct > Math.min(70, expected * 1.8)) return;
+                const thresh = Math.min(65, expected * 1.3);
+                if (losingPct > thresh) {
+                    addLog(`🚫 BLOCKED UNDER ${b} — losing digits ${b}-9 at ${losingPct.toFixed(0)}% (threshold ${thresh.toFixed(0)}%)`, 'loss');
+                    return;
+                }
             }
         }
 

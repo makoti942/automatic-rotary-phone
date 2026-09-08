@@ -123,8 +123,8 @@ export function analyzeSignals(
             const numLosingUnder = 10 - lastDigit;
             const expectedOver = numLosingOver * 10;
             const expectedUnder = numLosingUnder * 10;
-            const threshOver = Math.min(70, expectedOver * 1.8);
-            const threshUnder = Math.min(70, expectedUnder * 1.8);
+            const threshOver = Math.min(65, expectedOver * 1.3);
+            const threshUnder = Math.min(65, expectedUnder * 1.3);
 
             if (losingDigitsOver > threshOver) {
                 overScore -= 20;
