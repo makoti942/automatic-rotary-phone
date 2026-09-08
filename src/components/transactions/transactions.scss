@@ -134,9 +134,13 @@
 
     &__content {
         height: calc(100% - 82px);
+        flex: 1;
+        min-height: 0;
 
         &--mobile {
-            height: calc(100% - 4.2rem);
+            height: auto;
+            flex: 1;
+            min-height: 0;
             overflow-y: auto;
         }
     }

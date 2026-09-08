@@ -232,15 +232,17 @@
 
             &--mobile {
                 display: flex;
-                height: var(--drawer-content-height-mobile);
+                flex-direction: column;
+                top: 0;
+                bottom: 0;
+                height: auto;
                 position: fixed;
-                bottom: 15.7rem;
                 width: 100vw;
-                padding: 0.4rem 0;
+                padding: 0;
 
-                /* Fix for iOS devices to prevent tab content overlap with bottom controls */
+                /* Fix for iOS devices to respect safe area */
                 @supports (-webkit-touch-callout: none) {
-                    bottom: calc(15.7rem + env(safe-area-inset-bottom, 0));
+                    bottom: env(safe-area-inset-bottom, 0);
                 }
             }
 
