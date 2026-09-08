@@ -412,22 +412,19 @@ $mw-radius:   10px;
     }
 
     .mw-killer__fields .mw-field {
-        flex-direction: row;
-        align-items: center;
-        justify-content: space-between;
-        gap: 6px;
+        gap: 2px;
     }
 
     .mw-killer__fields .mw-field .mw-label {
         margin-bottom: 0;
-        min-width: 0;
-        flex-shrink: 0;
         font-size: 9px;
         line-height: 1.2;
     }
 
     .mw-killer__fields .mw-field .mw-input,
     .mw-killer__fields .mw-field .mw-sel {
+        width: 100%;
+    }
         flex: 1;
         min-width: 0;
     }
