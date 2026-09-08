@@ -276,17 +276,14 @@ class DBot {
 
         try {
             const code = this.generateCode();
-
-            this.interpreter = Interpreter();
+            if (!this.interpreter.bot.tradeEngine.checkTicksPromiseExists()) this.interpreter = Interpreter();
 
             this.is_bot_running = true;
 
             api_base.setIsRunning(true);
-            this.interpreter.bot.tradeEngine.watchTicks(this.symbol).then(() => {
-                this.interpreter.run(code).catch(error => {
-                    globalObserver.emit('Error', error);
-                    this.stopBot();
-                });
+            this.interpreter.run(code).catch(error => {
+                globalObserver.emit('Error', error);
+                this.stopBot();
             });
         } catch (error) {
             globalObserver.emit('Error', error);
@@ -411,7 +408,7 @@ class DBot {
         this.is_bot_running = false;
         this.interpreter = null;
         this.interpreter = Interpreter();
-        await this.interpreter.bot.tradeEngine.watchTicks(this.symbol);
+        this.interpreter.bot.tradeEngine.watchTicks(this.symbol);
         forgetAccumulatorsProposalRequest(this);
     }
 
