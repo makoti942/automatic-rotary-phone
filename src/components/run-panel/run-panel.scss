@@ -192,7 +192,7 @@
     &__content {
         display: grid;
         grid-template-rows: 1fr auto;
-        overflow: hidden !important;
+        overflow-y: auto !important;
 
         .dc-tabs {
             min-height: 0;
@@ -201,7 +201,7 @@
 
         .dc-tabs__content {
             min-height: 0;
-            overflow: hidden;
+            overflow: visible;
         }
 
         .dc-tabs {
@@ -224,7 +224,7 @@
     &-tab {
         &__content {
             height: 100%;
-            overflow: hidden;
+            overflow-y: auto;
 
             &--no-stat {
                 height: var(--drawer-content-height-no-stat);

@@ -202,7 +202,7 @@ const DataList = React.memo(
                                             scrollingResetTimeInterval={0}
                                             width={width}
                                             {...(isDesktop()
-                                                ? { scrollTop: scroll_top }
+                                                ? { scrollTop: scroll_top, autoHeight: true }
                                                 : {
                                                       onScroll: target =>
                                                           handleScroll({ target } as unknown as Partial<
