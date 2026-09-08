@@ -385,14 +385,15 @@ class DBot {
     }
 
     /**
-     * Resumes a paused bot interpreter.
+     * Resumes a paused bot. Restarts with fresh code from the workspace
+     * so any config changes made while paused take effect.
      */
     resumeBot() {
         if (this.interpreter && this.interpreter.resume) {
-            this.interpreter.resume();
-            this.is_bot_running = true;
-            api_base.setIsRunning(true);
+            this.interpreter.terminateSession();
         }
+        this.is_bot_running = false;
+        this.runBot();
     }
 
     /**
