@@ -158,6 +158,8 @@ export const OverUnderKiller: React.FC = () => {
     const lastTickSymRef        = useRef('');
     const pausedRef             = useRef(false);
     const barrierHistoryRef     = useRef<Map<string, { wins: number; losses: number }>>(new Map());
+    const focusSymRef           = useRef('');          // symbol to focus on after trade
+    const focusTicksLeftRef     = useRef(0);           // ticks remaining in focus window
 
     /* ── Persist ──────────────────────────────────────────────────────────── */
     useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate]);
@@ -179,6 +181,8 @@ export const OverUnderKiller: React.FC = () => {
         globalLock.current = false;
         lastTickSymRef.current = '';
         inManualRecoveryRef.current = false;
+        focusSymRef.current = '';
+        focusTicksLeftRef.current = 0;
         setRunning(false);
         try { wsRef.current?.close(); } catch (_) {}
         wsRef.current = null;
@@ -338,6 +342,9 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 globalLock.current = false;
                 activeContractsRef.current = 0;
                 setActiveContracts(0);
+                // Focus next trade on the same volatility
+                focusSymRef.current = sym;
+                focusTicksLeftRef.current = 10;
                 checkLimits();
             } catch (_) {}
         });
@@ -514,6 +521,39 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (globalLock.current) return;
         if (cooldownTicksRef.current > 0) { cooldownTicksRef.current--; return; }
 
+        // Focus mode: after a trade, only analyze the same symbol for the next few ticks
+        if (focusSymRef.current && focusTicksLeftRef.current > 0) {
+            const focusSym = focusSymRef.current;
+            focusTicksLeftRef.current--;
+            const sd = symbolDataRef.current[focusSym];
+            if (sd && sd.ticks.length >= MIN_TICKS_BEFORE_TRADE) {
+                const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER'], sd.digitFreq, sd.digitAnalysis);
+                if (sig && sig.confidence >= CONFIDENCE_THRESHOLD) {
+                    // Check user side alignment
+                    const userSide = inManualRecoveryRef.current ? recoverySideRef.current : contractSideRef.current;
+                    if (automateRef.current || sig.contract_type === userSide) {
+                        signalHistoryRef.current.push({ sym: focusSym, type: sig.contract_type, conf: sig.confidence });
+                        if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
+                        const last2 = signalHistoryRef.current;
+                        const confirmed = last2.length === 2 && last2.every(s => s.sym === focusSym && s.type === sig.contract_type);
+                        if (confirmed) {
+                            signalHistoryRef.current = [];
+                            setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
+                            setSignalDisplay({ confidence: sig.confidence, side: sig.contract_type, barrier: sig.barrier || String(predictionDigitRef.current), strategies: sig.details });
+                            executeTrade(focusSym, sig).catch(() => {});
+                            return;
+                        }
+                    }
+                }
+            }
+            // Focus ticks exhausted without trade — release focus
+            if (focusTicksLeftRef.current <= 0) {
+                focusSymRef.current = '';
+            }
+            return;
+        }
+
+        // Normal mode: scan all symbols for best signal
         let bestSym  = '';
         let bestSig: TradeSignal | null = null;
         let bestConf = CONFIDENCE_THRESHOLD - 1;
@@ -769,6 +809,9 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     globalLock.current = false;
                     activeContractsRef.current = 0;
                     setActiveContracts(0);
+                    // Focus next trade on the same volatility
+                    focusSymRef.current = sym;
+                    focusTicksLeftRef.current = 10;
                     checkLimits();
                     break;
                 }
