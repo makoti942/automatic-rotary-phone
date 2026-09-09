@@ -158,8 +158,6 @@ export const OverUnderKiller: React.FC = () => {
     const lastTickSymRef        = useRef('');
     const pausedRef             = useRef(false);
     const barrierHistoryRef     = useRef<Map<string, { wins: number; losses: number }>>(new Map());
-    const focusSymRef           = useRef('');          // symbol to focus on after trade
-    const focusTicksLeftRef     = useRef(0);           // ticks remaining in focus window
 
     /* ── Persist ──────────────────────────────────────────────────────────── */
     useEffect(() => { saveConfig({ stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate }); }, [stake, martingale, takeProfit, stopLoss, predictionDigit, contractSide, recoveryMode, manualRecovery, recoverySide, recoveryDigit, recoveryLossThreshold, manualRecoveryLossThreshold, automate]);
@@ -181,8 +179,6 @@ export const OverUnderKiller: React.FC = () => {
         globalLock.current = false;
         lastTickSymRef.current = '';
         inManualRecoveryRef.current = false;
-        focusSymRef.current = '';
-        focusTicksLeftRef.current = 0;
         setRunning(false);
         try { wsRef.current?.close(); } catch (_) {}
         wsRef.current = null;
@@ -318,10 +314,6 @@ export const OverUnderKiller: React.FC = () => {
                     sd.losses++;
                     consecutiveLossesRef.current++;
                     globalStakeRef.current = Number((tradeStake * martingaleParsed.current).toFixed(2));
-                    if (consecutiveLossesRef.current >= 3) {
-                        cooldownTicksRef.current = 8;
-                        addLog(`⚠ ${consecutiveLossesRef.current} consecutive losses — cooldown ${cooldownTicksRef.current} ticks`, 'loss');
-                    }
                     addLog(`❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake $${globalStakeRef.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
 
                         if (recoveryRef.current) {
@@ -332,19 +324,12 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                             inManualRecoveryRef.current = true;
                             addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
                         }
-                        if (consecutiveLossesRef.current >= MAX_CONSECUTIVE_LOSSES) {
-                            pausedRef.current = true;
-                            addLog(`🛑 PAUSED — ${MAX_CONSECUTIVE_LOSSES} consecutive losses. Click START to resume.`, 'loss');
-                        }
                     }
 
                 flushDisplay(sym);
                 globalLock.current = false;
                 activeContractsRef.current = 0;
                 setActiveContracts(0);
-                // Focus next trade on the same volatility
-                focusSymRef.current = sym;
-                focusTicksLeftRef.current = 10;
                 checkLimits();
             } catch (_) {}
         });
@@ -359,60 +344,11 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (!runningRef.current) return;
         const threshold = inManualRecoveryRef.current
             ? CONFIDENCE_THRESHOLD + 5
-            : automateRef.current
-                ? AUTOMATE_CONFIDENCE
-                : CONFIDENCE_THRESHOLD;
+            : CONFIDENCE_THRESHOLD;
         if (!signal || signal.confidence < threshold) return;
 
         const sd = symbolDataRef.current[sym];
         if (!sd) return;
-
-        // Automate: only trade safe barriers (OVER 1-3, UNDER 6-8)
-        if (automateRef.current) {
-            const barrier = Number(signal.barrier || predictionDigitRef.current);
-            if (signal.contract_type === 'DIGITOVER' && !SAFE_OVER_BARRIERS.includes(barrier)) return;
-            if (signal.contract_type === 'DIGITUNDER' && !SAFE_UNDER_BARRIERS.includes(barrier)) return;
-        }
-
-        // Skip if barrier win rate is too low (< 40% after 5+ trades)
-        const barrierKey = `${sym}_${signal.barrier}`;
-        const bh = barrierHistoryRef.current.get(barrierKey);
-        if (bh && (bh.wins + bh.losses) >= 5) {
-            const winRate = bh.wins / (bh.wins + bh.losses);
-            if (winRate < 0.4) return;
-        }
-
-        // Final check: if losing digits dominate recent 50 ticks, skip
-        if (sd.recentDigitFreq && sd.recentDigitFreq.length === 10) {
-            const b = Number(signal.barrier);
-            if (signal.contract_type === 'DIGITOVER') {
-                const losingPct = sd.recentDigitFreq.slice(0, b + 1).reduce((a, v) => a + v, 0);
-                const expected = (b + 1) * 10;
-                const thresh = Math.min(65, expected * 1.3);
-                if (losingPct > thresh) {
-                    addLog(`🚫 BLOCKED OVER ${b} — losing digits 0-${b} at ${losingPct.toFixed(0)}% (threshold ${thresh.toFixed(0)}%)`, 'loss');
-                    return;
-                }
-            } else {
-                const losingPct = sd.recentDigitFreq.slice(b).reduce((a, v) => a + v, 0);
-                const expected = (10 - b) * 10;
-                const thresh = Math.min(65, expected * 1.3);
-                if (losingPct > thresh) {
-                    addLog(`🚫 BLOCKED UNDER ${b} — losing digits ${b}-9 at ${losingPct.toFixed(0)}% (threshold ${thresh.toFixed(0)}%)`, 'loss');
-                    return;
-                }
-            }
-        }
-
-        if (signal.contract_type === 'DIGITOVER' || signal.contract_type === 'DIGITUNDER') {
-            const last5 = sd.ticks.slice(-5);
-            if (last5.length === 5) {
-                const rising = last5[0] < last5[1] && last5[1] < last5[2] && last5[2] < last5[3] && last5[3] < last5[4];
-                const falling = last5[0] > last5[1] && last5[1] > last5[2] && last5[2] > last5[3] && last5[3] > last5[4];
-                if (signal.contract_type === 'DIGITOVER' && falling) return;
-                if (signal.contract_type === 'DIGITUNDER' && rising) return;
-            }
-        }
 
         globalLock.current = true;
         activeContractsRef.current = 1;
@@ -519,41 +455,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (!runningRef.current) return;
         if (pausedRef.current) return;
         if (globalLock.current) return;
-        if (cooldownTicksRef.current > 0) { cooldownTicksRef.current--; return; }
 
-        // Focus mode: after a trade, only analyze the same symbol for the next few ticks
-        if (focusSymRef.current && focusTicksLeftRef.current > 0) {
-            const focusSym = focusSymRef.current;
-            focusTicksLeftRef.current--;
-            const sd = symbolDataRef.current[focusSym];
-            if (sd && sd.ticks.length >= MIN_TICKS_BEFORE_TRADE) {
-                const sig = analyzeSignals(sd.ticks, sd.prices, ['DIGITOVER', 'DIGITUNDER'], sd.digitFreq, sd.digitAnalysis);
-                if (sig && sig.confidence >= CONFIDENCE_THRESHOLD) {
-                    // Check user side alignment
-                    const userSide = inManualRecoveryRef.current ? recoverySideRef.current : contractSideRef.current;
-                    if (automateRef.current || sig.contract_type === userSide) {
-                        signalHistoryRef.current.push({ sym: focusSym, type: sig.contract_type, conf: sig.confidence });
-                        if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
-                        const last2 = signalHistoryRef.current;
-                        const confirmed = last2.length === 2 && last2.every(s => s.sym === focusSym && s.type === sig.contract_type);
-                        if (confirmed) {
-                            signalHistoryRef.current = [];
-                            setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
-                            setSignalDisplay({ confidence: sig.confidence, side: sig.contract_type, barrier: sig.barrier || String(predictionDigitRef.current), strategies: sig.details });
-                            executeTrade(focusSym, sig).catch(() => {});
-                            return;
-                        }
-                    }
-                }
-            }
-            // Focus ticks exhausted without trade — release focus
-            if (focusTicksLeftRef.current <= 0) {
-                focusSymRef.current = '';
-            }
-            return;
-        }
-
-        // Normal mode: scan all symbols for best signal
         let bestSym  = '';
         let bestSig: TradeSignal | null = null;
         let bestConf = CONFIDENCE_THRESHOLD - 1;
@@ -789,10 +691,6 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                         sd.losses++;
                         consecutiveLossesRef.current++;
                         globalStakeRef.current = Number((tradeStake * martingaleParsed.current).toFixed(2));
-                        if (consecutiveLossesRef.current >= 3) {
-                            cooldownTicksRef.current = 8;
-                            addLog(`⚠ ${consecutiveLossesRef.current} consecutive losses — cooldown ${cooldownTicksRef.current} ticks`, 'loss');
-                        }
                         addLog(`❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake $${globalStakeRef.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
 
                         if (recoveryRef.current) {
@@ -809,9 +707,6 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     globalLock.current = false;
                     activeContractsRef.current = 0;
                     setActiveContracts(0);
-                    // Focus next trade on the same volatility
-                    focusSymRef.current = sym;
-                    focusTicksLeftRef.current = 10;
                     checkLimits();
                     break;
                 }
