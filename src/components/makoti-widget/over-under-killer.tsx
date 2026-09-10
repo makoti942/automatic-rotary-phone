@@ -851,11 +851,10 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                             handleRecovery(sym, Math.abs(profit));
                             return;
                         }
-if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
+                        if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
                             signalHistoryRef.current = [];
                             addLog(`🔄 MANUAL RECOVERY — reversal entry | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} | Losing threshold: ${RECOVERY_LOSING_PCT_THRESHOLD}% | Entry: wait for losing digit to appear`, 'info');
-                        }
                         }
                     }
 
@@ -1054,7 +1053,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     {pausedRef.current
                         ? <span style={{color:'#ef4444'}}>⏸ PAUSED — {MAX_CONSECUTIVE_LOSSES} consecutive losses. Click button to resume.</span>
                         : inManualRecoveryRef.current
-                        ? <span style={{color:'#f97316'}}>🔴 REVERSAL — {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current} | &lt;{RECOVERY_LOSING_PCT_THRESHOLD}% | waiting for losing digit</span>
+                        ? <span style={{color:'#f97316'}}>🔴 REVERSAL — {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current} | &lt;{RECOVERY_LOSING_PCT_THRESHOLD}%</span>
                         : automateRef.current
                         ? <span style={{color:'#22c55e'}}>🤖 AUTOMATE — any signal / any barrier</span>
                         : <>Auto (Over/Under) — Digit {predictionDigitRef.current} {contractSide === 'DIGITOVER' ? 'OVER' : 'UNDER'}</>
