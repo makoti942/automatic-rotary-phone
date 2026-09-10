@@ -98,6 +98,117 @@ function analyzeDigitPsychology(ticks: number[]): {
     return { freq, recentFreq, dominantDigit, rareDigit, streakLen, streakDigit: lastDigit, reversalSignal };
 }
 
+/* ── Recovery helpers ─────────────────────────────────────────────────────── */
+const RECOVERY_STATS_WINDOW = 1000;
+
+/**
+ * Calculate losing digit percentage for a symbol.
+ * Uses same formula as manual trade tab: calcDigitPcts over last 1000 ticks.
+ *
+ * @param ticks - digit array (0-9)
+ * @param barrier - the barrier digit
+ * @param side - 'DIGITOVER' or 'DIGITUNDER'
+ * @returns total percentage of losing digits
+ */
+function calcLosingDigitPct(ticks: number[], barrier: number, side: ContractSide): number {
+    const sample = ticks.slice(-RECOVERY_STATS_WINDOW);
+    const pcts = calcDigitPcts(sample);
+    if (side === 'DIGITOVER') {
+        // OVER wins if exit digit > barrier. Losers are 0..barrier
+        return pcts.slice(0, barrier + 1).reduce((a, v) => a + v, 0);
+    } else {
+        // UNDER wins if exit digit < barrier. Losers are barrier..9
+        return pcts.slice(barrier).reduce((a, v) => a + v, 0);
+    }
+}
+
+/**
+ * Find the best volatility for recovery.
+ * Priority: lowest losing digit % (target < 10%).
+ * Uses last 1000 ticks (same as manual trade tab).
+ */
+function findBestRecoverySymbol(
+    symbolData: Record<string, SymbolState>,
+    barrier: number,
+    side: ContractSide,
+): { sym: string; losingPct: number } | null {
+    let best: { sym: string; losingPct: number } | null = null;
+
+    ALL_SYMBOLS.forEach(sym => {
+        const sd = symbolData[sym];
+        if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) return;
+        const losingPct = calcLosingDigitPct(sd.ticks, barrier, side);
+        if (!best || losingPct < best.losingPct) {
+            best = { sym, losingPct };
+        }
+    });
+
+    return best;
+}
+
+/**
+ * Validate recovery entry conditions:
+ * 1. At least 2 of the losing digits appeared in the last 15 ticks
+ * 2. Losing digits should be dominant (appearing frequently in recent ticks)
+ * 3. Winning digits should be the majority
+ */
+function validateRecoveryEntry(
+    ticks: number[],
+    barrier: number,
+    side: ContractSide,
+): { valid: boolean; reason: string } {
+    const last15 = ticks.slice(-15);
+    const last100 = ticks.slice(-100);
+
+    if (side === 'DIGITOVER') {
+        // Losing digits: 0..barrier
+        const losingDigits = Array.from({ length: barrier + 1 }, (_, i) => i);
+        // Winning digits: barrier+1..9
+        const winningDigits = Array.from({ length: 9 - barrier }, (_, i) => i + barrier + 1);
+
+        // Rule 1: At least 2 losing digits appeared in last 15 ticks
+        const losingInLast15 = losingDigits.filter(d => last15.includes(d));
+        if (losingInLast15.length < 2) {
+            return { valid: false, reason: `Only ${losingInLast15.length} losing digit(s) in last 15 ticks (need 2+)` };
+        }
+
+        // Rule 2: Losing digits should be dominant in recent ticks
+        const recentPcts = calcDigitPcts(last100);
+        const losingTotal = losingDigits.reduce((a, d) => a + recentPcts[d], 0);
+        const winningTotal = winningDigits.reduce((a, d) => a + recentPcts[d], 0);
+
+        // Rule 3: Winning digits should be majority
+        if (winningTotal <= losingTotal) {
+            return { valid: false, reason: `Winning digits ${winningTotal.toFixed(0)}% not dominant over losing ${losingTotal.toFixed(0)}%` };
+        }
+
+        return { valid: true, reason: `Losing ${losingTotal.toFixed(0)}% | Winning ${winningTotal.toFixed(0)}% | ${losingInLast15.length} losing digits in last 15` };
+    } else {
+        // UNDER: Losing digits: barrier..9
+        const losingDigits = Array.from({ length: 10 - barrier }, (_, i) => i + barrier);
+        // Winning digits: 0..barrier-1
+        const winningDigits = Array.from({ length: barrier }, (_, i) => i);
+
+        // Rule 1: At least 2 losing digits appeared in last 15 ticks
+        const losingInLast15 = losingDigits.filter(d => last15.includes(d));
+        if (losingInLast15.length < 2) {
+            return { valid: false, reason: `Only ${losingInLast15.length} losing digit(s) in last 15 ticks (need 2+)` };
+        }
+
+        // Rule 2: Losing digits should be dominant in recent ticks
+        const recentPcts = calcDigitPcts(last100);
+        const losingTotal = losingDigits.reduce((a, d) => a + recentPcts[d], 0);
+        const winningTotal = winningDigits.reduce((a, d) => a + recentPcts[d], 0);
+
+        // Rule 3: Winning digits should be majority
+        if (winningTotal <= losingTotal) {
+            return { valid: false, reason: `Winning digits ${winningTotal.toFixed(0)}% not dominant over losing ${losingTotal.toFixed(0)}%` };
+        }
+
+        return { valid: true, reason: `Losing ${losingTotal.toFixed(0)}% | Winning ${winningTotal.toFixed(0)}% | ${losingInLast15.length} losing digits in last 15` };
+    }
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    OverUnderKiller
 ════════════════════════════════════════════════════════════════════════════ */
@@ -146,6 +257,7 @@ export const OverUnderKiller: React.FC = () => {
     const recoveryLossThresholdRef = useRef(1);
     const manualRecoveryLossThresholdRef = useRef(2);
     const inManualRecoveryRef   = useRef(false);
+    const recoverySymRef        = useRef('');           // chosen symbol for recovery
     const automateRef           = useRef(false);
 
     const globalLock            = useRef(false);
@@ -179,6 +291,7 @@ export const OverUnderKiller: React.FC = () => {
         globalLock.current = false;
         lastTickSymRef.current = '';
         inManualRecoveryRef.current = false;
+        recoverySymRef.current = '';
         setRunning(false);
         try { wsRef.current?.close(); } catch (_) {}
         wsRef.current = null;
@@ -303,6 +416,7 @@ export const OverUnderKiller: React.FC = () => {
                     const wasInRecovery = inManualRecoveryRef.current;
                     if (wasInRecovery) {
                         inManualRecoveryRef.current = false;
+                        recoverySymRef.current = '';
                         addLog(`✅ MANUAL RECOVERY WON — back to normal`, 'win');
                     }
                     consecutiveLossesRef.current = 0;
@@ -322,7 +436,16 @@ export const OverUnderKiller: React.FC = () => {
                         }
 if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
-                            addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
+                            signalHistoryRef.current = [];
+                            // Find best recovery volatility — lowest losing digit %
+                            const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
+                            if (best) {
+                                recoverySymRef.current = best.sym;
+                                const pctLabel = best.losingPct < 10 ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
+                                addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
+                            } else {
+                                addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
+                            }
                         }
                     }
 
@@ -456,6 +579,53 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (pausedRef.current) return;
         if (globalLock.current) return;
 
+        // ── RECOVERY MODE: focus on chosen recovery symbol with validation ──
+        if (inManualRecoveryRef.current && recoverySymRef.current) {
+            const recSym = recoverySymRef.current;
+            const sd = symbolDataRef.current[recSym];
+            if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) return;
+
+            // Validate recovery entry conditions
+            const validation = validateRecoveryEntry(sd.ticks, recoveryDigitRef.current, recoverySideRef.current);
+            if (!validation.valid) {
+                // Re-scan for better symbol
+                const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
+                if (best && best.sym !== recSym && best.losingPct < 10) {
+                    recoverySymRef.current = best.sym;
+                    addLog(`🔄 Recovery: switching to ${SYMBOL_LABELS[best.sym]} — losing digits ${best.losingPct.toFixed(1)}%`, 'info');
+                }
+                return;
+            }
+
+            // Build signal for recovery side
+            const sig = analyzeSignals(sd.ticks, sd.prices, [recoverySideRef.current], sd.digitFreq, sd.digitAnalysis);
+            if (!sig || sig.confidence < CONFIDENCE_THRESHOLD) return;
+
+            // Override barrier and side to recovery config
+            const recoverySig: TradeSignal = {
+                ...sig,
+                contract_type: recoverySideRef.current,
+                barrier: String(recoveryDigitRef.current),
+                confidence: sig.confidence,
+                reason: `Recovery: ${validation.reason}`,
+                details: sig.details,
+            };
+
+            // 2-tick confirmation
+            signalHistoryRef.current.push({ sym: recSym, type: recoverySideRef.current, conf: sig.confidence });
+            if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
+            const last2 = signalHistoryRef.current;
+            const confirmed = last2.length === 2 && last2.every(s => s.sym === recSym && s.type === recoverySideRef.current);
+            if (confirmed) {
+                signalHistoryRef.current = [];
+                setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
+                setSignalDisplay({ confidence: sig.confidence, side: recoverySideRef.current, barrier: String(recoveryDigitRef.current), strategies: validation.reason });
+                executeTrade(recSym, recoverySig).catch(() => {});
+            }
+            return;
+        }
+
+        // ── NORMAL MODE: scan all symbols for best signal ──
         let bestSym  = '';
         let bestSig: TradeSignal | null = null;
         let bestConf = CONFIDENCE_THRESHOLD - 1;
@@ -525,6 +695,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         manualRecoveryLossThresholdRef.current = isNaN(parsedMrlt) ? 2 : Math.max(1, parsedMrlt);
         automateRef.current = automate;
         inManualRecoveryRef.current = false;
+        recoverySymRef.current = '';
         pausedRef.current = false;
         globalLock.current       = false;
         lastTickSymRef.current   = '';
@@ -680,6 +851,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                         const wasInRecovery = inManualRecoveryRef.current;
                         if (wasInRecovery) {
                             inManualRecoveryRef.current = false;
+                            recoverySymRef.current = '';
                             addLog(`✅ MANUAL RECOVERY WON — back to normal`, 'win');
                         }
                         consecutiveLossesRef.current = 0;
@@ -691,7 +863,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                         sd.losses++;
                         consecutiveLossesRef.current++;
                         globalStakeRef.current = Number((tradeStake * martingaleParsed.current).toFixed(2));
-                        addLog(`❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake $${globalStakeRef.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
+                    addLog(`❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} | Next stake $${globalStakeRef.current.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`, 'loss');
 
                         if (recoveryRef.current) {
                             handleRecovery(sym, Math.abs(profit));
@@ -699,7 +871,16 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                         }
 if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
-                            addLog(`🔄 MANUAL RECOVERY ACTIVATED — switching to ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} until win`, 'info');
+                            signalHistoryRef.current = [];
+                            // Find best recovery volatility — lowest losing digit %
+                            const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
+                            if (best) {
+                                recoverySymRef.current = best.sym;
+                                const pctLabel = best.losingPct < 10 ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
+                                addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
+                            } else {
+                                addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
+                            }
                         }
                     }
 
@@ -898,7 +1079,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     {pausedRef.current
                         ? <span style={{color:'#ef4444'}}>⏸ PAUSED — {MAX_CONSECUTIVE_LOSSES} consecutive losses. Click button to resume.</span>
                         : inManualRecoveryRef.current
-                        ? <span style={{color:'#f97316'}}>🔴 MANUAL RECOVERY — {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current}</span>
+                        ? <span style={{color:'#f97316'}}>🔴 RECOVERY — {recoverySymRef.current ? SYMBOL_LABELS[recoverySymRef.current] : '...'} | {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current}</span>
                         : automateRef.current
                         ? <span style={{color:'#22c55e'}}>🤖 AUTOMATE — any signal / any barrier</span>
                         : <>Auto (Over/Under) — Digit {predictionDigitRef.current} {contractSide === 'DIGITOVER' ? 'OVER' : 'UNDER'}</>
