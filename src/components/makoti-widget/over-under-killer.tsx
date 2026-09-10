@@ -429,15 +429,7 @@ export const OverUnderKiller: React.FC = () => {
 if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
                             signalHistoryRef.current = [];
-                            // Find best recovery volatility — lowest losing digit %
-                            const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
-                            if (best) {
-                                recoverySymRef.current = best.sym;
-                                const pctLabel = best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
-                                addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
-                            } else {
-                                addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
-                            }
+                            addLog(`🔄 MANUAL RECOVERY — reversal entry | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} | Losing threshold: ${RECOVERY_LOSING_PCT_THRESHOLD}% | Entry: wait for losing digit to appear`, 'info');
                         }
                     }
 
@@ -571,48 +563,50 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         if (pausedRef.current) return;
         if (globalLock.current) return;
 
-        // ── RECOVERY MODE: focus on chosen recovery symbol with validation ──
-        if (inManualRecoveryRef.current && recoverySymRef.current) {
-            const recSym = recoverySymRef.current;
-            const sd = symbolDataRef.current[recSym];
-            if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) return;
+        // ── RECOVERY MODE: reversal entry on all symbols ──
+        if (inManualRecoveryRef.current) {
+            const recBarrier = recoveryDigitRef.current;
+            const recSide = recoverySideRef.current;
 
-            // Validate recovery entry conditions
-            const validation = validateRecoveryEntry(sd.ticks, recoveryDigitRef.current, recoverySideRef.current);
-            if (!validation.valid) {
-                // Re-scan for better symbol
-                const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
-                if (best && best.sym !== recSym && best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD) {
-                    recoverySymRef.current = best.sym;
-                    addLog(`🔄 Recovery: switching to ${SYMBOL_LABELS[best.sym]} — losing digits ${best.losingPct.toFixed(1)}%`, 'info');
-                }
-                return;
-            }
+            // Define losing digits for this barrier/side
+            const losingDigits = recSide === 'DIGITOVER'
+                ? Array.from({ length: recBarrier + 1 }, (_, i) => i)     // 0..barrier
+                : Array.from({ length: 10 - recBarrier }, (_, i) => i + recBarrier); // barrier..9
 
-            // Build signal for recovery side
-            const sig = analyzeSignals(sd.ticks, sd.prices, [recoverySideRef.current], sd.digitFreq, sd.digitAnalysis);
-            if (!sig || sig.confidence < CONFIDENCE_THRESHOLD) return;
+            for (const sym of ALL_SYMBOLS) {
+                const sd = symbolDataRef.current[sym];
+                if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) continue;
 
-            // Override barrier and side to recovery config
-            const recoverySig: TradeSignal = {
-                ...sig,
-                contract_type: recoverySideRef.current,
-                barrier: String(recoveryDigitRef.current),
-                confidence: sig.confidence,
-                reason: `Recovery: ${validation.reason}`,
-                details: sig.details,
-            };
+                // Rule 1: Losing digit % must be below threshold
+                const losingPct = calcLosingDigitPct(sd.ticks, recBarrier, recSide);
+                if (losingPct >= RECOVERY_LOSING_PCT_THRESHOLD) continue;
 
-            // 2-tick confirmation
-            signalHistoryRef.current.push({ sym: recSym, type: recoverySideRef.current, conf: sig.confidence });
-            if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
-            const last2 = signalHistoryRef.current;
-            const confirmed = last2.length === 2 && last2.every(s => s.sym === recSym && s.type === recoverySideRef.current);
-            if (confirmed) {
-                signalHistoryRef.current = [];
+                // Rule 2+3: Validate entry conditions
+                const validation = validateRecoveryEntry(sd.ticks, recBarrier, recSide);
+                if (!validation.valid) continue;
+
+                // REVERSAL ENTRY: last tick must be a losing digit
+                const lastDigit = sd.ticks[sd.ticks.length - 1];
+                if (!losingDigits.includes(lastDigit)) continue;
+
+                // All rules + reversal signal — execute
+                const sig = analyzeSignals(sd.ticks, sd.prices, [recSide], sd.digitFreq, sd.digitAnalysis);
+                if (!sig || sig.confidence < CONFIDENCE_THRESHOLD) continue;
+
+                const recoverySig: TradeSignal = {
+                    ...sig,
+                    contract_type: recSide,
+                    barrier: String(recBarrier),
+                    confidence: sig.confidence,
+                    reason: `Reversal: losing digit ${lastDigit} appeared | ${validation.reason} | Losing: ${losingPct.toFixed(1)}%`,
+                    details: sig.details,
+                };
+
                 setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
-                setSignalDisplay({ confidence: sig.confidence, side: recoverySideRef.current, barrier: String(recoveryDigitRef.current), strategies: validation.reason });
-                executeTrade(recSym, recoverySig).catch(() => {});
+                setSignalDisplay({ confidence: sig.confidence, side: recSide, barrier: String(recBarrier), strategies: `Reversal entry` });
+                addLog(`🎯 REVERSAL: ${SYMBOL_LABELS[sym]} | digit ${lastDigit} (losing) appeared | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier} | Losing: ${losingPct.toFixed(1)}% | ${validation.reason}`, 'trade');
+                executeTrade(sym, recoverySig).catch(() => {});
+                return; // One trade at a time
             }
             return;
         }
@@ -864,15 +858,8 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryLossThresholdRef.current && !inManualRecoveryRef.current) {
                             inManualRecoveryRef.current = true;
                             signalHistoryRef.current = [];
-                            // Find best recovery volatility — lowest losing digit %
-                            const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
-                            if (best) {
-                                recoverySymRef.current = best.sym;
-                                const pctLabel = best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
-                                addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
-                            } else {
-                                addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
-                            }
+                            addLog(`🔄 MANUAL RECOVERY — reversal entry | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current} | Losing threshold: ${RECOVERY_LOSING_PCT_THRESHOLD}% | Entry: wait for losing digit to appear`, 'info');
+                        }
                         }
                     }
 
@@ -1071,7 +1058,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     {pausedRef.current
                         ? <span style={{color:'#ef4444'}}>⏸ PAUSED — {MAX_CONSECUTIVE_LOSSES} consecutive losses. Click button to resume.</span>
                         : inManualRecoveryRef.current
-                        ? <span style={{color:'#f97316'}}>🔴 RECOVERY — {recoverySymRef.current ? SYMBOL_LABELS[recoverySymRef.current] : '...'} | {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current}</span>
+                        ? <span style={{color:'#f97316'}}>🔴 REVERSAL — {recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} {recoveryDigitRef.current} | &lt;{RECOVERY_LOSING_PCT_THRESHOLD}% | waiting for losing digit</span>
                         : automateRef.current
                         ? <span style={{color:'#22c55e'}}>🤖 AUTOMATE — any signal / any barrier</span>
                         : <>Auto (Over/Under) — Digit {predictionDigitRef.current} {contractSide === 'DIGITOVER' ? 'OVER' : 'UNDER'}</>
