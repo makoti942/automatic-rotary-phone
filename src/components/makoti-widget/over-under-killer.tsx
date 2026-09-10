@@ -577,15 +577,11 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 const sd = symbolDataRef.current[sym];
                 if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) continue;
 
-                // Rule 1: Losing digit % must be below threshold
-                const losingPct = calcLosingDigitPct(sd.ticks, recBarrier, recSide);
-                if (losingPct >= RECOVERY_LOSING_PCT_THRESHOLD) continue;
-
                 // REVERSAL ENTRY: last tick must be a losing digit
                 const lastDigit = sd.ticks[sd.ticks.length - 1];
                 if (!losingDigits.includes(lastDigit)) continue;
 
-                // All rules + reversal signal — execute
+                // Execute on reversal
                 const sig = analyzeSignals(sd.ticks, sd.prices, [recSide], sd.digitFreq, sd.digitAnalysis);
                 if (!sig || sig.confidence < CONFIDENCE_THRESHOLD) continue;
 
@@ -594,13 +590,13 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     contract_type: recSide,
                     barrier: String(recBarrier),
                     confidence: sig.confidence,
-                    reason: `Reversal: losing digit ${lastDigit} appeared | Losing: ${losingPct.toFixed(1)}%`,
+                    reason: `Reversal: losing digit ${lastDigit} appeared`,
                     details: sig.details,
                 };
 
                 setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
                 setSignalDisplay({ confidence: sig.confidence, side: recSide, barrier: String(recBarrier), strategies: `Reversal entry` });
-                addLog(`🎯 REVERSAL: ${SYMBOL_LABELS[sym]} | digit ${lastDigit} (losing) appeared | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier} | Losing: ${losingPct.toFixed(1)}%`, 'trade');
+                addLog(`🎯 REVERSAL: ${SYMBOL_LABELS[sym]} | digit ${lastDigit} (losing) appeared | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier}`, 'trade');
                 executeTrade(sym, recoverySig).catch(() => {});
                 return; // One trade at a time
             }
