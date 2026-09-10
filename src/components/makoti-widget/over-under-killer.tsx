@@ -100,16 +100,8 @@ function analyzeDigitPsychology(ticks: number[]): {
 
 /* ── Recovery helpers ─────────────────────────────────────────────────────── */
 const RECOVERY_STATS_WINDOW = 1000;
+const RECOVERY_LOSING_PCT_THRESHOLD = 9.5;
 
-/**
- * Calculate losing digit percentage for a symbol.
- * Uses same formula as manual trade tab: calcDigitPcts over last 1000 ticks.
- *
- * @param ticks - digit array (0-9)
- * @param barrier - the barrier digit
- * @param side - 'DIGITOVER' or 'DIGITUNDER'
- * @returns total percentage of losing digits
- */
 function calcLosingDigitPct(ticks: number[], barrier: number, side: ContractSide): number {
     const sample = ticks.slice(-RECOVERY_STATS_WINDOW);
     const pcts = calcDigitPcts(sample);
@@ -441,7 +433,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                             const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
                             if (best) {
                                 recoverySymRef.current = best.sym;
-                                const pctLabel = best.losingPct < 10 ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
+                                const pctLabel = best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
                                 addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
                             } else {
                                 addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
@@ -590,7 +582,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
             if (!validation.valid) {
                 // Re-scan for better symbol
                 const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
-                if (best && best.sym !== recSym && best.losingPct < 10) {
+                if (best && best.sym !== recSym && best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD) {
                     recoverySymRef.current = best.sym;
                     addLog(`🔄 Recovery: switching to ${SYMBOL_LABELS[best.sym]} — losing digits ${best.losingPct.toFixed(1)}%`, 'info');
                 }
@@ -876,7 +868,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                             const best = findBestRecoverySymbol(symbolDataRef.current, recoveryDigitRef.current, recoverySideRef.current);
                             if (best) {
                                 recoverySymRef.current = best.sym;
-                                const pctLabel = best.losingPct < 10 ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
+                                const pctLabel = best.losingPct < RECOVERY_LOSING_PCT_THRESHOLD ? `✅ ${best.losingPct.toFixed(1)}%` : `⚠ ${best.losingPct.toFixed(1)}% (best available)`;
                                 addLog(`🔄 MANUAL RECOVERY — ${SYMBOL_LABELS[best.sym]} | Losing digits: ${pctLabel} | ${recoverySideRef.current === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recoveryDigitRef.current}`, 'info');
                             } else {
                                 addLog(`🔄 MANUAL RECOVERY — no ready symbols, waiting for data`, 'info');
