@@ -589,9 +589,9 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 const lastDigit = sd.ticks[sd.ticks.length - 1];
                 if (!losingDigits.includes(lastDigit)) continue;
 
-                // Execute on reversal
+                // Execute on reversal (lower confidence for recovery)
                 const sig = analyzeSignals(sd.ticks, sd.prices, [recSide], sd.digitFreq, sd.digitAnalysis);
-                if (!sig || sig.confidence < CONFIDENCE_THRESHOLD) continue;
+                if (!sig || sig.confidence < 60) continue;
 
                 const isPerfect = belowCount === losingDigits.length;
                 const recoverySig: TradeSignal = {
