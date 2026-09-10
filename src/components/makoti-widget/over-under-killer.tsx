@@ -590,6 +590,15 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 const sig = analyzeSignals(sd.ticks, sd.prices, [recSide], sd.digitFreq, sd.digitAnalysis);
                 if (!sig || sig.confidence < 70) continue;
 
+                // 2-tick confirmation
+                signalHistoryRef.current.push({ sym, type: recSide, conf: sig.confidence });
+                if (signalHistoryRef.current.length > 2) signalHistoryRef.current.shift();
+                const last2 = signalHistoryRef.current;
+                const confirmed = last2.length === 2 && last2.every(s => s.sym === sym && s.type === recSide);
+                if (!confirmed) continue;
+
+                // Confirmed — execute
+                signalHistoryRef.current = [];
                 const isPerfect = belowCount === losingDigits.length;
                 const recoverySig: TradeSignal = {
                     ...sig,
@@ -602,7 +611,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 
                 setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
                 setSignalDisplay({ confidence: sig.confidence, side: recSide, barrier: String(recBarrier), strategies: isPerfect ? 'Recovery (all clear)' : 'Recovery (fallback)' });
-                addLog(`🎯 RECOVERY: ${SYMBOL_LABELS[sym]} | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier} | ${belowCount}/${losingDigits.length} losing digits <${RECOVERY_LOSING_PCT_THRESHOLD}%${isPerfect ? ' ✅' : ' ⚠️'}`, 'trade');
+                addLog(`🎯 RECOVERY: ${SYMBOL_LABELS[sym]} | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier} | ${belowCount}/${losingDigits.length} losing digits <${RECOVERY_LOSING_PCT_THRESHOLD}%${isPerfect ? ' ✅' : ' ⚠️'} | 2-tick confirmed`, 'trade');
                 executeTrade(sym, recoverySig).catch(() => {});
                 return; // One trade at a time
             }
