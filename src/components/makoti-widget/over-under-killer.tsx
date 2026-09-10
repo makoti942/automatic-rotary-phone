@@ -100,7 +100,7 @@ function analyzeDigitPsychology(ticks: number[]): {
 
 /* ── Recovery helpers ─────────────────────────────────────────────────────── */
 const RECOVERY_STATS_WINDOW = 1000;
-    const RECOVERY_LOSING_PCT_THRESHOLD = 12;
+    const RECOVERY_LOSING_PCT_THRESHOLD = 9.8;
 
 function calcLosingDigitPct(ticks: number[], barrier: number, side: ContractSide): number {
     const sample = ticks.slice(-RECOVERY_STATS_WINDOW);
