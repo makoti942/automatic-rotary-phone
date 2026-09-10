@@ -577,6 +577,11 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                 const sd = symbolDataRef.current[sym];
                 if (!sd || sd.ticks.length < MIN_TICKS_BEFORE_TRADE) continue;
 
+                // Each losing digit must be below 9.5% individually
+                const digitFreq = calcDigitPcts(sd.ticks);
+                const allBelowThreshold = losingDigits.every(d => digitFreq[d] < RECOVERY_LOSING_PCT_THRESHOLD);
+                if (!allBelowThreshold) continue;
+
                 // REVERSAL ENTRY: last tick must be a losing digit
                 const lastDigit = sd.ticks[sd.ticks.length - 1];
                 if (!losingDigits.includes(lastDigit)) continue;
@@ -590,13 +595,13 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
                     contract_type: recSide,
                     barrier: String(recBarrier),
                     confidence: sig.confidence,
-                    reason: `Reversal: losing digit ${lastDigit} appeared`,
+                    reason: `Reversal: losing digit ${lastDigit} appeared | All losing digits <${RECOVERY_LOSING_PCT_THRESHOLD}%`,
                     details: sig.details,
                 };
 
                 setDigitAnalysis(analyzeDigitPsychology(sd.ticks));
                 setSignalDisplay({ confidence: sig.confidence, side: recSide, barrier: String(recBarrier), strategies: `Reversal entry` });
-                addLog(`🎯 REVERSAL: ${SYMBOL_LABELS[sym]} | digit ${lastDigit} (losing) appeared | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier}`, 'trade');
+                addLog(`🎯 REVERSAL: ${SYMBOL_LABELS[sym]} | digit ${lastDigit} (losing) appeared | ${recSide === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${recBarrier} | All losing digits <${RECOVERY_LOSING_PCT_THRESHOLD}%`, 'trade');
                 executeTrade(sym, recoverySig).catch(() => {});
                 return; // One trade at a time
             }
