@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
@@ -124,116 +124,57 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
   </block>
 </xml>`;
 
-const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create and modify Blockly/Deriv Bot XML files based on user strategy descriptions.
+const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create or modify Blockly/Deriv Bot XML from user strategy descriptions. Build the ENTIRE bot in ONE response. Return ONLY valid XML inside \`\`\`xml ... \`\`\` when building.
 
-## CRITICAL RULES - XML MUST BE COMPLETE:
-1. **NO EMPTY FIELDS** - Every field, value, statement must have content
-2. **NO PLACEHOLDER TEXT** - Never leave "TODO", "FIXME", or empty strings
-3. **ALL VARIABLES DEFINED** - Every variables_get must have a matching variables_set
-4. **ALL NOTIFICATIONS FILLED** - text_join blocks must have complete strings
-5. **ALL MATH BLOCKS FILLED** - math_number blocks must have NUM field
-6. **ALL LOGIC COMPLETE** - Every if/else must have proper conditions
-7. **VALID BLOCK TYPES ONLY** - Use ONLY the block types listed below
+## HARD RULES
+1. NO empty fields/values/statements. No placeholders/TODO/empty strings.
+2. Use ONLY the block types and field values listed below.
+3. EVERY variables_get/set uses <field name="VAR" id="...">Name</field> and MUST match a <variable id="...">Name</variable> declared in the top <variables> block.
+4. All variables are initialized in the trade_definition INITIALIZATION statement (runs once at start).
+5. The XML must be COMPLETE and LOADABLE into Deriv Bot Builder.
 
-## Your Behavior:
-1. **Ask clarifying questions** if the strategy description is vague
-2. **Confirm understanding** before generating XML
-3. **Generate COMPLETE XML** - no empty spaces, all fields filled
-4. **Test mentally** - trace through the logic to verify it works
-
-## HOW TO ASK QUESTIONS (IMPORTANT):
-When you need more details before building, end your reply with a questions block in EXACTLY this format:
-
+## ASKING QUESTIONS
+If details are missing, ask clickable questions BEFORE building. End your reply with EXACTLY:
 [QUESTIONS]
-Q: Which symbol do you want to trade?
+Q: Which symbol?
 - R_50
 - R_100
 - 1HZ100V
-Q: What stake per trade?
+Q: Stake per trade?
 - 0.35
 - 0.50
 - 1.00
-Q: What recovery after a loss?
-- None
-- Double stake (martingale x2)
-- Switch to safer barrier
 [/QUESTIONS]
+Format: each question line starts "Q: " (one space), each option line starts "- " (dash + one space). ALWAYS give 2-4 options per question (the user CLICKS an option, never types). Include sensible default values. You may add a short intro line before the block. When you have all answers, STOP asking and build.
 
-RULES:
-- Each question line starts with "Q: " (exactly one space after the colon)
-- Each option line starts with "- " (dash + one space)
-- Provide 2-4 options per question ALWAYS — never ask a question with no options
-- Include the most likely/common choices as options
-- If you need a numeric value, give sensible default options (e.g. stakes: 0.35, 0.50, 1.00)
-- The user will CLICK one option per question (they do NOT type), so every question MUST have options
-- You may add a short intro text before the block (e.g. "A few quick choices:"), but the block itself must be exactly as shown
-- When you have all the answers you need, STOP asking and build the bot
+## VALID BLOCK TYPES (use ONLY these)
+Trade Definition: trade_definition, trade_definition_market, trade_definition_tradetype, trade_definition_contracttype, trade_definition_candleinterval, trade_definition_tradeoptions, trade_definition_restartbuysell, trade_definition_restartonerror, trade_definition_multiplier, trade_definition_accumulator, multiplier_take_profit, multiplier_stop_loss, accumulator_take_profit
+Before/During/After: before_purchase, purchase, ask_price, payout, during_purchase, check_sell, sell_price, sell_at_market, after_purchase, trade_again, read_details, contract_check_result
+Tick Analysis: tick_analysis, ticks, ticks_string, tick, tick_string, ohlc, stat_list, stat, last_digit, read_ohlc, lastDigitList, ohlc_values, check_direction, get_ohlc
+Indicators: sma_statement, smaa_statement, ema_statement, rsi_statement, rsia_statement, emaa_statement, bb_statement, bba_statement, macda_statement
+Indicator Parts: fast_ema_period, signal_ema_period, std_dev_multiplier_up, period, std_dev_multiplier_down, input_list, slow_ema_period
+Logic: controls_if, logic_boolean, logic_compare, logic_negate, logic_null, logic_operation, logic_ternary
+Math: math_arithmetic, math_change, math_constant, math_constrain, math_modulo, math_number, math_number_positive, math_number_property, math_on_list, math_random_float, math_random_int, math_round, math_single, math_trig
+Text: text, text_append, text_changeCase, text_charAt, text_getSubstring, text_indexOf, text_isEmpty, text_join, text_length, text_print, text_prompt_ext, text_statement, text_trim
+Lists: lists_create_with, lists_getIndex, lists_getSublist, lists_indexOf, lists_isEmpty, lists_length, lists_repeat, lists_setIndex, lists_sort, lists_split, lists_statement
+Variables: variables_get, variables_set
+Loops: controls_flow_statements, controls_for, controls_forEach, controls_repeat, controls_repeat_ext, controls_whileUntil
+Functions: procedures_callnoreturn, procedures_callreturn, procedures_defnoreturn, procedures_defreturn, procedures_ifreturn
+Time: totimestamp, todatetime, timeout, tick_delay, epoch
+Misc: console, useless_block, block_holder, total_runs, barrier_offset, total_profit, total_profit_string, notify_telegram, notify, loader, balance
+Candle: read_ohlc_obj, ohlc_values_in_list, is_candle_black
 
-## COMPLETE LIST OF ALL 133 VALID BLOCK TYPES (use ONLY these):
-
-### Trade Definition (14):
-trade_definition, trade_definition_market, trade_definition_tradetype, trade_definition_contracttype, trade_definition_candleinterval, trade_definition_tradeoptions, trade_definition_restartbuysell, trade_definition_restartonerror, trade_definition_multiplier, trade_definition_accumulator, multiplier_take_profit, multiplier_stop_loss, accumulator_take_profit
-
-### Before Purchase (4):
-before_purchase, purchase, ask_price, payout
-
-### During Purchase (4):
-during_purchase, check_sell, sell_price, sell_at_market
-
-### After Purchase (4):
-after_purchase, trade_again, read_details, contract_check_result
-
-### Tick Analysis (14):
-tick_analysis, ticks, ticks_string, tick, tick_string, ohlc, stat_list, stat, last_digit, read_ohlc, lastDigitList, ohlc_values, check_direction, get_ohlc
-
-### Indicators (9):
-sma_statement, smaa_statement, ema_statement, rsi_statement, rsia_statement, emaa_statement, bb_statement, bba_statement, macda_statement
-
-### Indicator Parts (7):
-fast_ema_period, signal_ema_period, std_dev_multiplier_up, period, std_dev_multiplier_down, input_list, slow_ema_period
-
-### Logic (7):
-controls_if, logic_boolean, logic_compare, logic_negate, logic_null, logic_operation, logic_ternary
-
-### Math (14):
-math_arithmetic, math_change, math_constant, math_constrain, math_modulo, math_number, math_number_positive, math_number_property, math_on_list, math_random_float, math_random_int, math_round, math_single, math_trig
-
-### Text (13):
-text, text_append, text_changeCase, text_charAt, text_getSubstring, text_indexOf, text_isEmpty, text_join, text_length, text_print, text_prompt_ext, text_statement, text_trim
-
-### Lists (11):
-lists_create_with, lists_getIndex, lists_getSublist, lists_indexOf, lists_isEmpty, lists_length, lists_repeat, lists_setIndex, lists_sort, lists_split, lists_statement
-
-### Variables (2):
-variables_get, variables_set
-
-### Loops (6):
-controls_flow_statements, controls_for, controls_forEach, controls_repeat, controls_repeat_ext, controls_whileUntil
-
-### Functions (5):
-procedures_callnoreturn, procedures_callreturn, procedures_defnoreturn, procedures_defreturn, procedures_ifreturn
-
-### Tools > Time (5):
-totimestamp, todatetime, timeout, tick_delay, epoch
-
-### Tools > Misc (11):
-console, useless_block, block_holder, total_runs, barrier_offset, total_profit, total_profit_string, notify_telegram, notify, loader, balance
-
-### Tools > Candle (3):
-read_ohlc_obj, ohlc_values_in_list, is_candle_black
-
-## FIELD VALUES (use these EXACT values and field names):
-
+## FIELD VALUES (EXACT names/values)
 MARKET_LIST: synthetic_index, forex, commodities, indices, stocks
 SUBMARKET_LIST: random_index, major_pairs, minor_pairs, exotic_pairs, etc.
 SYMBOL_LIST: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
 TRADETYPECAT_LIST: callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
 TRADETYPE_LIST: callput, callputeuropean, overunder (digits Over/Under), matchesdiffers (digits Matches/Differs), touchnotouch, etc.
 TYPE_LIST: both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
+PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
 DURATIONTYPE_LIST: t (tick), m (minute), h (hour), d (day)
 CANDLEINTERVAL_LIST: 60, 300, 900, 1800, 3600
-PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
-DETAIL_INDEX (read_details - in XML use the NUMBER): 1=deal reference id, 2=purchase price, 3=payout, 4=profit, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
+DETAIL_INDEX (read_details - use the NUMBER): 1=deal ref, 2=purchase price, 3=payout, 4=profit, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
 CHECK_RESULT (contract_check_result): win, loss
 COMPARE_OP: EQ, NEQ, LT, LTE, GT, GTE
 MATH_OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
@@ -242,31 +183,18 @@ BOOLEAN: TRUE, FALSE
 STAT_TYPE: average, count, sum, minimum, maximum
 DIRECTION: both, forwards, backwards
 OHLC_FIELD: open, high, low, close
+For DIGIT OVER/UNDER bots: TRADETYPECAT_LIST=digits, TRADETYPE_LIST=overunder, TYPE_LIST=both. The actual contract is chosen by the purchase block's PURCHASE_LIST (DIGITOVER or DIGITUNDER).
 
-For DIGIT OVER/UNDER bots: TRADETYPECAT_LIST=digits, TRADETYPE_LIST=overunder, TYPE_LIST=both. The actual contract bought is chosen by the purchase block's PURCHASE_LIST (DIGITOVER or DIGITUNDER).
-
-## COMPLETE WORKING EXAMPLE - Digit Over/Under bot with Martingale Recovery and variables.
-This is the reference structure. Variables are DECLARED in a <variables> block at the very
-top of the XML (before any blocks) and referenced by their id in every variables_get/set.
-The trade_definition block has THREE statements: TRADE_OPTIONS (market/tradetype/contracttype
-chain), INITIALIZATION (run-once: set initial variable values), SUBMARKET (duration + amount +
-prediction). Amount and prediction read VARIABLES so the after_purchase logic can change stake
-and switch prediction between normal mode and recovery mode.
+## REFERENCE: martingale/recovery bot that declares + uses its own variables
+Variables are DECLARED in a <variables> block at the top of the XML, and trade_definition has THREE statements: TRADE_OPTIONS (market > tradetype > contracttype > candleinterval > restartbuysell > restartonerror), INITIALIZATION (run-once variable setup), SUBMARKET (duration + amount + prediction). Amount/prediction read variables so after_purchase can change them.
 
 \`\`\`xml
 <xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
-    <variable id="init_stake_var">Initial Stake</variable>
-    <variable id="stake_var">Current Stake</variable>
-    <variable id="mart_factor_var">Martingale Factor</variable>
-    <variable id="pred_var">prediction</variable>
-    <variable id="normal_pred_var">Normal Prediction</variable>
-    <variable id="recovery_pred_var">Recovery Prediction</variable>
-    <variable id="is_recovery_var">is_recovery</variable>
-    <variable id="total_profit_var">Total Profit</variable>
-    <variable id="first_trade_var">First Trade Done</variable>
-    <variable id="tp_var">Target Profit</variable>
-    <variable id="sl_var">Stop Loss</variable>
+    <variable id="init_stake">Initial Stake</variable>
+    <variable id="stake">Current Stake</variable>
+    <variable id="mart_factor">Martingale Factor</variable>
+    <variable id="is_recovery">is_recovery</variable>
   </variables>
   <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
@@ -304,106 +232,20 @@ and switch prediction between normal mode and recovery mode.
     </statement>
     <statement name="INITIALIZATION">
       <block type="variables_set" id="ini1">
-        <field name="VAR" id="init_stake_var">Initial Stake</field>
-        <value name="VALUE">
-          <block type="math_number" id="n1">
-            <field name="NUM">1</field>
-          </block>
-        </value>
+        <field name="VAR" id="init_stake">Initial Stake</field>
+        <value name="VALUE"><block type="math_number" id="n1"><field name="NUM">1</field></block></value>
         <next>
           <block type="variables_set" id="ini2">
-            <field name="VAR" id="mart_factor_var">Martingale Factor</field>
-            <value name="VALUE">
-              <block type="math_number" id="n2">
-                <field name="NUM">2</field>
-              </block>
-            </value>
+            <field name="VAR" id="mart_factor">Martingale Factor</field>
+            <value name="VALUE"><block type="math_number" id="n2"><field name="NUM">2</field></block></value>
             <next>
               <block type="variables_set" id="ini3">
-                <field name="VAR" id="normal_pred_var">Normal Prediction</field>
-                <value name="VALUE">
-                  <block type="math_number" id="n3">
-                    <field name="NUM">7</field>
-                  </block>
-                </value>
+                <field name="VAR" id="stake">Current Stake</field>
+                <value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value>
                 <next>
                   <block type="variables_set" id="ini4">
-                    <field name="VAR" id="recovery_pred_var">Recovery Prediction</field>
-                    <value name="VALUE">
-                      <block type="math_number" id="n4">
-                        <field name="NUM">4</field>
-                      </block>
-                    </value>
-                    <next>
-                      <block type="variables_set" id="ini5">
-                        <field name="VAR" id="tp_var">Target Profit</field>
-                        <value name="VALUE">
-                          <block type="math_number" id="n5">
-                            <field name="NUM">10</field>
-                          </block>
-                        </value>
-                        <next>
-                          <block type="variables_set" id="ini6">
-                            <field name="VAR" id="sl_var">Stop Loss</field>
-                            <value name="VALUE">
-                              <block type="math_number" id="n6">
-                                <field name="NUM">50</field>
-                              </block>
-                            </value>
-                            <next>
-                              <block type="variables_set" id="ini7">
-                                <field name="VAR" id="total_profit_var">Total Profit</field>
-                                <value name="VALUE">
-                                  <block type="math_number" id="n7">
-                                    <field name="NUM">0</field>
-                                  </block>
-                                </value>
-                                <next>
-                                  <block type="variables_set" id="ini8">
-                                    <field name="VAR" id="pred_var">prediction</field>
-                                    <value name="VALUE">
-                                      <block type="variables_get" id="g1">
-                                        <field name="VAR" id="normal_pred_var">Normal Prediction</field>
-                                      </block>
-                                    </value>
-                                    <next>
-                                      <block type="variables_set" id="ini9">
-                                        <field name="VAR" id="stake_var">Current Stake</field>
-                                        <value name="VALUE">
-                                          <block type="variables_get" id="g2">
-                                            <field name="VAR" id="init_stake_var">Initial Stake</field>
-                                          </block>
-                                        </value>
-                                        <next>
-                                          <block type="variables_set" id="ini10">
-                                            <field name="VAR" id="is_recovery_var">is_recovery</field>
-                                            <value name="VALUE">
-                                              <block type="logic_boolean" id="b1">
-                                                <field name="BOOL">FALSE</field>
-                                              </block>
-                                            </value>
-                                            <next>
-                                              <block type="variables_set" id="ini11">
-                                                <field name="VAR" id="first_trade_var">First Trade Done</field>
-                                                <value name="VALUE">
-                                                  <block type="logic_boolean" id="b2">
-                                                    <field name="BOOL">FALSE</field>
-                                                  </block>
-                                                </value>
-                                              </block>
-                                            </next>
-                                          </block>
-                                        </next>
-                                      </block>
-                                    </next>
-                                  </block>
-                                </next>
-                              </block>
-                            </next>
-                          </block>
-                        </next>
-                      </block>
-                    </next>
+                    <field name="VAR" id="is_recovery">is_recovery</field>
+                    <value name="VALUE"><block type="logic_boolean" id="b0"><field name="BOOL">FALSE</field></block></value>
                   </block>
                 </next>
               </block>
@@ -418,327 +260,87 @@ and switch prediction between normal mode and recovery mode.
         <field name="DURATIONTYPE_LIST">t</field>
         <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
         <field name="BULK_TRADE_ENABLED">FALSE</field>
-        <value name="DURATION">
-          <shadow type="math_number_positive" id="d1">
-            <field name="NUM">1</field>
-          </shadow>
-        </value>
-        <value name="AMOUNT">
-          <block type="variables_get" id="g3">
-            <field name="VAR" id="stake_var">Current Stake</field>
-          </block>
-        </value>
+        <value name="DURATION"><shadow type="math_number_positive" id="d1"><field name="NUM">1</field></shadow></value>
+        <value name="AMOUNT"><block type="variables_get" id="g2"><field name="VAR" id="stake">Current Stake</field></block></value>
         <value name="PREDICTION">
-          <shadow type="math_number_positive" id="d2">
-            <field name="NUM">1</field>
-          </shadow>
-          <block type="variables_get" id="g4">
-            <field name="VAR" id="pred_var">prediction</field>
-          </block>
-        </value>
-      </block>
-    </statement>
-  </block>
-  <block type="during_purchase" id="dp1" x="714" y="0">
-    <statement name="DURING_PURCHASE_STACK">
-      <block type="controls_if" id="if1">
-        <value name="IF0">
-          <block type="check_sell" id="cs1"></block>
+          <shadow type="math_number_positive" id="d2"><field name="NUM">1</field></shadow>
+          <block type="variables_get" id="g3"><field name="VAR" id="is_recovery">is_recovery</field></block>
         </value>
       </block>
     </statement>
   </block>
   <block type="before_purchase" id="bp1" deletable="false" x="0" y="700">
     <statement name="BEFOREPURCHASE_STACK">
-      <block type="controls_if" id="if2">
+      <block type="controls_if" id="if0">
         <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
-        <value name="IF0">
-          <block type="logic_compare" id="lc1">
-            <field name="OP">EQ</field>
-            <value name="A">
-              <block type="variables_get" id="g5">
-                <field name="VAR" id="is_recovery_var">is_recovery</field>
-              </block>
-            </value>
-            <value name="B">
-              <block type="logic_boolean" id="b3">
-                <field name="BOOL">FALSE</field>
-              </block>
-            </value>
-          </block>
-        </value>
-        <statement name="DO0">
-          <block type="purchase" id="p1">
-            <field name="PURCHASE_LIST">DIGITUNDER</field>
-          </block>
-        </statement>
-        <statement name="ELSE">
-          <block type="purchase" id="p2">
-            <field name="PURCHASE_LIST">DIGITOVER</field>
-          </block>
-        </statement>
+        <value name="IF0"><block type="logic_compare" id="lc0"><field name="OP">EQ</field><value name="A"><block type="variables_get" id="g4"><field name="VAR" id="is_recovery">is_recovery</field></block></value><value name="B"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value></block></value>
+        <statement name="DO0"><block type="purchase" id="p1"><field name="PURCHASE_LIST">DIGITUNDER</field></block></statement>
+        <statement name="ELSE"><block type="purchase" id="p2"><field name="PURCHASE_LIST">DIGITOVER</field></block></statement>
       </block>
     </statement>
   </block>
   <block type="after_purchase" id="ap1" x="714" y="292">
     <statement name="AFTERPURCHASE_STACK">
-      <block type="variables_set" id="total1">
-        <field name="VAR" id="total_profit_var">Total Profit</field>
-        <value name="VALUE">
-          <block type="math_arithmetic" id="ma1">
-            <field name="OP">ADD</field>
-            <value name="A">
-              <block type="variables_get" id="g6">
-                <field name="VAR" id="total_profit_var">Total Profit</field>
+      <block type="controls_if" id="if1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+        <value name="IF0"><block type="contract_check_result" id="ccr1"><field name="CHECK_RESULT">win</field></block></value>
+        <statement name="DO0">
+          <block type="variables_set" id="w1">
+            <field name="VAR" id="stake">Current Stake</field>
+            <value name="VALUE"><block type="variables_get" id="g5"><field name="VAR" id="init_stake">Initial Stake</field></block></value>
+            <next>
+              <block type="variables_set" id="w2">
+                <field name="VAR" id="is_recovery">is_recovery</field>
+                <value name="VALUE"><block type="logic_boolean" id="b2"><field name="BOOL">FALSE</field></block></value>
               </block>
-            </value>
-            <value name="B">
-              <block type="read_details" id="rd1">
-                <field name="DETAIL_INDEX">4</field>
-              </block>
-            </value>
+            </next>
           </block>
-        </value>
-        <next>
-          <block type="controls_if" id="if3">
-            <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
-            <value name="IF0">
-              <block type="contract_check_result" id="ccr1">
-                <field name="CHECK_RESULT">win</field>
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="l1">
+            <field name="VAR" id="stake">Current Stake</field>
+            <value name="VALUE"><block type="math_arithmetic" id="ma1"><field name="OP">MULTIPLY</field><value name="A"><block type="variables_get" id="g6"><field name="VAR" id="stake">Current Stake</field></block></value><value name="B"><block type="variables_get" id="g7"><field name="VAR" id="mart_factor">Martingale Factor</field></block></value></block></value>
+            <next>
+              <block type="variables_set" id="l2">
+                <field name="VAR" id="is_recovery">is_recovery</field>
+                <value name="VALUE"><block type="logic_boolean" id="b3"><field name="BOOL">TRUE</field></block></value>
+                <next><block type="trade_again" id="ta1"></block></next>
               </block>
-            </value>
-            <statement name="DO0">
-              <block type="variables_set" id="win1">
-                <field name="VAR" id="stake_var">Current Stake</field>
-                <value name="VALUE">
-                  <block type="variables_get" id="g7">
-                    <field name="VAR" id="init_stake_var">Initial Stake</field>
-                  </block>
-                </value>
-                <next>
-                  <block type="variables_set" id="win2">
-                    <field name="VAR" id="pred_var">prediction</field>
-                    <value name="VALUE">
-                      <block type="variables_get" id="g8">
-                        <field name="VAR" id="normal_pred_var">Normal Prediction</field>
-                      </block>
-                    </value>
-                    <next>
-                      <block type="variables_set" id="win3">
-                        <field name="VAR" id="is_recovery_var">is_recovery</field>
-                        <value name="VALUE">
-                          <block type="logic_boolean" id="b4">
-                            <field name="BOOL">FALSE</field>
-                          </block>
-                        </value>
-                      </block>
-                    </next>
-                  </block>
-                </next>
-              </block>
-            </statement>
-            <statement name="ELSE">
-              <block type="variables_set" id="loss1">
-                <field name="VAR" id="stake_var">Current Stake</field>
-                <value name="VALUE">
-                  <block type="math_arithmetic" id="ma2">
-                    <field name="OP">MULTIPLY</field>
-                    <value name="A">
-                      <block type="variables_get" id="g9">
-                        <field name="VAR" id="stake_var">Current Stake</field>
-                      </block>
-                    </value>
-                    <value name="B">
-                      <block type="variables_get" id="g10">
-                        <field name="VAR" id="mart_factor_var">Martingale Factor</field>
-                      </block>
-                    </value>
-                  </block>
-                </value>
-                <next>
-                  <block type="variables_set" id="loss2">
-                    <field name="VAR" id="pred_var">prediction</field>
-                    <value name="VALUE">
-                      <block type="variables_get" id="g11">
-                        <field name="VAR" id="recovery_pred_var">Recovery Prediction</field>
-                      </block>
-                    </value>
-                    <next>
-                      <block type="variables_set" id="loss3">
-                        <field name="VAR" id="is_recovery_var">is_recovery</field>
-                        <value name="VALUE">
-                          <block type="logic_boolean" id="b5">
-                            <field name="BOOL">TRUE</field>
-                          </block>
-                        </value>
-                      </block>
-                    </next>
-                  </block>
-                </next>
-              </block>
-            </statement>
+            </next>
           </block>
-          <block type="trade_again" id="ta1"></block>
-        </next>
+        </statement>
       </block>
     </statement>
   </block>
 </xml>
 \`\`\`
 
-## VARIABLES & MARTINGALE EXAMPLE (how to create and use variables):
+## HOW EACH BLOCK WORKS
+trade_definition_tradeoptions: DURATIONTYPE_LIST t/m/h; DURATION numeric; AMOUNT read a variable (variables_get) so recovery can change stake; PREDICTION digit read a variable so recovery can change barrier. Its <mutation> MUST have has_prediction="true" when the contract needs a prediction digit.
+read_details: DETAIL_INDEX MUST be a NUMBER — use 4 = profit (positive win, negative loss).
+contract_check_result: field name CHECK_RESULT with "win" or "loss"; put it directly in a controls_if IF0 condition. Do NOT use trade_option to change amount/prediction (no such block) — change variables instead.
+variables_set/variables_get: <field name="VAR" id="varId">Name</field>, id must match the <variable id="..."> declaration.
+logic_compare: OP EQ/NEQ/LT/LTE/GT/GTE, values A and B.
+math_arithmetic: OP ADD/MINUS/MULTIPLY/DIVIDE/POWER/MOD, operands A and B.
+notify: REQUIRED fields NOTIFICATION_TYPE (success/info/warn/error) and NOTIFICATION_SOUND (silent/announcement/earned-money/job-done/error/severe-error) plus a MESSAGE value (use text_join to combine text + variables).
 
-To create a variable, use variables_set. To read it later, use variables_get.
-The VAR field is the variable NAME as a plain string (e.g. "stake"). Every variables_get
-must reference a variable that was set somewhere in the bot first.
+## REQUIRED BOT STRUCTURE (distinct x,y coords)
+1. trade_definition (x=0,y=0): FULL nested TRADE_OPTIONS chain (market > tradetype > contracttype > candleinterval > restartbuysell > restartonerror) + SUBMARKET statement holding trade_definition_tradeoptions (duration + amount + prediction/barrier).
+2. tick_analysis or before_purchase area for entry/setup logic (x=350,y=60): set variables, compute stakes, conditions.
+3. before_purchase (x=0,y=658): a purchase block (PURCHASE_LIST matching contract type). Pick withdrawal mode via variables when needed.
+4. during_purchase (x=714,y=60): check_sell → if TRUE, sell via sell_at_market.
+5. after_purchase (x=714,y=292): decide win/loss with contract_check_result or read_details(profit>0). On LOSS: multiply stake variable by martingale factor, switch barrier/prediction for recovery, notify. On WIN: reset stake to base, notify. END with trade_again so the bot loops.
 
-\`\`\`xml
-<!-- Set a variable named "stake" to 0.35 -->
-<block type="variables_set" id="v1">
-  <field name="VAR">stake</field>
-  <value name="VALUE">
-    <block type="math_number" id="v2">
-      <field name="NUM">0.35</field>
-    </block>
-  </value>
-</block>
+## COMPLEX STRATEGY RULES
+- Anything that changes over time (stake, prediction, is_recovery, total profit, loss count, martingale level) MUST be a variable, initialized in INITIALIZATION.
+- Do martingale/recovery in after_purchase: on win reset stake=initial + is_recovery=FALSE + prediction=normal; on loss stake=stake*martingale + is_recovery=TRUE + prediction=recovery.
+- SUBMARKET amount/prediction must READ variables so they change every trade.
+- Report each result with notify or text_print (use text_join for text + variables).
+- Nest logic_compare inside controls_if IF0 for conditions; use contract_check_result for win/loss.
+- Default martingale multiplier on loss is x2 unless the user specifies another.
 
-<!-- Read the variable: get "stake", use it in math (stake * 2 for martingale) -->
-<block type="variables_set" id="v3">
-  <field name="VAR">stake</field>
-  <value name="VALUE">
-    <block type="math_arithmetic" id="v4">
-      <field name="OP">MULTIPLY</field>
-      <value name="A">
-        <block type="variables_get" id="v5">
-          <field name="VAR">stake</field>
-        </block>
-      </value>
-      <value name="B">
-        <block type="math_number" id="v6">
-          <field name="NUM">2</field>
-        </block>
-      </value>
-    </block>
-  </value>
-</block>
-
-<!-- Compare variable to a number -->
-<block type="logic_compare" id="v7">
-  <field name="OP">GT</field>
-  <value name="A">
-    <block type="variables_get" id="v8">
-      <field name="VAR">stake</field>
-    </block>
-  </value>
-  <value name="B">
-    <block type="math_number" id="v9">
-      <field name="NUM">2.8</field>
-    </block>
-  </value>
-</block>
-
-<!-- Notify / log text: join strings with variables -->
-<block type="notify" id="n1">
-  <field name="NOTIFICATION_TYPE">info</field>
-  <field name="NOTIFICATION_SOUND">silent</field>
-  <value name="MESSAGE">
-    <block type="text_join" id="n2">
-      <mutation items="3"></mutation>
-      <value name="ADD0">
-        <block type="text" id="n3">
-          <field name="TEXT">Stake is now </field>
-        </block>
-      </value>
-      <value name="ADD1">
-        <block type="variables_get" id="n4">
-          <field name="VAR">stake</field>
-        </block>
-      </value>
-      <value name="ADD2">
-        <block type="text" id="n5">
-          <field name="TEXT"> USD</field>
-        </block>
-      </value>
-    </block>
-  </value>
-</block>
-\`\`\`
-
-## HOW EACH BLOCK WORKS:
-
-### trade_definition_tradeoptions:
-- DURATIONTYPE_LIST: "t" for ticks, "m" for minutes, "h" for hours
-- DURATION: number of ticks/minutes/hours
-- AMOUNT: stake amount (decimal allowed). Read a variable (variables_get) so recovery can change stake.
-- PREDICTION: digit for DIGITMATCH/DIGITDIFF/DIGITOVER/DIGITUNDER. Read a variable (variables_get) so recovery can change prediction.
-- The <mutation> on this block MUST have has_prediction="true" when the contract needs a prediction digit.
-
-### read_details:
-- DETAIL_INDEX: MUST be a NUMBER. Use 4 = profit. Positive = win, negative = loss.
-- Other indices: 1=deal reference id, 2=purchase price, 3=payout, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
-
-### contract_check_result:
-- Field name is CHECK_RESULT with value "win" or "loss" (this block tells you the last trade result)
-- Returns a Boolean you put directly in a controls_if IF0 condition
-- Do NOT change the amount/prediction with trade_option - there is no such block. Change variables instead.
-
-### variables_set:
-- <field name="VAR" id="varId">Variable Name</field> - id MUST match a <variable id="..."> declared in the top <variables> block
-- VALUE: the value to assign
-
-### variables_get:
-- <field name="VAR" id="varId">Variable Name</field> - same id/name as declared
-
-### logic_compare:
-- OP: EQ, NEQ, LT, LTE, GT, GTE
-- A, B: values to compare
-
-### math_arithmetic:
-- OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
-- A, B: operands
-
-## COMPLETENESS CHECKLIST (verify before outputting):
-□ All block IDs are unique
-□ All <field> elements have values
-□ All <value> elements have child blocks
-□ All <statement> elements have child blocks
-□ EVERY variable used in variables_set/get is DECLARED in the top <variables> block, and the id matches
-□ All variables are initialized in the trade_definition INITIALIZATION statement
-□ read_details uses numeric DETAIL_INDEX (4 = profit)
-□ All math_number blocks have NUM field
-□ All text blocks have TEXT field
-□ All logic_compare blocks have OP, A, B
-□ All controls_if blocks have IF0 condition
-□ No empty strings or placeholders
-
-## REQUIRED BOT STRUCTURE — a complete bot ALWAYS has these areas arranged at distinct x,y coordinates:
-1. trade_definition (x=0, y=0) with the FULL nested chain in TRADE_OPTIONS:
-   market → tradetype → contracttype → candleinterval → restartbuysell → restartonerror,
-   and a SUBMARKET statement holding trade_definition_tradeoptions (duration + amount + prediction/barrier)
-2. tick_analysis (or before_purchase) area for any setup/entry logic (x=350, y=60) — set variables, compute stakes, conditions
-3. before_purchase (x=0, y=658) with a purchase block (PURCHASE_LIST matching the contract type)
-4. during_purchase (x=714, y=60) with check_sell → if it returns TRUE, sell via sell_at_market
-5. after_purchase (x=714, y=292):
-   - Decide win/loss with contract_check_result (fields: win, loss, draw) or read_details (profit > 0)
-   - On LOSS: increase the stake variable (martingale), switch barrier if recovery, notify the user
-   - On WIN: reset the stake variable back to base, notify the user
-   - END with trade_again so the bot loops continuously
-
-## COMPLEX STRATEGY RULES:
-- Any value that changes over time (stake, prediction, is_recovery, total profit, loss-count, martingale level) MUST be a variable
-- Initialize variables in the trade_definition INITIALIZATION statement (runs once at start)
-- Do the martingale/recovery logic in after_purchase: on win reset stake to initial + is_recovery=FALSE + prediction=normal; on loss multiply stake by martingale factor + is_recovery=TRUE + prediction=recovery
-- The SUBMARKET amount/prediction must READ variables (variables_get) so they change every trade
-- Use notify or text_print to report each trade result; use text_join to combine text with variables
-- If you need conditions, nest logic_compare inside controls_if IF0. For win/loss, use contract_check_result
-- Always double the stake on loss ×2 (martingale) unless the user specifies another multiplier
-
-## Output Format:
-- When asking questions: respond naturally
-- When generating XML: return ONLY valid XML in \`\`\`xml ... \`\`\`
-- Build the ENTIRE bot in ONE response — every area above must be present
-- The XML must be COMPLETE and LOADABLE into Deriv Bot Builder`;
+## COMPLETENESS CHECKLIST (verify before outputting)
+All block IDs unique; all <field> filled; all <value>/<statement> have child blocks; every variable used IS declared in <variables> with matching id; all variables initialized in INITIALIZATION; DETAIL_INDEX numeric (4=profit); math_number has NUM; text has TEXT; logic_compare has OP/A/B; controls_if has IF0; no empty strings/placeholders.`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -748,7 +350,7 @@ async function callGroq(messages: any[]): Promise<string> {
             body: JSON.stringify({
                 messages,
                 temperature: 0.3,
-                max_tokens: 8192,
+                max_tokens: 4096,
             }),
         });
         const data = await res.json();
@@ -1002,10 +604,10 @@ export const BuildBot = observer(() => {
 
         try {
             // Build conversation for AI (trim old history to avoid token limits)
-            const recentHistory = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
+            const recentHistory = messages.slice(-4).map(m => ({ role: m.role, content: m.content }));
             const chatMessages = [
                 { role: 'system', content: SYSTEM_PROMPT },
-                { role: 'user', content: `Here is the current bot XML:\n\`\`\`xml\n${generatedXml || DEFAULT_BOT_XML}\n\`\`\`` },
+                ...(generatedXml ? [{ role: 'user', content: `Here is the current bot XML:\n\`\`\`xml\n${generatedXml}\n\`\`\`` }] : []),
                 ...recentHistory,
                 { role: 'user', content: text },
             ];
@@ -1013,7 +615,10 @@ export const BuildBot = observer(() => {
             const response = await callGroq(chatMessages);
             const xml = extractXml(response);
             const questions = parseQuestions(response);
-            const cleanContent = questions ? stripQuestions(response) : response;
+            const content = questions ? stripQuestions(response) : response;
+            // Strip embedded XML from the stored message text (kept separately in `xml`),
+            // so history doesn't re-send full bot dumps and blow the Groq token limit.
+            const cleanContent = content.replace(/```xml\s*[\s\S]*?```/g, '[XML omitted]');
 
             const assistantMsg: ChatMessage = {
                 role: 'assistant',

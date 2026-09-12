@@ -32,7 +32,6 @@ const MAX_TICKS = 300;
 const MIN_TICKS = 50;
 const BASE_STAKE = 0.35;
 const CONFIDENCE_THRESHOLD = 70;
-const RECOVERY_CONFIDENCE = 80;
 const MAX_RECOVERY_ATTEMPTS = 3;
 const RECOVERY_PAUSE_MS = 30000;
 const MARTINGALE_FACTOR = 1.5;
@@ -502,7 +501,7 @@ export const DigitHunter: React.FC = () => {
             setBestMarket(best.symbol);
             setBestScore(best.totalScore);
 
-            const threshold = recoveryPhaseRef.current === 'recovering' ? RECOVERY_CONFIDENCE : cfgRef.current.threshold;
+            const threshold = cfgRef.current.threshold;
 
             if (best.totalScore >= threshold) {
                 const stakeAmt = recoveryPhaseRef.current === 'recovering' ? currentStakeRef.current : cfgRef.current.stake;
@@ -607,7 +606,7 @@ export const DigitHunter: React.FC = () => {
                         style={{ width: '100%', background: '#1a1a2e', border: '1px solid #333', color: '#fff', padding: 2, fontSize: 10, borderRadius: 3 }}
                         step="0.1" min="1" max="5" />
                 </label>
-                <label style={{ fontSize: 10, color: '#888' }}>Max Recovery
+                <label style={{ fontSize: 10, color: '#888' }} title="Consecutive losses that can be recovered before the bot pauses and resets the stake">Max Recovery
                     <input type="number" value={maxRecoveryAttempts} onChange={e => setMaxRecoveryAttempts(e.target.value)}
                         style={{ width: '100%', background: '#1a1a2e', border: '1px solid #333', color: '#fff', padding: 2, fontSize: 10, borderRadius: 3 }}
                         step="1" min="1" max="10" />
