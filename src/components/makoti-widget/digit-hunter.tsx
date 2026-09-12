@@ -50,16 +50,25 @@ function saveCfg(c: typeof DEFAULT_CFG) { try { localStorage.setItem(LS_KEY, JSO
 function ts() { return new Date().toLocaleTimeString('en-US', { hour12: false }); }
 
 // ── Layer 1: Digit Frequency Bias ──
-function calcFreqScore(ticks: number[]): { score: number; digit: number; reason: string } {
-    if (ticks.length < MIN_TICKS) return { score: 0, digit: -1, reason: 'Not enough data' };
+function calcFreqScore(ticks: number[]): { score: number; digit: number; reason: string; skew: 'high' | 'low' | 'none'; skewScore: number } {
+    if (ticks.length < MIN_TICKS) return { score: 0, digit: -1, reason: 'Not enough data', skew: 'none', skewScore: 0 };
     const pcts = getDigitPcts(ticks, 200);
     // Find most underrepresented digit
     let minPct = 100, minDigit = 0;
     pcts.forEach((p, d) => { if (p < minPct) { minPct = p; minDigit = d; } });
-    // Score: how far below 10% expected
+    // Score: more aggressive scaling
     const deviation = 10 - minPct;
-    const score = Math.min(100, Math.max(0, deviation * 12));
-    return { score, digit: minDigit, reason: `D${minDigit} at ${minPct.toFixed(1)}% (expected 10%)` };
+    const score = Math.min(100, Math.max(0, deviation * 15 + 20));
+
+    // Detect skew: are high digits (6-9) or low digits (0-4) overrepresented?
+    const lowPct = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // expected 50%
+    const highPct = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9]; // expected 50%
+    let skew: 'high' | 'low' | 'none' = 'none';
+    let skewScore = 0;
+    if (highPct > 55) { skew = 'high'; skewScore = Math.min(100, (highPct - 50) * 8 + 30); }
+    else if (lowPct > 55) { skew = 'low'; skewScore = Math.min(100, (lowPct - 50) * 8 + 30); }
+
+    return { score, digit: minDigit, reason: `D${minDigit} at ${minPct.toFixed(1)}% | Low:${lowPct.toFixed(0)}% High:${highPct.toFixed(0)}%`, skew, skewScore };
 }
 
 // ── Layer 2: Streak Probability ──
@@ -71,18 +80,18 @@ function calcStreakScore(ticks: number[]): { score: number; digit: number; strea
         if (ticks[i] === streakDigit) streakCount++;
         else break;
     }
-    // Score: probability increases with streak length
-    // P(same digit N times) = (0.1)^N → extremely rare after 4+
+    // More aggressive scoring: 2 consecutive = 40, 3 = 65, 4+ = 90+
     let score = 0;
-    if (streakCount >= 3) score = Math.min(100, (streakCount - 2) * 30);
-    return { score, digit: streakDigit, streakCount, reason: `D${streakDigit} streak: ${streakCount}x` };
+    if (streakCount === 2) score = 40;
+    else if (streakCount === 3) score = 65;
+    else if (streakCount >= 4) score = Math.min(100, 80 + (streakCount - 4) * 10);
+    return { score, digit: streakDigit, streakCount, reason: `D${streakDigit} streak: ${streakCount}x → DIFF ${streakDigit}` };
 }
 
 // ── Layer 3: Pair Sequence Memory ──
 function calcPairScore(ticks: number[]): { score: number; predictedDigit: number; reason: string } {
     if (ticks.length < 20) return { score: 0, predictedDigit: -1, reason: 'Not enough data' };
     const lastDigit = ticks[ticks.length - 1];
-    // Count what followed `lastDigit` in recent history
     const followCounts = Array(10).fill(0);
     let total = 0;
     for (let i = 0; i < ticks.length - 1; i++) {
@@ -92,12 +101,12 @@ function calcPairScore(ticks: number[]): { score: number; predictedDigit: number
         }
     }
     if (total < 3) return { score: 0, predictedDigit: -1, reason: `D${lastDigit} pair data insufficient` };
-    // Find most common follower
     let maxCount = 0, predicted = 0;
     followCounts.forEach((c, d) => { if (c > maxCount) { maxCount = c; predicted = d; } });
     const ratio = maxCount / total;
-    const score = Math.min(100, Math.max(0, (ratio - 0.1) * 200)); // above 10% expected
-    return { score, predictedDigit: predicted, reason: `After D${lastDigit} → D${predicted} (${(ratio * 100).toFixed(0)}% of ${total})` };
+    // More aggressive: 15% = 40, 20% = 60, 25%+ = 80+
+    const score = Math.min(100, Math.max(0, (ratio - 0.1) * 250 + 20));
+    return { score, predictedDigit: predicted, reason: `After D${lastDigit} → D${predicted} (${(ratio * 100).toFixed(0)}%)` };
 }
 
 // ── Layer 4: Cross-Market Echo ──
@@ -106,20 +115,20 @@ function calcEchoScore(
     currentDigit: number,
     allMarketData: Record<string, MarketData>,
 ): { score: number; echoDigit: number; reason: string } {
-    // Check if other markets recently showed the same digit
     let echoCount = 0;
     let totalChecks = 0;
     for (const [sym, md] of Object.entries(allMarketData)) {
         if (sym === currentSymbol) continue;
         if (md.ticks.length < 5) continue;
-        const recent = md.ticks.slice(-3);
+        const recent = md.ticks.slice(-5);
         totalChecks++;
         if (recent.includes(currentDigit)) echoCount++;
     }
     if (totalChecks < 3) return { score: 0, echoDigit: currentDigit, reason: 'Insufficient cross-market data' };
     const echoRatio = echoCount / totalChecks;
-    const score = Math.min(100, Math.max(0, echoRatio * 130));
-    return { score, echoDigit: currentDigit, reason: `D${currentDigit} echoed in ${echoCount}/${totalChecks} markets` };
+    // More aggressive: 40% = 40, 60% = 65, 80%+ = 90+
+    const score = Math.min(100, Math.max(0, echoRatio * 110 + 20));
+    return { score, echoDigit: currentDigit, reason: `D${currentDigit} in ${echoCount}/${totalChecks} markets` };
 }
 
 export const DigitHunter: React.FC = () => {
@@ -218,26 +227,44 @@ export const DigitHunter: React.FC = () => {
             // Weighted total
             const totalScore = (freq.score * 0.30) + (streak.score * 0.25) + (pair.score * 0.25) + (echo.score * 0.20);
 
-            // Determine contract type and barrier
+            // ── Smart contract selection ──
             let contractType = 'DIGITMATCH';
             let barrier = freq.digit;
             let reason = freq.reason;
             let digit = freq.digit;
 
-            if (streak.score > freq.score && streak.score > pair.score && streak.streakCount >= 3) {
-                // Streak is strongest → use DIGITDIFF against streak
+            // Priority 1: Streak → DIGITDIFF (bet against streak digit)
+            if (streak.score >= 50 && streak.streakCount >= 2) {
                 contractType = 'DIGITDIFF';
                 barrier = streak.digit;
                 reason = streak.reason;
                 digit = streak.digit;
-            } else if (pair.score > freq.score && pair.score > streak.score && pair.predictedDigit >= 0) {
-                // Pair pattern is strongest → DIGITMATCH predicted digit
+            }
+            // Priority 2: Frequency skew → DIGITOVER or DIGITUNDER
+            else if (freq.skewScore >= 40 && freq.skew !== 'none') {
+                if (freq.skew === 'high') {
+                    // High digits (6-9) overrepresented → bet UNDER (digits 0-4 will catch up)
+                    contractType = 'DIGITUNDER';
+                    barrier = 5;
+                    reason = `High digits ${(freq as any).highPct || ''} skewed → UNDER 5`;
+                    digit = 5;
+                } else {
+                    // Low digits (0-4) overrepresented → bet OVER (digits 6-9 will catch up)
+                    contractType = 'DIGITOVER';
+                    barrier = 5;
+                    reason = `Low digits skewed → OVER 5`;
+                    digit = 5;
+                }
+            }
+            // Priority 3: Pair pattern → DIGITMATCH predicted digit
+            else if (pair.score >= 40 && pair.predictedDigit >= 0) {
                 contractType = 'DIGITMATCH';
                 barrier = pair.predictedDigit;
                 reason = pair.reason;
                 digit = pair.predictedDigit;
-            } else if (freq.score > 30) {
-                // Frequency is strongest → DIGITMATCH overdue digit
+            }
+            // Priority 4: Frequency → DIGITMATCH overdue digit
+            else if (freq.score >= 30) {
                 contractType = 'DIGITMATCH';
                 barrier = freq.digit;
                 reason = freq.reason;
