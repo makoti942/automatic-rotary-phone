@@ -97,29 +97,41 @@
         }
 
         .free-bot-card__avatar {
-            transform: scale(1.1);
-            filter: drop-shadow(0 4px 8px rgba(249, 115, 22, 0.4));
+            transform: scale(1.15) translateY(-5px);
+            filter: drop-shadow(0 8px 16px rgba(249, 115, 22, 0.5));
         }
     }
 
     &__icon {
         width: 100%;
-        height: 80px;
-        background: linear-gradient(135deg, rgba(249, 115, 22, 0.15), rgba(239, 68, 68, 0.1));
+        height: 90px;
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
-        border-bottom: 1px solid rgba(249, 115, 22, 0.1);
+        border-bottom: 2px solid rgba(249, 115, 22, 0.3);
+        position: relative;
+
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 20px;
+            background: linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent);
+        }
     }
 
     &__avatar {
-        width: 70px;
-        height: 70px;
+        width: 75px;
+        height: 75px;
         object-fit: contain;
-        border-radius: 50%;
         transition: transform 0.3s ease, filter 0.3s ease;
-        filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
+        position: relative;
+        z-index: 1;
     }
 
     &__body {
@@ -281,12 +293,12 @@
         border-radius: 10px;
 
         &__icon {
-            height: 60px;
+            height: 70px;
         }
 
         &__avatar {
-            width: 55px;
-            height: 55px;
+            width: 60px;
+            height: 60px;
         }
 
         &__body {

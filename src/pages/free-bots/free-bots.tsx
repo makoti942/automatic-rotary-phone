@@ -80,10 +80,38 @@ const FreeBots = observer(() => {
         return `Advanced trading bot: ${botName}. Features automated trading, risk management, and profit optimization.`;
     };
 
-    // Generate unique robot avatar URL from bot name using Robohash API
-    const getRobotAvatar = (botName: string): string => {
-        const seed = botName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-        return `https://robohash.org/${seed}?set=set2&size=200x200`;
+    // Map each bot to a unique robot image
+    const getRobotImage = (botName: string): string => {
+        const robotMap: { [key: string]: string } = {
+            'STARTER BOT': '/robot-images/robot1.png',
+            'POVERTY KILLER': '/robot-images/robot2.png',
+            'POVERTY KILLER V2.1': '/robot-images/robot3.png',
+            'BEST RISE FALL': '/robot-images/robot4.png',
+            'MAKOTI AUTOMATED RISE FALL': '/robot-images/robot5.png',
+            'THE CMV PRO': '/robot-images/robot6.png',
+            'UNDER BLAST PRO': '/robot-images/robot7.png',
+            'OVER1 R32 PRO': '/robot-images/robot8.png',
+            'OVER2 R43 PRO': '/robot-images/robot9.png',
+            'UNDER8 R67 PRO': '/robot-images/robot10.png',
+            'UNDER7 R56 PRO': '/robot-images/robot11.png',
+            'MAKOTIV3RISE FALL': '/robot-images/robot12.png',
+            'MAKOTI RISE/FALL V4': '/robot-images/robot13.png',
+            'FREE BOT WITH MARTINGALE': '/robot-images/robot14.png',
+            'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/robot15.png',
+        };
+
+        // Try exact match first
+        if (robotMap[botName]) return robotMap[botName];
+
+        // Try partial matches
+        for (const key in robotMap) {
+            if (botName.includes(key) || key.includes(botName)) {
+                return robotMap[key];
+            }
+        }
+
+        // Default robot
+        return '/robot-images/robot16.png';
     };
 
     // Show selected bots from public/xml (explicit curated list)
@@ -247,7 +275,7 @@ const FreeBots = observer(() => {
                 ) : (
                     <div className='free-bots__grid'>
                         {availableBots.map((bot, index) => {
-                            const robotAvatar = getRobotAvatar(bot.name);
+                            const robotImage = getRobotImage(bot.name);
                             return (
                                 <div
                                     key={index}
@@ -256,11 +284,11 @@ const FreeBots = observer(() => {
                                 >
                                 <div className='free-bot-card__icon'>
                                     <img 
-                                        src={robotAvatar} 
+                                        src={robotImage} 
                                         alt={bot.name}
                                         className='free-bot-card__avatar'
                                         onError={(e) => {
-                                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,' + encodeURIComponent(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#1e293b"/><circle cx="50" cy="40" r="25" fill="#3b82f6"/><circle cx="42" cy="38" r="4" fill="#fff"/><circle cx="58" cy="38" r="4" fill="#fff"/><rect x="38" y="50" width="24" height="4" rx="2" fill="#fff" opacity="0.8"/><rect x="45" y="65" width="10" height="25" rx="4" fill="#3b82f6"/></svg>`);
+                                            (e.target as HTMLImageElement).src = '/robot-images/robot16.png';
                                         }}
                                     />
                                 </div>
