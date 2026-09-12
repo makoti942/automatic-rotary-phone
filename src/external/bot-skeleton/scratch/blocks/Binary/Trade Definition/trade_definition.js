@@ -187,6 +187,10 @@ window.Blockly.JavaScript.javascriptGenerator.forBlock.trade_definition = block 
     const vh_threshold_block = trade_options_block?.getInputTargetBlock('VIRTUAL_HOOK_THRESHOLD');
     const vh_threshold = vh_threshold_block ? window.Blockly.JavaScript.javascriptGenerator.valueToCode(trade_options_block, 'VIRTUAL_HOOK_THRESHOLD', window.Blockly.JavaScript.javascriptGenerator.ORDER_ATOMIC) || '1' : '1';
 
+    const bulk_enabled = trade_options_block?.getFieldValue('BULK_TRADE_ENABLED') === 'TRUE';
+    const bulk_count_block = trade_options_block?.getInputTargetBlock('BULK_TRADE_COUNT');
+    const bulk_count = bulk_count_block ? window.Blockly.JavaScript.javascriptGenerator.valueToCode(trade_options_block, 'BULK_TRADE_COUNT', window.Blockly.JavaScript.javascriptGenerator.ORDER_ATOMIC) || '1' : '1';
+
     const { opposites } = config();
     const contract_type_list =
         contract_type === 'both'
@@ -207,6 +211,10 @@ window.Blockly.JavaScript.javascriptGenerator.forBlock.trade_definition = block 
           virtualHook: {
               enabled: ${vh_enabled},
               threshold: ${vh_threshold},
+          },
+          bulkTrade: {
+              enabled: ${bulk_enabled},
+              count: ${bulk_count},
           },
         });
         ${initialization.trim()}

@@ -125,6 +125,10 @@ export default class TradeEngine extends Balance(Purchase(Sell(OpenContract(Prop
             this.vh_state.step_count = 0;
             this.vh_state.real_trade_count = 0;
         }
+        if (options.bulkTrade) {
+            this.vh_state.bulk_enabled = !!options.bulkTrade.enabled;
+            this.vh_state.bulk_count = Math.max(1, Number(options.bulkTrade.count) || 1);
+        }
         this.startPromise = this.loginAndGetBalance(token);
 
         if (!this.checkTicksPromiseExists()) this.watchTicks(symbol);

@@ -26,12 +26,18 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
         const container = document.createElement('mutation');
         const vh_enabled = this.getFieldValue('VIRTUAL_HOOK_ENABLED') === 'TRUE';
         container.setAttribute('vh_enabled', vh_enabled);
+        const bulk_enabled = this.getFieldValue('BULK_TRADE_ENABLED') === 'TRUE';
+        container.setAttribute('bulk_enabled', bulk_enabled);
         return container;
     },
     domToMutation(xmlElement) {
         const vh_enabled = xmlElement.getAttribute('vh_enabled') === 'true';
         if (vh_enabled) {
             this.updateVirtualHookThresholdInput(true);
+        }
+        const bulk_enabled = xmlElement.getAttribute('bulk_enabled') === 'true';
+        if (bulk_enabled) {
+            this.updateBulkTradeCountInput(true);
         }
     },
     updateVirtualHookThresholdInput(is_enabled) {
@@ -48,6 +54,23 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
                 }
             } else {
                 this.removeInput('VIRTUAL_HOOK_THRESHOLD', true);
+            }
+        });
+    },
+    updateBulkTradeCountInput(is_enabled) {
+        runIrreversibleEvents(() => {
+            if (is_enabled) {
+                if (!this.getInput('BULK_TRADE_COUNT')) {
+                    this.appendValueInput('BULK_TRADE_COUNT').appendField(localize('Bulk Count:'));
+                    const shadow_block = this.workspace.newBlock('math_number');
+                    shadow_block.setShadow(true);
+                    shadow_block.setFieldValue('1', 'NUM');
+                    shadow_block.initSvg();
+                    shadow_block.render();
+                    shadow_block.outputConnection.connect(this.getInput('BULK_TRADE_COUNT').connection);
+                }
+            } else {
+                this.removeInput('BULK_TRADE_COUNT', true);
             }
         });
     },
@@ -100,6 +123,16 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
                     name: 'VIRTUAL_HOOK_ENABLED',
                     checked: false,
                 },
+                {
+                    type: 'field_label',
+                    text: localize('Bulk Trade'),
+                    class: 'blocklyTextVirtualHook',
+                },
+                {
+                    type: 'field_checkbox',
+                    name: 'BULK_TRADE_ENABLED',
+                    checked: false,
+                },
             ],
             colour: window.Blockly.Colours.Special1.colour,
             colourSecondary: window.Blockly.Colours.Special1.colourSecondary,
@@ -128,6 +161,10 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
             if (event.name === 'VIRTUAL_HOOK_ENABLED') {
                 const is_enabled = this.getFieldValue('VIRTUAL_HOOK_ENABLED') === 'TRUE';
                 this.updateVirtualHookThresholdInput(is_enabled);
+            }
+            if (event.name === 'BULK_TRADE_ENABLED') {
+                const is_enabled = this.getFieldValue('BULK_TRADE_ENABLED') === 'TRUE';
+                this.updateBulkTradeCountInput(is_enabled);
             }
 
             const selected_block = this.workspace.getBlockById(event.blockId);
