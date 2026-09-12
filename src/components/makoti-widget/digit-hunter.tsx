@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ALL_SYMBOLS, SYMBOL_LABELS, openMakotiWS, MakotiWS, getDigitPcts } from './makoti-ws';
+import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES, openMakotiWS, MakotiWS, getDigitPcts } from './makoti-ws';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 
@@ -317,7 +317,7 @@ export const DigitHunter: React.FC = () => {
             const scored: ScoredMarket = {
                 symbol: sym, freqScore: freq.score, streakScore: streak.score,
                 pairScore: pair.score, echoScore: echo.score, totalScore,
-                contractType, barrier, digit, reason,
+                contractType, barrier, digit: barrier, reason,
             };
 
             if (!best || totalScore > best.totalScore) best = scored;
@@ -427,6 +427,31 @@ export const DigitHunter: React.FC = () => {
 
     // ── WS message handler ──
     const onMessage = useCallback((data: any) => {
+        // History response (initial batch from subscribe) — populate instantly so scoring works
+        if (data.msg_type === 'history') {
+            const sym = data.echo_req?.ticks_history ?? data.req_id?.toString?.();
+            const prices = data.history?.prices;
+            if (!sym || !Array.isArray(prices) || !prices.length) return;
+            const md = allMarketDataRef.current[sym];
+            if (!md) return;
+            if (md.ticks.length >= MIN_TICKS) return; // already populated
+            const pipSize = PIP_SIZES[sym] ?? 4;
+            md.ticks = [];
+            md.prices = [];
+            for (const priceStr of prices) {
+                const price = Number(priceStr);
+                if (isNaN(price)) continue;
+                const lastDigit = parseInt(price.toFixed(pipSize).slice(-1), 10);
+                md.ticks.push(lastDigit);
+                md.prices.push(price);
+            }
+            if (md.ticks.length > MAX_TICKS) { md.ticks = md.ticks.slice(-MAX_TICKS); md.prices = md.prices.slice(-MAX_TICKS); }
+            md.digitPcts = getDigitPcts(md.ticks, 200);
+            md.lastDigit = md.ticks[md.ticks.length - 1];
+            addLog(`📥 ${SYMBOL_LABELS[sym]} history loaded (${md.ticks.length} ticks)`);
+            return;
+        }
+
         // Tick data
         if (data.msg_type === 'tick') {
             const tick = data.tick;
@@ -434,7 +459,7 @@ export const DigitHunter: React.FC = () => {
             const sym = tick.symbol;
             const price = Number(tick.quote);
             if (isNaN(price)) return;
-            const pipSize = sym.includes('R_100') || sym.includes('1HZ100V') || sym.includes('1HZ75V') || sym.includes('1HZ50V') || sym.includes('1HZ25V') || sym.includes('1HZ10V') ? 2 : (sym === 'R_75' || sym === 'R_50' ? 4 : 3);
+            const pipSize = PIP_SIZES[sym] ?? 4;
             const priceStr = price.toFixed(pipSize);
             const lastDigit = parseInt(priceStr.slice(-1), 10);
 
@@ -495,7 +520,7 @@ export const DigitHunter: React.FC = () => {
         const ws = wsRef.current;
         if (!ws) return;
         ALL_SYMBOLS.forEach(sym => {
-            ws.send({ ticks_history: sym, style: 'ticks', count: 1, end: 'latest', subscribe: 1 });
+            ws.send({ ticks_history: sym, style: 'ticks', count: 100, end: 'latest', subscribe: 1 });
         });
     }, [conn, running]);
 

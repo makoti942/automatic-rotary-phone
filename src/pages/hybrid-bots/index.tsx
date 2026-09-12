@@ -309,6 +309,85 @@ read_ohlc_obj, ohlc_values_in_list, is_candle_black
 </xml>
 \`\`\`
 
+## VARIABLES & MARTINGALE EXAMPLE (how to create and use variables):
+
+To create a variable, use variables_set. To read it later, use variables_get.
+The VAR field is the variable NAME as a plain string (e.g. "stake"). Every variables_get
+must reference a variable that was set somewhere in the bot first.
+
+\`\`\`xml
+<!-- Set a variable named "stake" to 0.35 -->
+<block type="variables_set" id="v1">
+  <field name="VAR">stake</field>
+  <value name="VALUE">
+    <block type="math_number" id="v2">
+      <field name="NUM">0.35</field>
+    </block>
+  </value>
+</block>
+
+<!-- Read the variable: get "stake", use it in math (stake * 2 for martingale) -->
+<block type="variables_set" id="v3">
+  <field name="VAR">stake</field>
+  <value name="VALUE">
+    <block type="math_arithmetic" id="v4">
+      <field name="OP">MULTIPLY</field>
+      <value name="A">
+        <block type="variables_get" id="v5">
+          <field name="VAR">stake</field>
+        </block>
+      </value>
+      <value name="B">
+        <block type="math_number" id="v6">
+          <field name="NUM">2</field>
+        </block>
+      </value>
+    </block>
+  </value>
+</block>
+
+<!-- Compare variable to a number -->
+<block type="logic_compare" id="v7">
+  <field name="OP">GT</field>
+  <value name="A">
+    <block type="variables_get" id="v8">
+      <field name="VAR">stake</field>
+    </block>
+  </value>
+  <value name="B">
+    <block type="math_number" id="v9">
+      <field name="NUM">2.8</field>
+    </block>
+  </value>
+</block>
+
+<!-- Notify / log text: join strings with variables -->
+<block type="notify" id="n1">
+  <field name="NOTIFICATION_TYPE">info</field>
+  <field name="NOTIFICATION_SOUND">silent</field>
+  <value name="MESSAGE">
+    <block type="text_join" id="n2">
+      <mutation items="3"></mutation>
+      <value name="ADD0">
+        <block type="text" id="n3">
+          <field name="TEXT">Stake is now </field>
+        </block>
+      </value>
+      <value name="ADD1">
+        <block type="variables_get" id="n4">
+          <field name="VAR">stake</field>
+        </block>
+      </value>
+      <value name="ADD2">
+        <block type="text" id="n5">
+          <field name="TEXT"> USD</field>
+        </block>
+      </value>
+    </block>
+  </value>
+</block>
+\`\`\`
+
 ## HOW EACH BLOCK WORKS:
 
 ### trade_definition_tradeoptions:
@@ -353,9 +432,30 @@ read_ohlc_obj, ohlc_values_in_list, is_candle_black
 □ All controls_if blocks have IF0 condition
 □ No empty strings or placeholders
 
+## REQUIRED BOT STRUCTURE — a complete bot ALWAYS has these areas arranged at distinct x,y coordinates:
+1. trade_definition (x=0, y=0) with the FULL nested chain in TRADE_OPTIONS:
+   market → tradetype → contracttype → candleinterval → restartbuysell → restartonerror,
+   and a SUBMARKET statement holding trade_definition_tradeoptions (duration + amount + prediction/barrier)
+2. tick_analysis (or before_purchase) area for any setup/entry logic (x=350, y=60) — set variables, compute stakes, conditions
+3. before_purchase (x=0, y=658) with a purchase block (PURCHASE_LIST matching the contract type)
+4. during_purchase (x=714, y=60) with check_sell → if it returns TRUE, sell via sell_at_market
+5. after_purchase (x=714, y=292):
+   - Decide win/loss with contract_check_result (fields: win, loss, draw) or read_details (profit > 0)
+   - On LOSS: increase the stake variable (martingale), switch barrier if recovery, notify the user
+   - On WIN: reset the stake variable back to base, notify the user
+   - END with trade_again so the bot loops continuously
+
+## COMPLEX STRATEGY RULES:
+- Any value that changes over time (stake, loss-count, martingale level, current barrier) MUST be a variable
+- Set the variable in tick_analysis or before_purchase; read it in before_purchase / after_purchase
+- Use notify or text_print to report each trade result; use text_join to combine text with variables
+- If you need conditions, nest logic_compare inside controls_if IF0. For win/loss, use contract_check_result
+- Always double the stake on loss ×2 (martingale) unless the user specifies another multiplier
+
 ## Output Format:
 - When asking questions: respond naturally
 - When generating XML: return ONLY valid XML in \`\`\`xml ... \`\`\`
+- Build the ENTIRE bot in ONE response — every area above must be present
 - The XML must be COMPLETE and LOADABLE into Deriv Bot Builder`;
 
 async function callGroq(messages: any[]): Promise<string> {
@@ -386,6 +486,141 @@ function extractXml(text: string): string | null {
     // If the whole response looks like XML
     if (text.trim().startsWith('<xml')) return text.trim();
     return null;
+}
+
+// ── Valid block types (verified from source code) ──
+const VALID_BLOCKS: Set<string> = new Set([
+    // Trade Definition
+    'trade_definition', 'trade_definition_market', 'trade_definition_tradetype', 'trade_definition_contracttype',
+    'trade_definition_candleinterval', 'trade_definition_tradeoptions', 'trade_definition_tradeoptions_payout',
+    'trade_definition_restartbuysell', 'trade_definition_restartonerror', 'trade_definition_multiplier',
+    'trade_definition_accumulator', 'multiplier_take_profit', 'multiplier_stop_loss', 'accumulator_take_profit',
+    // Before Purchase
+    'before_purchase', 'purchase', 'ask_price', 'payout',
+    // During Purchase
+    'during_purchase', 'check_sell', 'sell_price', 'sell_at_market',
+    // After Purchase
+    'after_purchase', 'trade_again', 'read_details', 'contract_check_result',
+    // Tick Analysis
+    'tick_analysis', 'ticks', 'ticks_string', 'tick', 'tick_string', 'ohlc', 'stat_list', 'stat',
+    'last_digit', 'read_ohlc', 'lastDigitList', 'ohlc_values', 'check_direction', 'get_ohlc',
+    // Indicators + Parts
+    'sma_statement', 'smaa_statement', 'ema_statement', 'rsi_statement', 'rsia_statement', 'emaa_statement',
+    'bb_statement', 'bba_statement', 'macda_statement',
+    'fast_ema_period', 'signal_ema_period', 'std_dev_multiplier_up', 'period', 'std_dev_multiplier_down',
+    'input_list', 'slow_ema_period',
+    // Logic
+    'controls_if', 'logic_boolean', 'logic_compare', 'logic_negate', 'logic_null', 'logic_operation', 'logic_ternary',
+    // Math
+    'math_arithmetic', 'math_change', 'math_constant', 'math_constrain', 'math_modulo', 'math_number',
+    'math_number_positive', 'math_number_property', 'math_on_list', 'math_random_float', 'math_random_int',
+    'math_round', 'math_single', 'math_trig',
+    // Text
+    'text', 'text_append', 'text_changeCase', 'text_charAt', 'text_getSubstring', 'text_indexOf', 'text_isEmpty',
+    'text_join', 'text_length', 'text_print', 'text_prompt_ext', 'text_statement', 'text_trim',
+    // Lists
+    'lists_create_with', 'lists_getIndex', 'lists_getSublist', 'lists_indexOf', 'lists_isEmpty', 'lists_length',
+    'lists_repeat', 'lists_setIndex', 'lists_sort', 'lists_split', 'lists_statement',
+    // Variables
+    'variables_get', 'variables_set',
+    // Loops
+    'controls_flow_statements', 'controls_for', 'controls_forEach', 'controls_repeat', 'controls_repeat_ext',
+    'controls_whileUntil',
+    // Functions
+    'procedures_callnoreturn', 'procedures_callreturn', 'procedures_defnoreturn', 'procedures_defreturn',
+    'procedures_ifreturn',
+    // Tools
+    'totimestamp', 'todatetime', 'timeout', 'tick_delay', 'epoch',
+    'console', 'useless_block', 'block_holder', 'total_runs', 'barrier_offset', 'total_profit',
+    'total_profit_string', 'notify_telegram', 'notify', 'loader', 'balance',
+    'read_ohlc_obj', 'ohlc_values_in_list', 'is_candle_black',
+]);
+
+// Invalid block name → correct block name
+const BLOCK_CORRECTIONS: Record<string, string> = {
+    contract_details: 'read_details',
+    contract_check_result_details: 'read_details',
+    check_result: 'contract_check_result',
+    sell: 'sell_at_market',
+    buy: 'purchase',
+    trade_option: 'trade_again',
+    readOhlc: 'read_ohlc',
+    read_ohlc_values: 'ohlc_values',
+    controls_if_else: 'controls_if',
+    lists_create_empty: 'lists_create_with',
+    candle: 'read_ohlc_obj',
+    candle_read: 'read_ohlc_obj',
+    indicator: 'sma_statement',
+    stochastic: 'sma_statement',
+    moving_average: 'sma_statement',
+    macd: 'macda_statement',
+    bollinger_bands: 'bb_statement',
+    rsi: 'rsi_statement',
+    atr: 'sma_statement',
+    adx: 'sma_statement',
+    cci: 'sma_statement',
+    awesome_oscillator: 'sma_statement',
+    momentum: 'sma_statement',
+    rate_of_change: 'sma_statement',
+    williams_r: 'sma_statement',
+    variance: 'sma_statement',
+    tick_delay_seconds: 'tick_delay',
+    notify_telegram_message: 'notify_telegram',
+    text_to_number: 'text_length',
+    number_to_text: 'text',
+    digit_analysis: 'last_digit',
+    previous_ticks: 'ticks',
+    current_tick: 'tick',
+    is_candle_green: 'is_candle_black',
+    total_trades: 'total_runs',
+};
+
+// Parse XML, autocorrect invalid block types, strip uncorrectable ones.
+// Returns { cleanXml, fixes, removed }
+function sanitizeXml(rawXml: string): { cleanXml: string; fixes: string[]; removed: string[] } {
+    const fixes: string[] = [];
+    const removed: string[] = [];
+    let cleanXml = rawXml;
+
+    try {
+        const doc = new DOMParser().parseFromString(rawXml, 'text/xml');
+        if (doc.querySelector('parsererror')) throw new Error('parse error');
+        const targets = Array.from(doc.querySelectorAll('block, shadow'));
+        for (const el of targets) {
+            const t = el.getAttribute('type');
+            if (!t) continue;
+            if (VALID_BLOCKS.has(t)) continue;
+            const correction = BLOCK_CORRECTIONS[t];
+            if (correction) {
+                if (correction === 'controls_if') {
+                    // controls_if_else → controls_if: just fix type, ELSE statement stays usable
+                    el.setAttribute('type', correction);
+                    fixes.push(`${t} → ${correction}`);
+                } else {
+                    el.setAttribute('type', correction);
+                    fixes.push(`${t} → ${correction}`);
+                }
+            } else {
+                // Unknown block: remove it to avoid breaking the whole load
+                el.parentNode?.removeChild(el);
+                removed.push(t);
+            }
+        }
+        const serializer = new XMLSerializer();
+        cleanXml = serializer.serializeToString(doc.documentElement);
+    } catch (_) {
+        // Fallback: string replacements only
+        let fixed = rawXml;
+        for (const [bad, good] of Object.entries(BLOCK_CORRECTIONS)) {
+            const re = new RegExp(`type="${bad}"`, 'g');
+            if (re.test(fixed)) {
+                fixed = fixed.replace(re, `type="${good}"`);
+                fixes.push(`${bad} → ${good}`);
+            }
+        }
+        cleanXml = fixed;
+    }
+    return { cleanXml, fixes, removed };
 }
 
 function ls(key: string, def: string) { try { return localStorage.getItem(key) || def; } catch { return def; } }
@@ -463,50 +698,44 @@ export const BuildBot = observer(() => {
     const loadToWorkspace = useCallback(async () => {
         if (!generatedXml) return;
         try {
-            // Validate XML completeness
+            // Autocorrect invalid block types and strip unknown ones
+            const { cleanXml, fixes, removed } = sanitizeXml(generatedXml);
+
             const issues: string[] = [];
 
-            // Check for invalid block types
-            const invalidBlocks = ['contract_details', 'check_result', 'sell', 'trade_option', 'readOhlc', 'controls_if_else', 'lists_create_empty'];
-            for (const b of invalidBlocks) {
-                if (generatedXml.includes(`type="${b}"`)) {
-                    let fix = '';
-                    if (b === 'sell') fix = 'use sell_at_market or sell_price';
-                    else if (b === 'trade_option') fix = 'use trade_again';
-                    else if (b === 'check_result') fix = 'use contract_check_result';
-                    else if (b === 'readOhlc') fix = 'use read_ohlc';
-                    else if (b === 'controls_if_else') fix = 'use controls_if with ELSE statement';
-                    else if (b === 'lists_create_empty') fix = 'use lists_create_with';
-                    else if (b === 'contract_details') fix = 'use read_details';
-                    issues.push(`Invalid block: ${b} → ${fix}`);
-                }
-            }
-
             // Check for empty fields
-            const fieldMatches = generatedXml.match(/<field name="[^"]*"><\/field>/g);
+            const fieldMatches = cleanXml.match(/<field name="[^"]*"><\/field>/g);
             if (fieldMatches) {
                 issues.push(`Empty fields found: ${fieldMatches.length}`);
             }
 
             // Check for placeholder text
-            const placeholders = generatedXml.match(/(TODO|FIXME|XXX|PLACEHOLDER)/gi);
+            const placeholders = cleanXml.match(/(TODO|FIXME|XXX|PLACEHOLDER)/gi);
             if (placeholders) {
                 issues.push('Contains placeholder text');
             }
 
             // Check for required trade_definition
-            if (!generatedXml.includes('trade_definition"')) {
+            if (!cleanXml.includes('trade_definition"')) {
                 issues.push('Missing trade_definition block');
             }
 
             // Check for required before_purchase
-            if (!generatedXml.includes('before_purchase"')) {
+            if (!cleanXml.includes('before_purchase"')) {
                 issues.push('Missing before_purchase block');
             }
 
+            let summary = '';
+            if (fixes.length > 0) summary += `\n✅ Autocorrected ${fixes.length} block(s):\n- ${fixes.join('\n- ')}`;
+            if (removed.length > 0) summary += `\n⚠️ Removed ${removed.length} unknown block(s): ${removed.join(', ')}`;
             if (issues.length > 0) {
-                alert(`XML has ${issues.length} issues:\n${issues.join('\n')}\n\nPlease ask AI to fix these.`);
+                alert(`⚠️ XML has ${issues.length} issue(s):\n${issues.join('\n')}${summary}\n\nFix them or ask the AI to regenerate.`);
                 return;
+            }
+
+            // Save the cleaned XML so subsequent loads use it
+            if (cleanXml !== generatedXml) {
+                setGeneratedXml(cleanXml);
             }
 
             // Wait for workspace to be ready
@@ -536,15 +765,15 @@ export const BuildBot = observer(() => {
             // Load using the proper store method
             const tempId = `buildbot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await load_modal.loadStrategyToBuilder(
-                { id: tempId, xml: generatedXml, name: 'Build Bot Strategy', save_type: 'pending' },
+                { id: tempId, xml: cleanXml, name: 'Build Bot Strategy', save_type: 'pending' },
                 true
             );
 
-            alert('Bot loaded into workspace!');
+            alert(`Bot loaded into workspace!${summary}`);
         } catch (e: any) {
             alert(`Error loading bot: ${e.message}`);
         }
-    }, [generatedXml, setActiveTab, load_modal]);
+    }, [generatedXml, setGeneratedXml, setActiveTab, load_modal]);
 
     const clearChat = useCallback(() => {
         setMessages([]);
@@ -677,6 +906,6 @@ export const BuildBot = observer(() => {
             )}
         </div>
     );
-};
+});
 
 export default BuildBot;
