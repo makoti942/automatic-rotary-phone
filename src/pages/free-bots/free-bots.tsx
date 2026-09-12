@@ -80,24 +80,24 @@ const FreeBots = observer(() => {
         return `Advanced trading bot: ${botName}. Features automated trading, risk management, and profit optimization.`;
     };
 
-    // Map each bot to a unique robot image
+    // Map each bot to a unique realistic robot image
     const getRobotImage = (botName: string): string => {
         const robotMap: { [key: string]: string } = {
-            'STARTER BOT': '/robot-images/robot1.png',
-            'POVERTY KILLER': '/robot-images/robot2.png',
-            'POVERTY KILLER V2.1': '/robot-images/robot3.png',
-            'BEST RISE FALL': '/robot-images/robot4.png',
-            'MAKOTI AUTOMATED RISE FALL': '/robot-images/robot5.png',
-            'THE CMV PRO': '/robot-images/robot6.png',
-            'UNDER BLAST PRO': '/robot-images/robot7.png',
-            'OVER1 R32 PRO': '/robot-images/robot8.png',
-            'OVER2 R43 PRO': '/robot-images/robot9.png',
-            'UNDER8 R67 PRO': '/robot-images/robot10.png',
-            'UNDER7 R56 PRO': '/robot-images/robot11.png',
-            'MAKOTIV3RISE FALL': '/robot-images/robot12.png',
-            'MAKOTI RISE/FALL V4': '/robot-images/robot13.png',
-            'FREE BOT WITH MARTINGALE': '/robot-images/robot14.png',
-            'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/robot15.png',
+            'STARTER BOT': '/robot-images/robot_real1.png',
+            'POVERTY KILLER': '/robot-images/robot_real2.png',
+            'POVERTY KILLER V2.1': '/robot-images/robot_real3.png',
+            'BEST RISE FALL': '/robot-images/robot_real4.png',
+            'MAKOTI AUTOMATED RISE FALL': '/robot-images/robot_real5.png',
+            'THE CMV PRO': '/robot-images/robot_real6.png',
+            'UNDER BLAST PRO': '/robot-images/robot_real7.png',
+            'OVER1 R32 PRO': '/robot-images/robot_real8.png',
+            'OVER2 R43 PRO': '/robot-images/robot_real9.png',
+            'UNDER8 R67 PRO': '/robot-images/robot_real10.png',
+            'UNDER7 R56 PRO': '/robot-images/robot_real11.png',
+            'MAKOTIV3RISE FALL': '/robot-images/robot_real12.png',
+            'MAKOTI RISE/FALL V4': '/robot-images/robot_real13.png',
+            'FREE BOT WITH MARTINGALE': '/robot-images/robot_real14.png',
+            'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/robot_real15.png',
         };
 
         // Try exact match first
@@ -111,7 +111,7 @@ const FreeBots = observer(() => {
         }
 
         // Default robot
-        return '/robot-images/robot16.png';
+        return '/robot-images/robot_real1.png';
     };
 
     // Show selected bots from public/xml (explicit curated list)
@@ -288,7 +288,7 @@ const FreeBots = observer(() => {
                                         alt={bot.name}
                                         className='free-bot-card__avatar'
                                         onError={(e) => {
-                                            (e.target as HTMLImageElement).src = '/robot-images/robot16.png';
+                                            (e.target as HTMLImageElement).src = '/robot-images/robot_real1.png';
                                         }}
                                     />
                                 </div>
