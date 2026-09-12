@@ -82,7 +82,7 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
                 duration_value: '%2',
             }),
             message1: `${is_stake ? localize('Stake') : localize('Payout')}: %1 %2 %3`,
-            message2: '%1 %2',
+            message2: '%1 %2 %3 %4',
             args0: [
                 {
                     type: 'field_dropdown',
