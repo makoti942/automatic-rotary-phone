@@ -80,6 +80,12 @@ const FreeBots = observer(() => {
         return `Advanced trading bot: ${botName}. Features automated trading, risk management, and profit optimization.`;
     };
 
+    // Generate unique robot avatar URL from bot name using Robohash API
+    const getRobotAvatar = (botName: string): string => {
+        const seed = botName.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        return `https://robohash.org/${seed}?set=set2&size=200x200`;
+    };
+
     // Show selected bots from public/xml (explicit curated list)
     const getXmlFiles = () => {
         return [
@@ -240,13 +246,24 @@ const FreeBots = observer(() => {
                     </div>
                 ) : (
                     <div className='free-bots__grid'>
-                        {availableBots.map((bot, index) => (
+                        {availableBots.map((bot, index) => {
+                            const robotAvatar = getRobotAvatar(bot.name);
+                            return (
                                 <div
                                     key={index}
                                     className={`free-bot-card ${bot.badge_class ? `free-bot-card--${bot.badge_class}` : ''}`}
                                     data-badge={bot.badge_text || 'PREMIUM'}
                                 >
-                                <div className='free-bot-card__icon'>🤖</div>
+                                <div className='free-bot-card__icon'>
+                                    <img 
+                                        src={robotAvatar} 
+                                        alt={bot.name}
+                                        className='free-bot-card__avatar'
+                                        onError={(e) => {
+                                            (e.target as HTMLImageElement).src = 'data:image/svg+xml,' + encodeURIComponent(`<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg"><rect width="100" height="100" fill="#1e293b"/><circle cx="50" cy="40" r="25" fill="#3b82f6"/><circle cx="42" cy="38" r="4" fill="#fff"/><circle cx="58" cy="38" r="4" fill="#fff"/><rect x="38" y="50" width="24" height="4" rx="2" fill="#fff" opacity="0.8"/><rect x="45" y="65" width="10" height="25" rx="4" fill="#3b82f6"/></svg>`);
+                                        }}
+                                    />
+                                </div>
                                 <div className='free-bot-card__body'>
                                     <div className='free-bot-card__header'>
                                         <Text size='s' weight='bold' className='free-bot-card__title'>
@@ -285,7 +302,8 @@ const FreeBots = observer(() => {
                                     </Button>
                                 </div>
                             </div>
-                        ))}
+                        );
+                        })}
                     </div>
                 )}
             </div>
