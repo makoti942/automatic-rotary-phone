@@ -1,4 +1,7 @@
 ﻿import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { observer } from 'mobx-react-lite';
+import { useStore } from '@/hooks/useStore';
+import { DBOT_TABS } from '@/constants/bot-contents';
 
 interface ChatMessage {
     role: 'user' | 'assistant';
@@ -388,7 +391,9 @@ function extractXml(text: string): string | null {
 function ls(key: string, def: string) { try { return localStorage.getItem(key) || def; } catch { return def; } }
 function lsSet(key: string, val: string) { try { localStorage.setItem(key, val); } catch {} }
 
-export const BuildBot: React.FC = () => {
+export const BuildBot = observer(() => {
+    const { dashboard, load_modal } = useStore();
+    const { setActiveTab } = dashboard;
     const [messages, setMessages] = useState<ChatMessage[]>(() => {
         try {
             const saved = ls('buildbot_history', '[]');
@@ -455,7 +460,7 @@ export const BuildBot: React.FC = () => {
         }
     }, [input, loading, messages, generatedXml]);
 
-    const loadToWorkspace = useCallback(() => {
+    const loadToWorkspace = useCallback(async () => {
         if (!generatedXml) return;
         try {
             // Validate XML completeness
@@ -504,19 +509,42 @@ export const BuildBot: React.FC = () => {
                 return;
             }
 
-            const workspace = window.Blockly?.derivWorkspace;
-            if (workspace) {
-                const xmlDom = new DOMParser().parseFromString(generatedXml, 'text/xml').documentElement;
-                workspace.clear();
-                window.Blockly.Xml.clearWorkspaceAndLoadFromXml(xmlDom, workspace);
-                alert('Bot loaded into workspace!');
-            } else {
-                alert('Bot Builder workspace not found. Please open the Bot Builder tab first.');
-            }
+            // Wait for workspace to be ready
+            const waitForWorkspace = () => new Promise<void>((resolve, reject) => {
+                let attempts = 0;
+                const check = () => {
+                    attempts++;
+                    if (window.Blockly?.derivWorkspace) {
+                        resolve();
+                    } else if (attempts >= 30) {
+                        reject(new Error('Workspace not available'));
+                    } else {
+                        setTimeout(check, 100);
+                    }
+                };
+                check();
+            });
+
+            await waitForWorkspace();
+
+            // Navigate to bot builder tab first
+            setActiveTab(DBOT_TABS.BOT_BUILDER);
+
+            // Small delay to ensure tab is rendered
+            await new Promise(r => setTimeout(r, 200));
+
+            // Load using the proper store method
+            const tempId = `buildbot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            await load_modal.loadStrategyToBuilder(
+                { id: tempId, xml: generatedXml, name: 'Build Bot Strategy', save_type: 'pending' },
+                true
+            );
+
+            alert('Bot loaded into workspace!');
         } catch (e: any) {
             alert(`Error loading bot: ${e.message}`);
         }
-    }, [generatedXml]);
+    }, [generatedXml, setActiveTab, load_modal]);
 
     const clearChat = useCallback(() => {
         setMessages([]);
