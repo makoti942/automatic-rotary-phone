@@ -1,0 +1,32 @@
+{
+    "name": "MAKOTI TRADERS",
+    "short_name": "Makoti",
+    "description": "Automate your trades — import an existing bot or create a trading bot from scratch with guides, FAQs, and tutorials.",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#ffffff",
+    "theme_color": "#3B82F6",
+    "lang": "en",
+    "icons": [
+        {
+            "src": "/pwa/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/pwa/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any"
+        },
+        {
+            "src": "/pwa/maskable-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}
