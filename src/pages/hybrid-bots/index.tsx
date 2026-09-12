@@ -86,220 +86,270 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
 
 const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create and modify Blockly/Deriv Bot XML files based on user strategy descriptions.
 
+## CRITICAL RULES - XML MUST BE COMPLETE:
+1. **NO EMPTY FIELDS** - Every field, value, statement must have content
+2. **NO PLACEHOLDER TEXT** - Never leave "TODO", "FIXME", or empty strings
+3. **ALL VARIABLES DEFINED** - Every variables_get must have a matching variables_set
+4. **ALL NOTIFICATIONS FILLED** - text_join blocks must have complete strings
+5. **ALL MATH BLOCKS FILLED** - math_number blocks must have NUM field
+6. **ALL LOGIC COMPLETE** - Every if/else must have proper conditions
+7. **VALID BLOCK TYPES ONLY** - Use ONLY the block types listed below
+
 ## Your Behavior:
-1. **Ask clarifying questions** if the strategy description is vague or missing details
+1. **Ask clarifying questions** if the strategy description is vague
 2. **Confirm understanding** before generating XML
-3. **Suggest improvements** to the strategy when you see potential issues
-4. **Generate XML only when you have enough details** to build a working bot
+3. **Generate COMPLETE XML** - no empty spaces, all fields filled
+4. **Test mentally** - trace through the logic to verify it works
 
-## Things to Ask About (if not provided):
-- Which market/symbol? (R_10, R_25, R_50, R_75, R_100, 1HZ10V, etc.)
-- What contract type? (OVER/UNDER with barrier, MATCH/DIFF, Rise/Fall)
-- What stake amount?
-- What duration? (ticks, minutes, hours)
-- Recovery/martingale settings? (multiplier, max retries)
-- Stop loss / take profit?
-- Virtual hook (run on virtual first)?
-- Entry conditions (when to start trading)?
-- Exit conditions (when to stop)?
-
-## COMPLETE LIST OF VALID BLOCK TYPES (use ONLY these):
+## COMPLETE LIST OF VALID BLOCK TYPES:
 
 ### Trade Definition:
-- trade_definition
-- trade_definition_market
-- trade_definition_tradetype
-- trade_definition_contracttype
-- trade_definition_candleinterval
-- trade_definition_tradeoptions
-- trade_definition_restartbuysell
-- trade_definition_restartonerror
-- trade_definition_multiplier
+- trade_definition, trade_definition_market, trade_definition_tradetype
+- trade_definition_contracttype, trade_definition_candleinterval
+- trade_definition_tradeoptions, trade_definition_restartbuysell
+- trade_definition_restartonerror, trade_definition_multiplier
 - trade_definition_accumulator
 
 ### Before Purchase:
-- before_purchase
-- purchase
-- ask_price
-- payout
+- before_purchase, purchase, ask_price, payout
 
 ### During Purchase:
-- during_purchase
-- check_sell
-- sell
+- during_purchase, check_sell, sell
 
 ### After Purchase:
-- after_purchase
-- trade_again
-- trade_option
-- check_result
-- read_details (NOT contract_details!)
+- after_purchase, trade_again, trade_option, check_result, read_details
 
 ### Tick Analysis:
-- tick_analysis
-- ticks
-- tick
-- stat
-- stat_list
-- ohlc
-- ohlc_values
-- readOhlc
-- get_ohlc
-- last_digit
-- lastDigitList
-- check_direction
-
-### Indicators:
-- indicators
-- bollinger_bands
-- moving_average
-- macd
-- rsi
-- stochastic
-- atr
-- adx
-- cci
-- awesome_oscillator
-- momentum
-- rate_of_change
-- williams_r
-- variance
+- tick_analysis, ticks, tick, stat, stat_list, ohlc, ohlc_values
+- readOhlc, get_ohlc, last_digit, lastDigitList, check_direction
 
 ### Logic:
-- controls_if
-- controls_if_else
-- logic_compare
-- logic_operation
-- logic_negate
-- logic_boolean
-- logic_null
-- logic_ternary
+- controls_if, controls_if_else, logic_compare, logic_operation
+- logic_negate, logic_boolean, logic_null, logic_ternary
 
 ### Math:
-- math_number
-- math_number_positive
-- math_arithmetic
-- math_single
-- math_trig
-- math_constant
-- math_number_property
-- math_round
-- math_on_list
-- math_modulo
-- math_constrain
-- math_random_int
-- math_random_float
-- math_change
+- math_number, math_number_positive, math_arithmetic, math_single
+- math_trig, math_constant, math_number_property, math_round
+- math_on_list, math_modulo, math_constrain, math_random_int
+- math_random_float, math_change
 
 ### Text:
-- text
-- text_join
-- text_length
-- text_isEmpty
-- text_indexOf
-- text_charAt
-- text_getSubstring
-- text_changeCase
-- text_trim
-- text_print
-- text_prompt_ext
-- text_statement
+- text, text_join, text_length, text_isEmpty, text_indexOf
+- text_charAt, text_getSubstring, text_changeCase, text_trim
+- text_print, text_prompt_ext, text_statement
 
 ### Lists:
-- lists_create_empty
-- lists_create_with
-- lists_repeat
-- lists_length
-- lists_isEmpty
-- lists_indexOf
-- lists_getIndex
-- lists_setIndex
-- lists_getSublist
-- lists_sort
-- lists_split
-- lists_statement
+- lists_create_empty, lists_create_with, lists_repeat, lists_length
+- lists_isEmpty, lists_indexOf, lists_getIndex, lists_setIndex
+- lists_getSublist, lists_sort, lists_split, lists_statement
 
 ### Variables:
-- variables_set
-- variables_get
+- variables_set, variables_get
 
 ### Loops:
-- controls_repeat
-- controls_repeat_ext
-- controls_whileUntil
-- controls_for
-- controls_forEach
-- controls_flow_statements
+- controls_repeat, controls_repeat_ext, controls_whileUntil
+- controls_for, controls_forEach, controls_flow_statements
 
-### Functions:
-- procedures_defnoreturn
-- procedures_defreturn
-- procedures_callnoreturn
-- procedures_callreturn
-- procedures_ifreturn
+## FIELD VALUES:
 
-### Tools:
-- candle
-- candle_read
-- time烛
-- time
-- misc
+### MARKET_LIST: synthetic_index, forex, commodities, indices, stocks
+### SUBMARKET_LIST: random_index, major_pairs, minor_pairs, exotic_pairs, etc.
+### SYMBOL_LIST: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
+### TRADETYPECAT_LIST: callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
+### TRADETYPE_LIST: callput, callputeuropean, digit, touchnotouch, etc.
+### TYPE_LIST: both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
+### DURATIONTYPE_LIST: t (tick), m (minute), h (hour), d (day)
+### CANDLEINTERVAL_LIST: 60, 300, 900, 1800, 3600
+### PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
+### DETAIL_INDEX: trade_type, contract_type, entry_spot, exit_spot, barrier, payout, profit
+### COMPARE_OP: EQ, NEQ, LT, LTE, GT, GTE
+### MATH_OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
+### LOGIC_OP: AND, OR
+### BOOLEAN: TRUE, FALSE
+### STAT_TYPE: average, count, sum, minimum, maximum
+### DIRECTION: both, forwards, backwards
+### OHLC_FIELD: open, high, low, close
 
-## Field Values (dropdown options):
+## COMPLETE WORKING EXAMPLE - Digit Bot with Recovery:
 
-### MARKET_LIST:
-synthetic_index, forex, commodities, indices, stocks
+\`\`\`xml
+<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
+  <block type="trade_definition" id="a1" deletable="false" x="0" y="60">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market" id="a2" deletable="false" movable="false">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">R_50</field>
+        <next>
+          <block type="trade_definition_tradetype" id="a3" deletable="false" movable="false">
+            <field name="TRADETYPECAT_LIST">digits</field>
+            <field name="TRADETYPE_LIST">digit</field>
+            <next>
+              <block type="trade_definition_contracttype" id="a4" deletable="false" movable="false">
+                <field name="TYPE_LIST">DIGITUNDER</field>
+                <next>
+                  <block type="trade_definition_candleinterval" id="a5" deletable="false" movable="false">
+                    <field name="CANDLEINTERVAL_LIST">60</field>
+                    <next>
+                      <block type="trade_definition_restartbuysell" id="a6" deletable="false" movable="false">
+                        <field name="TIME_MACHINE_ENABLED">FALSE</field>
+                        <next>
+                          <block type="trade_definition_restartonerror" id="a7" deletable="false" movable="false">
+                            <field name="RESTARTONERROR">TRUE</field>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="trade_definition_tradeoptions" id="a8">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true" vh_enabled="false"></mutation>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
+        <field name="BULK_TRADE_ENABLED">FALSE</field>
+        <field name="PREDICTION">7</field>
+        <value name="DURATION">
+          <shadow type="math_number_positive" id="a9">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="AMOUNT">
+          <shadow type="math_number_positive" id="a10">
+            <field name="NUM">0.35</field>
+          </shadow>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="tick_analysis" id="b1" x="350" y="60">
+    <statement name="TICKANALYSIS_STACK">
+      <block type="variables_set" id="b2">
+        <field name="VAR">last_digit</field>
+        <value name="VALUE">
+          <block type="last_digit" id="b3"></block>
+        </value>
+      </block>
+    </statement>
+  </block>
+  <block type="before_purchase" id="c1" deletable="false" x="0" y="658">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase" id="c2">
+        <field name="PURCHASE_LIST">DIGITUNDER</field>
+      </block>
+    </statement>
+  </block>
+  <block type="during_purchase" id="d1" x="714" y="60">
+    <statement name="DURING_PURCHASE_STACK">
+      <block type="controls_if" id="d2">
+        <value name="IF0">
+          <block type="check_sell" id="d3"></block>
+        </value>
+        <statement name="DO0">
+          <block type="sell" id="d4"></block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="e1" x="714" y="292">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="e2">
+        <value name="IF0">
+          <block type="logic_compare" id="e3">
+            <field name="OP">EQ</field>
+            <value name="A">
+              <block type="read_details" id="e4">
+                <field name="DETAIL_INDEX">profit</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="math_number" id="e5">
+                <field name="NUM">0</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="trade_option" id="e6">
+            <field name="TRADE_OPTION">BARRIER</field>
+            <value name="TRADE_OPTION_VALUE">
+              <block type="math_number" id="e7">
+                <field name="NUM">6</field>
+              </block>
+            </value>
+          </block>
+        </statement>
+        <statement name="ELSE">
+          <block type="trade_option" id="e8">
+            <field name="TRADE_OPTION">BARRIER</field>
+            <value name="TRADE_OPTION_VALUE">
+              <block type="math_number" id="e9">
+                <field name="NUM">7</field>
+              </block>
+            </value>
+          </block>
+        </statement>
+      </block>
+      <block type="trade_again" id="e10"></block>
+    </statement>
+  </block>
+</xml>
+\`\`\`
 
-### SUBMARKET_LIST (depends on market):
-- synthetic_index: random_index, continuous_serv_volatility, volatility_index
-- forex: major_pairs, minor_pairs, exotic_pairs
-- commodities: gold, silver, oil, wheat, etc.
-- etc.
+## HOW EACH BLOCK WORKS:
 
-### SYMBOL_LIST (depends on submarket):
-- random_index: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
+### trade_definition_tradeoptions:
+- DURATIONTYPE_LIST: "t" for ticks, "m" for minutes
+- DURATION: number of ticks/minutes
+- AMOUNT: stake amount (decimal allowed)
+- PREDICTION: digit for DIGITMATCH/DIGITDIFF/DIGITOVER/DIGITUNDER
+- BARRIER: barrier offset for barrier trades
 
-### TRADETYPECAT_LIST:
-callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
+### read_details:
+- DETAIL_INDEX: "profit" to check if win/loss
+- Returns: number (positive = win, negative = loss, 0 = even)
 
-### TRADETYPE_LIST (depends on category):
-- callput: callput, callputeuropean
-- digits: digit
-- touchnotouch: touchnotouch
-- etc.
+### trade_option:
+- TRADE_OPTION: "BARRIER", "PREDICTION", "AMOUNT"
+- TRADE_OPTION_VALUE: the new value
 
-### TYPE_LIST:
-both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
+### check_result:
+- Returns: "win", "loss", or "draw"
 
-### DURATIONTYPE_LIST:
-t (tick), m (minute), h (hour), d (day)
+### variables_set:
+- VAR: variable name (string)
+- VALUE: the value to assign
 
-### CANDLEINTERVAL_LIST:
-60 (1 minute), 300 (5 minutes), 900 (15 minutes), 1800 (30 minutes), 3600 (1 hour)
+### logic_compare:
+- OP: EQ, NEQ, LT, LTE, GT, GTE
+- A, B: values to compare
 
-### PURCHASE_LIST:
-CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
+### math_arithmetic:
+- OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
+- A, B: operands
 
-### DETAIL_INDEX (for read_details):
-trade_type, contract_type, entry_spot, exit_spot, barrier, payout, profit
-
-## Important Rules:
-1. All block IDs must be unique (use random alphanumeric strings like "abc123")
-2. The trade_definition block MUST be first
-3. Use deletable="false" and movable="false" for required blocks
-4. Position blocks with x,y coordinates
-5. Connect blocks with <next> tags
-6. Use <statement> for block containers
-7. Use <value> for block inputs
-8. Use <shadow> for default values
-9. For digit trades: TRADETYPECAT_LIST="digits", TRADETYPE_LIST="digit"
-10. For CALL/PUT trades: TRADETYPECAT_LIST="callput", TRADETYPE_LIST="callput"
-11. NEVER use "contract_details" - the correct block is "read_details"
+## COMPLETENESS CHECKLIST (verify before outputting):
+□ All block IDs are unique
+□ All <field> elements have values
+□ All <value> elements have child blocks
+□ All <statement> elements have child blocks
+□ All variables_set have matching variables_get
+□ All math_number blocks have NUM field
+□ All text blocks have TEXT field
+□ All logic_compare blocks have OP, A, B
+□ All controls_if blocks have IF0 condition
+□ No empty strings or placeholders
 
 ## Output Format:
-- When asking questions: respond naturally, no XML
-- When generating XML: return ONLY the XML code wrapped in \`\`\`xml ... \`\`\`
-- The XML must be valid and loadable into the Deriv Bot Builder workspace`;
+- When asking questions: respond naturally
+- When generating XML: return ONLY valid XML in \`\`\`xml ... \`\`\`
+- The XML must be COMPLETE and LOADABLE into Deriv Bot Builder`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -404,11 +454,41 @@ export const BuildBot: React.FC = () => {
     const loadToWorkspace = useCallback(() => {
         if (!generatedXml) return;
         try {
-            // Validate XML first - check for invalid block types
+            // Validate XML completeness
+            const issues: string[] = [];
+
+            // Check for invalid block types
             const invalidBlocks = ['contract_details'];
-            const foundInvalid = invalidBlocks.filter(b => generatedXml.includes(`type="${b}"`));
-            if (foundInvalid.length > 0) {
-                alert(`Invalid block types found: ${foundInvalid.join(', ')}. The AI needs to fix the XML.`);
+            for (const b of invalidBlocks) {
+                if (generatedXml.includes(`type="${b}"`)) {
+                    issues.push(`Invalid block type: ${b}`);
+                }
+            }
+
+            // Check for empty fields
+            const fieldMatches = generatedXml.match(/<field name="[^"]*"><\/field>/g);
+            if (fieldMatches) {
+                issues.push(`Empty fields found: ${fieldMatches.length}`);
+            }
+
+            // Check for placeholder text
+            const placeholders = generatedXml.match(/(TODO|FIXME|XXX|PLACEHOLDER)/gi);
+            if (placeholders) {
+                issues.push('Contains placeholder text');
+            }
+
+            // Check for required trade_definition
+            if (!generatedXml.includes('trade_definition"')) {
+                issues.push('Missing trade_definition block');
+            }
+
+            // Check for required before_purchase
+            if (!generatedXml.includes('before_purchase"')) {
+                issues.push('Missing before_purchase block');
+            }
+
+            if (issues.length > 0) {
+                alert(`XML has ${issues.length} issues:\n${issues.join('\n')}\n\nPlease ask AI to fix these.`);
                 return;
             }
 
