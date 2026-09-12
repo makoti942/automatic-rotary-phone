@@ -61,6 +61,8 @@ const FreeBots = observer(() => {
                 'Simple and effective Only Ups and Downs bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts with a 2x martingale on losses and stake reset on wins.',
             'FREE BOT WITH MARTINGALE':
                 'Simple and effective martingale bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts, doubles the stake after each loss and resets to the initial stake after a win.',
+            'ENTRY POINT BOT UNDER7 OVER4 RECOVERY':
+                'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
                         };
 
         // Try exact match first
@@ -95,6 +97,7 @@ const FreeBots = observer(() => {
             'MAKOTIV3RISE_FALL.xml',
             'MAKOTIRISE_FALLV4.xml',
             'FREE BOT WITH MARTINGALE.xml',
+            'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
         ];
     };
 
@@ -248,15 +251,6 @@ const FreeBots = observer(() => {
                                         {bot.name}
                                     </Text>
 
-                                    {/* Star Rating */}
-                                    <div className='free-bot-card__rating'>
-                                        <span className='star'>★</span>
-                                        <span className='star'>★</span>
-                                        <span className='star'>★</span>
-                                        <span className='star'>★</span>
-                                        <span className='star'>★</span>
-                                    </div>
-
                                     {/* Bot Description */}
                                     <Text size='xs' className='free-bot-card__description'>
                                         {bot.description}
@@ -286,7 +280,7 @@ const FreeBots = observer(() => {
                                     type='button'
                                     disabled={!bot.xml}
                                 >
-                                    {bot.xml ? 'LOAD PREMIUM BOT' : 'LOADING...'}
+                                    {bot.xml ? 'LOAD BOT' : 'LOADING...'}
                                 </Button>
                             </div>
                         ))}
