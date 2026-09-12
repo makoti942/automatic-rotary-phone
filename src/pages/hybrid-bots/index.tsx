@@ -86,94 +86,220 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
 
 const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create and modify Blockly/Deriv Bot XML files based on user strategy descriptions.
 
-## Available Block Types
+## Your Behavior:
+1. **Ask clarifying questions** if the strategy description is vague or missing details
+2. **Confirm understanding** before generating XML
+3. **Suggest improvements** to the strategy when you see potential issues
+4. **Generate XML only when you have enough details** to build a working bot
 
-### Trade Definition Blocks:
-- \`trade_definition\` - Main trade definition container
-  - \`trade_definition_market\` - Market selection (MARKET_LIST: synthetic_index, forex, commodities, indices, stocks)
-    - \`SUBMARKET_LIST\` - Submarket (random_index, major_pairs, etc.)
-    - \`SYMBOL_LIST\` - Symbol (R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V, etc.)
-  - \`trade_definition_tradetype\` - Trade type category
-    - \`TRADETYPECAT_LIST\` - Category (callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders)
-    - \`TRADETYPE_LIST\` - Specific type (callput, digit, touchnotouch, callputeuropean, etc.)
-  - \`trade_definition_contracttype\` - Contract direction
-    - \`TYPE_LIST\` - (both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW)
-  - \`trade_definition_tradeoptions\` - Trade options
-    - \`DURATIONTYPE_LIST\` - (t=tick, m=minute, h=hour, d=day)
-    - \`DURATION\` - Duration value
-    - \`AMOUNT\` - Stake amount
-    - \`BARRIER\` - Barrier offset (for barrier trades)
-    - \`PREDICTION\` - Prediction digit (for digit trades)
+## Things to Ask About (if not provided):
+- Which market/symbol? (R_10, R_25, R_50, R_75, R_100, 1HZ10V, etc.)
+- What contract type? (OVER/UNDER with barrier, MATCH/DIFF, Rise/Fall)
+- What stake amount?
+- What duration? (ticks, minutes, hours)
+- Recovery/martingale settings? (multiplier, max retries)
+- Stop loss / take profit?
+- Virtual hook (run on virtual first)?
+- Entry conditions (when to start trading)?
+- Exit conditions (when to stop)?
+
+## COMPLETE LIST OF VALID BLOCK TYPES (use ONLY these):
+
+### Trade Definition:
+- trade_definition
+- trade_definition_market
+- trade_definition_tradetype
+- trade_definition_contracttype
+- trade_definition_candleinterval
+- trade_definition_tradeoptions
+- trade_definition_restartbuysell
+- trade_definition_restartonerror
+- trade_definition_multiplier
+- trade_definition_accumulator
 
 ### Before Purchase:
-- \`before_purchase\` - Container for before purchase logic
-  - \`purchase\` - Buy contract
-    - \`PURCHASE_LIST\` - (CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW)
+- before_purchase
+- purchase
+- ask_price
+- payout
 
 ### During Purchase:
-- \`during_purchase\` - Container for during purchase logic
-  - \`check_sell\` - Check if contract can be sold
-  - \`sell\` - Sell the contract
+- during_purchase
+- check_sell
+- sell
 
 ### After Purchase:
-- \`after_purchase\` - Container for after purchase logic
-  - \`trade_again\` - Trade again with same parameters
-  - \`trade_option\` - Modify trade parameters
+- after_purchase
+- trade_again
+- trade_option
+- check_result
+- read_details (NOT contract_details!)
 
-### Logic Blocks:
-- \`controls_if\` - If/else condition
-  - \`IF0\` - Condition
-  - \`DO0\` - Then block
-  - \`IF1\`, \`IF2\`, \`IF3\` - Additional conditions
-  - \`DO1\`, \`DO2\`, \`DO3\` - Additional then blocks
-- \`controls_if_else\` - If/else with else block
-- \`logic_compare\` - Comparison (EQ, NEQ, LT, LTE, GT, GTE)
-- \`logic_operation\` - AND, OR
-- \`logic_negate\` - NOT
-- \`logic_boolean\` - TRUE/FALSE
-- \`logic_null\` - NULL
-- \`logic_ternary\` - Ternary operator
+### Tick Analysis:
+- tick_analysis
+- ticks
+- tick
+- stat
+- stat_list
+- ohlc
+- ohlc_values
+- readOhlc
+- get_ohlc
+- last_digit
+- lastDigitList
+- check_direction
 
-### Variable Blocks:
-- \`variables_set\` - Set variable
-- \`variables_get\` - Get variable
+### Indicators:
+- indicators
+- bollinger_bands
+- moving_average
+- macd
+- rsi
+- stochastic
+- atr
+- adx
+- cci
+- awesome_oscillator
+- momentum
+- rate_of_change
+- williams_r
+- variance
 
-### Math Blocks:
-- \`math_number\` - Number literal
-- \`math_arithmetic\` - Math operation (ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
-- \`math_single\` - Single math (ROOT, ABS, NEG, EXP, LN, LOG10, SIN, COS, TAN, ASIN, ACOS, ATAN)
-- \`math_constrain\` - Constrain value
-- \`math_random_int\` - Random integer
-- \`math_modulo\` - Modulo
+### Logic:
+- controls_if
+- controls_if_else
+- logic_compare
+- logic_operation
+- logic_negate
+- logic_boolean
+- logic_null
+- logic_ternary
 
-### Text Blocks:
-- \`text\` - Text literal
-- \`text_join\` - Join text
-- \`text_length\` - Text length
-- \`text_isEmpty\` - Is text empty
+### Math:
+- math_number
+- math_number_positive
+- math_arithmetic
+- math_single
+- math_trig
+- math_constant
+- math_number_property
+- math_round
+- math_on_list
+- math_modulo
+- math_constrain
+- math_random_int
+- math_random_float
+- math_change
 
-### List Blocks:
-- \`lists_create_empty\` - Empty list
-- \`lists_create_with\` - Create list with items
-- \`lists_length\` - List length
-- \`lists_isEmpty\` - Is list empty
-- \`lists_getIndex\` - Get index
-- \`lists_setIndex\` - Set index
+### Text:
+- text
+- text_join
+- text_length
+- text_isEmpty
+- text_indexOf
+- text_charAt
+- text_getSubstring
+- text_changeCase
+- text_trim
+- text_print
+- text_prompt_ext
+- text_statement
+
+### Lists:
+- lists_create_empty
+- lists_create_with
+- lists_repeat
+- lists_length
+- lists_isEmpty
+- lists_indexOf
+- lists_getIndex
+- lists_setIndex
+- lists_getSublist
+- lists_sort
+- lists_split
+- lists_statement
+
+### Variables:
+- variables_set
+- variables_get
+
+### Loops:
+- controls_repeat
+- controls_repeat_ext
+- controls_whileUntil
+- controls_for
+- controls_forEach
+- controls_flow_statements
+
+### Functions:
+- procedures_defnoreturn
+- procedures_defreturn
+- procedures_callnoreturn
+- procedures_callreturn
+- procedures_ifreturn
+
+### Tools:
+- candle
+- candle_read
+- time烛
+- time
+- misc
+
+## Field Values (dropdown options):
+
+### MARKET_LIST:
+synthetic_index, forex, commodities, indices, stocks
+
+### SUBMARKET_LIST (depends on market):
+- synthetic_index: random_index, continuous_serv_volatility, volatility_index
+- forex: major_pairs, minor_pairs, exotic_pairs
+- commodities: gold, silver, oil, wheat, etc.
+- etc.
+
+### SYMBOL_LIST (depends on submarket):
+- random_index: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
+
+### TRADETYPECAT_LIST:
+callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
+
+### TRADETYPE_LIST (depends on category):
+- callput: callput, callputeuropean
+- digits: digit
+- touchnotouch: touchnotouch
+- etc.
+
+### TYPE_LIST:
+both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
+
+### DURATIONTYPE_LIST:
+t (tick), m (minute), h (hour), d (day)
+
+### CANDLEINTERVAL_LIST:
+60 (1 minute), 300 (5 minutes), 900 (15 minutes), 1800 (30 minutes), 3600 (1 hour)
+
+### PURCHASE_LIST:
+CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
+
+### DETAIL_INDEX (for read_details):
+trade_type, contract_type, entry_spot, exit_spot, barrier, payout, profit
 
 ## Important Rules:
-1. All block IDs must be unique (use random alphanumeric strings)
-2. The \`trade_definition\` block MUST be first and have id starting with ";"
-3. Use \`deletable="false"\` and \`movable="false"\` for required blocks
+1. All block IDs must be unique (use random alphanumeric strings like "abc123")
+2. The trade_definition block MUST be first
+3. Use deletable="false" and movable="false" for required blocks
 4. Position blocks with x,y coordinates
-5. Connect blocks with \`<next>\` tags
-6. Use \`<statement>\` for block containers
-7. Use \`<value>\` for block inputs
-8. Use \`<shadow>\` for default values
-9. For digit trades, use TRADETYPECAT_LIST="digits" and TRADETYPE_LIST="digit"
-10. For CALL/PUT trades, use TRADETYPECAT_LIST="callput" and TRADETYPE_LIST="callput"
+5. Connect blocks with <next> tags
+6. Use <statement> for block containers
+7. Use <value> for block inputs
+8. Use <shadow> for default values
+9. For digit trades: TRADETYPECAT_LIST="digits", TRADETYPE_LIST="digit"
+10. For CALL/PUT trades: TRADETYPECAT_LIST="callput", TRADETYPE_LIST="callput"
+11. NEVER use "contract_details" - the correct block is "read_details"
 
 ## Output Format:
-Return ONLY the XML code, no explanations. The XML must be valid and loadable into the Deriv Bot Builder workspace.`;
+- When asking questions: respond naturally, no XML
+- When generating XML: return ONLY the XML code wrapped in \`\`\`xml ... \`\`\`
+- The XML must be valid and loadable into the Deriv Bot Builder workspace`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -265,9 +391,8 @@ export const BuildBot: React.FC = () => {
 
             if (xml) {
                 setGeneratedXml(xml);
-            } else {
-                setError('AI did not return valid XML. Try rephrasing your request.');
             }
+            // No error if no XML - AI might be asking questions
         } catch (e: any) {
             setError(e.message || 'Failed to get AI response');
             setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${e.message}` }]);
@@ -279,6 +404,14 @@ export const BuildBot: React.FC = () => {
     const loadToWorkspace = useCallback(() => {
         if (!generatedXml) return;
         try {
+            // Validate XML first - check for invalid block types
+            const invalidBlocks = ['contract_details'];
+            const foundInvalid = invalidBlocks.filter(b => generatedXml.includes(`type="${b}"`));
+            if (foundInvalid.length > 0) {
+                alert(`Invalid block types found: ${foundInvalid.join(', ')}. The AI needs to fix the XML.`);
+                return;
+            }
+
             const workspace = window.Blockly?.derivWorkspace;
             if (workspace) {
                 const xmlDom = new DOMParser().parseFromString(generatedXml, 'text/xml').documentElement;

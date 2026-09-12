@@ -227,58 +227,90 @@ export const DigitHunter: React.FC = () => {
             // Weighted total
             const totalScore = (freq.score * 0.30) + (streak.score * 0.25) + (pair.score * 0.25) + (echo.score * 0.20);
 
-            // ── Contract selection: OVER/UNDER only ──
-            // Analyze digit distribution to determine direction
+            // ── Contract selection: OVER/UNDER with specific barriers ──
+            // Primary: OVER 2, OVER 3, UNDER 7, UNDER 6
+            // Recovery: OVER 4, OVER 5, UNDER 5
             const pcts = getDigitPcts(md.ticks, 200);
-            const lowPct = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // digits 0-4
-            const highPct = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 5-9
 
-            // Determine which side is overdue
-            const lowDeviation = 50 - lowPct; // positive means low digits are underrepresented
-            const highDeviation = 50 - highPct; // positive means high digits are underrepresented
+            // Analyze digit groups for barrier selection
+            const d012 = pcts[0] + pcts[1] + pcts[2];     // digits 0-2 (OVER 2 needs 2,3,4,5,6,7,8,9)
+            const d0123 = pcts[0] + pcts[1] + pcts[2] + pcts[3]; // digits 0-3 (OVER 3 needs 3,4,5,6,7,8,9)
+            const d789 = pcts[7] + pcts[8] + pcts[9];      // digits 7-9 (UNDER 7 needs 0,1,2,3,4,5,6)
+            const d6789 = pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 6-9 (UNDER 6 needs 0,1,2,3,4,5)
+            const d45 = pcts[4] + pcts[5];                  // digits 4-5 (recovery zone)
+            const d01234 = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // digits 0-4
 
+            // Expected: each 3-digit group ~30%, 4-digit ~40%, 5-digit ~50%
             let contractType: string;
             let barrier: number;
             let reason: string;
-            let digit: number;
 
-            // Combined score from all layers boosts confidence
-            const combinedBoost = (freq.score + streak.score + pair.score + echo.score) / 4;
+            const isRecovery = recoveryPhaseRef.current === 'recovering';
 
-            if (lowDeviation > highDeviation && lowDeviation > 2) {
-                // Low digits (0-4) underrepresented → they will catch up → bet OVER 5
-                contractType = 'DIGITOVER';
-                barrier = 5;
-                reason = `Low digits ${lowPct.toFixed(0)}% < 50% → OVER 5 (need 5,6,7,8,9)`;
-                digit = 5;
-            } else if (highDeviation > lowDeviation && highDeviation > 2) {
-                // High digits (5-9) underrepresented → they will catch up → bet UNDER 5
-                contractType = 'DIGITUNDER';
-                barrier = 5;
-                reason = `High digits ${highPct.toFixed(0)}% < 50% → UNDER 5 (need 0,1,2,3,4)`;
-                digit = 5;
-            } else {
-                // No clear skew → use streak direction
-                if (streak.streakCount >= 2) {
-                    if (streak.digit <= 4) {
-                        // Streak of low digits → high digits overdue → OVER 5
-                        contractType = 'DIGITOVER';
-                        barrier = 5;
-                        reason = `D${streak.digit} streak ${streak.streakCount}x → OVER 5 (high digits due)`;
-                        digit = 5;
-                    } else {
-                        // Streak of high digits → low digits overdue → UNDER 5
-                        contractType = 'DIGITUNDER';
-                        barrier = 5;
-                        reason = `D${streak.digit} streak ${streak.streakCount}x → UNDER 5 (low digits due)`;
-                        digit = 5;
-                    }
+            if (isRecovery) {
+                // ── RECOVERY MODE: use tighter barriers for higher win rate ──
+                // OVER 4 wins if digit 4,5,6,7,8,9 (60%)
+                // OVER 5 wins if digit 5,6,7,8,9 (50%)
+                // UNDER 5 wins if digit 0,1,2,3,4 (50%)
+                if (d01234 > 52) {
+                    // Low digits overrepresented → high digits due → OVER 4
+                    contractType = 'DIGITOVER';
+                    barrier = 4;
+                    reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% → OVER 4`;
+                } else if (d6789 > 52) {
+                    // High digits overrepresented → low digits due → UNDER 5
+                    contractType = 'DIGITUNDER';
+                    barrier = 5;
+                    reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% → UNDER 5`;
                 } else {
-                    // Default: OVER 5 (slight statistical edge as digits 5-9 include 5)
+                    // Balanced → default recovery OVER 5 (50/50)
                     contractType = 'DIGITOVER';
                     barrier = 5;
-                    reason = `Balanced distribution → OVER 5 (default)`;
-                    digit = 5;
+                    reason = `🔄 RECOVERY: Balanced → OVER 5 (default)`;
+                }
+            } else {
+                // ── PRIMARY MODE: use wider barriers for better payout ──
+                // OVER 2 wins if digit 2,3,4,5,6,7,8,9 (80%)
+                // OVER 3 wins if digit 3,4,5,6,7,8,9 (70%)
+                // UNDER 7 wins if digit 0,1,2,3,4,5,6 (70%)
+                // UNDER 6 wins if digit 0,1,2,3,4,5 (60%)
+
+                if (d012 > 35) {
+                    // Digits 0,1,2 overrepresented (35%+ vs expected 30%) → OVER 2
+                    contractType = 'DIGITOVER';
+                    barrier = 2;
+                    reason = `D0-2 at ${d012.toFixed(0)}% (>35%) → OVER 2 (need 2-9)`;
+                } else if (d789 > 35) {
+                    // Digits 7,8,9 overrepresented → UNDER 7
+                    contractType = 'DIGITUNDER';
+                    barrier = 7;
+                    reason = `D7-9 at ${d789.toFixed(0)}% (>35%) → UNDER 7 (need 0-6)`;
+                } else if (d0123 > 42) {
+                    // Digits 0,1,2,3 overrepresented → OVER 3
+                    contractType = 'DIGITOVER';
+                    barrier = 3;
+                    reason = `D0-3 at ${d0123.toFixed(0)}% (>42%) → OVER 3 (need 3-9)`;
+                } else if (d6789 > 42) {
+                    // Digits 6,7,8,9 overrepresented → UNDER 6
+                    contractType = 'DIGITUNDER';
+                    barrier = 6;
+                    reason = `D6-9 at ${d6789.toFixed(0)}% (>42%) → UNDER 6 (need 0-5)`;
+                } else if (streak.streakCount >= 2) {
+                    // Use streak direction with appropriate barrier
+                    if (streak.digit <= 3) {
+                        contractType = 'DIGITOVER';
+                        barrier = 3;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → OVER 3`;
+                    } else {
+                        contractType = 'DIGITUNDER';
+                        barrier = 6;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → UNDER 6`;
+                    }
+                } else {
+                    // Default: OVER 2 (80% win rate, safest)
+                    contractType = 'DIGITOVER';
+                    barrier = 2;
+                    reason = `No clear bias → OVER 2 (default, 80% win rate)`;
                 }
             }
 
