@@ -991,7 +991,7 @@ export const BuildBot = observer(() => {
     }, [generatedXml]);
 
     const sendMessage = useCallback(async (overrideText?: string) => {
-        const text = (overrideText ?? input).trim();
+        const text = (typeof overrideText === 'string' ? overrideText : input).trim();
         if (!text || loading) return;
 
         const userMsg: ChatMessage = { role: 'user', content: text };
@@ -1289,7 +1289,7 @@ export const BuildBot = observer(() => {
                         borderRadius: 4, fontSize: 11, fontFamily: 'monospace',
                     }}
                 />
-                <button onClick={sendMessage} disabled={loading || !input.trim()}
+                <button onClick={() => sendMessage()} disabled={loading || !input.trim()}
                     style={{
                         padding: '0 12px', background: loading ? '#333' : '#2196f3',
                         color: '#fff', border: 'none', borderRadius: 4, cursor: loading ? 'not-allowed' : 'pointer',
