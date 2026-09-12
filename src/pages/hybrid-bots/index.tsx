@@ -21,8 +21,13 @@ interface ChatMessage {
     questions?: ChatQuestion[];
 }
 
-// Default bot XML - starting template that AI can modify
+// Default bot XML - starting template that AI can modify.
+// Note the <variables> declaration + INITIALIZATION statement + AMOUNT reading a variable.
 const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
+  <variables>
+    <variable id="stakeVar">stake</variable>
+    <variable id="is_recovery_var">is_recovery</variable>
+  </variables>
   <block type="trade_definition" id=";DRiUDJb/?L%m+Sz=o%H" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="U8g+X\`yjDHRtTyG*zD1n" deletable="false" movable="false">
@@ -57,6 +62,26 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
         </next>
       </block>
     </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="iniStake">
+        <field name="VAR" id="stakeVar">stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="iniStakeNum">
+            <field name="NUM">0.35</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="iniIsRecovery">
+            <field name="VAR" id="is_recovery_var">is_recovery</field>
+            <value name="VALUE">
+              <block type="logic_boolean" id="iniIsRecoveryBool">
+                <field name="BOOL">FALSE</field>
+              </block>
+            </value>
+          </block>
+        </next>
+      </block>
+    </statement>
     <statement name="SUBMARKET">
       <block type="trade_definition_tradeoptions" id="QKnh0!cFFfCO=2Q,|coD">
         <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="false" vh_enabled="false"></mutation>
@@ -69,9 +94,9 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
           </shadow>
         </value>
         <value name="AMOUNT">
-          <shadow type="math_number_positive" id="u,AyDGk-hH;M~a,M([0q">
-            <field name="NUM">1</field>
-          </shadow>
+          <block type="variables_get" id="getStakeAmount">
+            <field name="VAR" id="stakeVar">stake</field>
+          </block>
         </value>
       </block>
     </statement>
@@ -197,51 +222,73 @@ console, useless_block, block_holder, total_runs, barrier_offset, total_profit, 
 ### Tools > Candle (3):
 read_ohlc_obj, ohlc_values_in_list, is_candle_black
 
-## FIELD VALUES:
+## FIELD VALUES (use these EXACT values and field names):
 
-### MARKET_LIST: synthetic_index, forex, commodities, indices, stocks
-### SUBMARKET_LIST: random_index, major_pairs, minor_pairs, exotic_pairs, etc.
-### SYMBOL_LIST: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
-### TRADETYPECAT_LIST: callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
-### TRADETYPE_LIST: callput, callputeuropean, digit, touchnotouch, etc.
-### TYPE_LIST: both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
-### DURATIONTYPE_LIST: t (tick), m (minute), h (hour), d (day)
-### CANDLEINTERVAL_LIST: 60, 300, 900, 1800, 3600
-### PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
-### DETAIL_INDEX: trade_type, contract_type, entry_spot, exit_spot, barrier, payout, profit
-### COMPARE_OP: EQ, NEQ, LT, LTE, GT, GTE
-### MATH_OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
-### LOGIC_OP: AND, OR
-### BOOLEAN: TRUE, FALSE
-### STAT_TYPE: average, count, sum, minimum, maximum
-### DIRECTION: both, forwards, backwards
-### OHLC_FIELD: open, high, low, close
+MARKET_LIST: synthetic_index, forex, commodities, indices, stocks
+SUBMARKET_LIST: random_index, major_pairs, minor_pairs, exotic_pairs, etc.
+SYMBOL_LIST: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
+TRADETYPECAT_LIST: callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
+TRADETYPE_LIST: callput, callputeuropean, overunder (digits Over/Under), matchesdiffers (digits Matches/Differs), touchnotouch, etc.
+TYPE_LIST: both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
+DURATIONTYPE_LIST: t (tick), m (minute), h (hour), d (day)
+CANDLEINTERVAL_LIST: 60, 300, 900, 1800, 3600
+PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
+DETAIL_INDEX (read_details - in XML use the NUMBER): 1=deal reference id, 2=purchase price, 3=payout, 4=profit, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
+CHECK_RESULT (contract_check_result): win, loss
+COMPARE_OP: EQ, NEQ, LT, LTE, GT, GTE
+MATH_OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
+LOGIC_OP: AND, OR
+BOOLEAN: TRUE, FALSE
+STAT_TYPE: average, count, sum, minimum, maximum
+DIRECTION: both, forwards, backwards
+OHLC_FIELD: open, high, low, close
 
-## COMPLETE WORKING EXAMPLE - Digit Bot with Recovery:
+For DIGIT OVER/UNDER bots: TRADETYPECAT_LIST=digits, TRADETYPE_LIST=overunder, TYPE_LIST=both. The actual contract bought is chosen by the purchase block's PURCHASE_LIST (DIGITOVER or DIGITUNDER).
+
+## COMPLETE WORKING EXAMPLE - Digit Over/Under bot with Martingale Recovery and variables.
+This is the reference structure. Variables are DECLARED in a <variables> block at the very
+top of the XML (before any blocks) and referenced by their id in every variables_get/set.
+The trade_definition block has THREE statements: TRADE_OPTIONS (market/tradetype/contracttype
+chain), INITIALIZATION (run-once: set initial variable values), SUBMARKET (duration + amount +
+prediction). Amount and prediction read VARIABLES so the after_purchase logic can change stake
+and switch prediction between normal mode and recovery mode.
 
 \`\`\`xml
 <xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
-  <block type="trade_definition" id="a1" deletable="false" x="0" y="60">
+  <variables>
+    <variable id="init_stake_var">Initial Stake</variable>
+    <variable id="stake_var">Current Stake</variable>
+    <variable id="mart_factor_var">Martingale Factor</variable>
+    <variable id="pred_var">prediction</variable>
+    <variable id="normal_pred_var">Normal Prediction</variable>
+    <variable id="recovery_pred_var">Recovery Prediction</variable>
+    <variable id="is_recovery_var">is_recovery</variable>
+    <variable id="total_profit_var">Total Profit</variable>
+    <variable id="first_trade_var">First Trade Done</variable>
+    <variable id="tp_var">Target Profit</variable>
+    <variable id="sl_var">Stop Loss</variable>
+  </variables>
+  <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
-      <block type="trade_definition_market" id="a2" deletable="false" movable="false">
+      <block type="trade_definition_market" id="m1" deletable="false" movable="false">
         <field name="MARKET_LIST">synthetic_index</field>
         <field name="SUBMARKET_LIST">random_index</field>
-        <field name="SYMBOL_LIST">R_50</field>
+        <field name="SYMBOL_LIST">1HZ50V</field>
         <next>
-          <block type="trade_definition_tradetype" id="a3" deletable="false" movable="false">
+          <block type="trade_definition_tradetype" id="tt1" deletable="false" movable="false">
             <field name="TRADETYPECAT_LIST">digits</field>
-            <field name="TRADETYPE_LIST">digit</field>
+            <field name="TRADETYPE_LIST">overunder</field>
             <next>
-              <block type="trade_definition_contracttype" id="a4" deletable="false" movable="false">
-                <field name="TYPE_LIST">DIGITUNDER</field>
+              <block type="trade_definition_contracttype" id="ct1" deletable="false" movable="false">
+                <field name="TYPE_LIST">both</field>
                 <next>
-                  <block type="trade_definition_candleinterval" id="a5" deletable="false" movable="false">
+                  <block type="trade_definition_candleinterval" id="ci1" deletable="false" movable="false">
                     <field name="CANDLEINTERVAL_LIST">60</field>
                     <next>
-                      <block type="trade_definition_restartbuysell" id="a6" deletable="false" movable="false">
+                      <block type="trade_definition_restartbuysell" id="rbs1" deletable="false" movable="false">
                         <field name="TIME_MACHINE_ENABLED">FALSE</field>
                         <next>
-                          <block type="trade_definition_restartonerror" id="a7" deletable="false" movable="false">
+                          <block type="trade_definition_restartonerror" id="roe1" deletable="false" movable="false">
                             <field name="RESTARTONERROR">TRUE</field>
                           </block>
                         </next>
@@ -255,95 +302,285 @@ read_ohlc_obj, ohlc_values_in_list, is_candle_black
         </next>
       </block>
     </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="ini1">
+        <field name="VAR" id="init_stake_var">Initial Stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="n1">
+            <field name="NUM">1</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="ini2">
+            <field name="VAR" id="mart_factor_var">Martingale Factor</field>
+            <value name="VALUE">
+              <block type="math_number" id="n2">
+                <field name="NUM">2</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="ini3">
+                <field name="VAR" id="normal_pred_var">Normal Prediction</field>
+                <value name="VALUE">
+                  <block type="math_number" id="n3">
+                    <field name="NUM">7</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="ini4">
+                    <field name="VAR" id="recovery_pred_var">Recovery Prediction</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="n4">
+                        <field name="NUM">4</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="ini5">
+                        <field name="VAR" id="tp_var">Target Profit</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="n5">
+                            <field name="NUM">10</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="ini6">
+                            <field name="VAR" id="sl_var">Stop Loss</field>
+                            <value name="VALUE">
+                              <block type="math_number" id="n6">
+                                <field name="NUM">50</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="ini7">
+                                <field name="VAR" id="total_profit_var">Total Profit</field>
+                                <value name="VALUE">
+                                  <block type="math_number" id="n7">
+                                    <field name="NUM">0</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="ini8">
+                                    <field name="VAR" id="pred_var">prediction</field>
+                                    <value name="VALUE">
+                                      <block type="variables_get" id="g1">
+                                        <field name="VAR" id="normal_pred_var">Normal Prediction</field>
+                                      </block>
+                                    </value>
+                                    <next>
+                                      <block type="variables_set" id="ini9">
+                                        <field name="VAR" id="stake_var">Current Stake</field>
+                                        <value name="VALUE">
+                                          <block type="variables_get" id="g2">
+                                            <field name="VAR" id="init_stake_var">Initial Stake</field>
+                                          </block>
+                                        </value>
+                                        <next>
+                                          <block type="variables_set" id="ini10">
+                                            <field name="VAR" id="is_recovery_var">is_recovery</field>
+                                            <value name="VALUE">
+                                              <block type="logic_boolean" id="b1">
+                                                <field name="BOOL">FALSE</field>
+                                              </block>
+                                            </value>
+                                            <next>
+                                              <block type="variables_set" id="ini11">
+                                                <field name="VAR" id="first_trade_var">First Trade Done</field>
+                                                <value name="VALUE">
+                                                  <block type="logic_boolean" id="b2">
+                                                    <field name="BOOL">FALSE</field>
+                                                  </block>
+                                                </value>
+                                              </block>
+                                            </next>
+                                          </block>
+                                        </next>
+                                      </block>
+                                    </next>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
     <statement name="SUBMARKET">
-      <block type="trade_definition_tradeoptions" id="a8">
+      <block type="trade_definition_tradeoptions" id="so1">
         <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true" vh_enabled="false"></mutation>
         <field name="DURATIONTYPE_LIST">t</field>
         <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
         <field name="BULK_TRADE_ENABLED">FALSE</field>
-        <field name="PREDICTION">7</field>
         <value name="DURATION">
-          <shadow type="math_number_positive" id="a9">
+          <shadow type="math_number_positive" id="d1">
             <field name="NUM">1</field>
           </shadow>
         </value>
         <value name="AMOUNT">
-          <shadow type="math_number_positive" id="a10">
-            <field name="NUM">0.35</field>
+          <block type="variables_get" id="g3">
+            <field name="VAR" id="stake_var">Current Stake</field>
+          </block>
+        </value>
+        <value name="PREDICTION">
+          <shadow type="math_number_positive" id="d2">
+            <field name="NUM">1</field>
           </shadow>
+          <block type="variables_get" id="g4">
+            <field name="VAR" id="pred_var">prediction</field>
+          </block>
         </value>
       </block>
     </statement>
   </block>
-  <block type="tick_analysis" id="b1" x="350" y="60">
-    <statement name="TICKANALYSIS_STACK">
-      <block type="variables_set" id="b2">
-        <field name="VAR">last_digit</field>
-        <value name="VALUE">
-          <block type="last_digit" id="b3"></block>
-        </value>
-      </block>
-    </statement>
-  </block>
-  <block type="before_purchase" id="c1" deletable="false" x="0" y="658">
-    <statement name="BEFOREPURCHASE_STACK">
-      <block type="purchase" id="c2">
-        <field name="PURCHASE_LIST">DIGITUNDER</field>
-      </block>
-    </statement>
-  </block>
-  <block type="during_purchase" id="d1" x="714" y="60">
+  <block type="during_purchase" id="dp1" x="714" y="0">
     <statement name="DURING_PURCHASE_STACK">
-      <block type="controls_if" id="d2">
+      <block type="controls_if" id="if1">
         <value name="IF0">
-          <block type="check_sell" id="d3"></block>
+          <block type="check_sell" id="cs1"></block>
         </value>
-        <statement name="DO0">
-          <block type="sell" id="d4"></block>
-        </statement>
       </block>
     </statement>
   </block>
-  <block type="after_purchase" id="e1" x="714" y="292">
-    <statement name="AFTERPURCHASE_STACK">
-      <block type="controls_if" id="e2">
+  <block type="before_purchase" id="bp1" deletable="false" x="0" y="700">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if" id="if2">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
         <value name="IF0">
-          <block type="logic_compare" id="e3">
+          <block type="logic_compare" id="lc1">
             <field name="OP">EQ</field>
             <value name="A">
-              <block type="read_details" id="e4">
-                <field name="DETAIL_INDEX">profit</field>
+              <block type="variables_get" id="g5">
+                <field name="VAR" id="is_recovery_var">is_recovery</field>
               </block>
             </value>
             <value name="B">
-              <block type="math_number" id="e5">
-                <field name="NUM">0</field>
+              <block type="logic_boolean" id="b3">
+                <field name="BOOL">FALSE</field>
               </block>
             </value>
           </block>
         </value>
         <statement name="DO0">
-          <block type="trade_option" id="e6">
-            <field name="TRADE_OPTION">BARRIER</field>
-            <value name="TRADE_OPTION_VALUE">
-              <block type="math_number" id="e7">
-                <field name="NUM">6</field>
-              </block>
-            </value>
+          <block type="purchase" id="p1">
+            <field name="PURCHASE_LIST">DIGITUNDER</field>
           </block>
         </statement>
         <statement name="ELSE">
-          <block type="trade_option" id="e8">
-            <field name="TRADE_OPTION">BARRIER</field>
-            <value name="TRADE_OPTION_VALUE">
-              <block type="math_number" id="e9">
-                <field name="NUM">7</field>
-              </block>
-            </value>
+          <block type="purchase" id="p2">
+            <field name="PURCHASE_LIST">DIGITOVER</field>
           </block>
         </statement>
       </block>
-      <block type="trade_again" id="e10"></block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="ap1" x="714" y="292">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="variables_set" id="total1">
+        <field name="VAR" id="total_profit_var">Total Profit</field>
+        <value name="VALUE">
+          <block type="math_arithmetic" id="ma1">
+            <field name="OP">ADD</field>
+            <value name="A">
+              <block type="variables_get" id="g6">
+                <field name="VAR" id="total_profit_var">Total Profit</field>
+              </block>
+            </value>
+            <value name="B">
+              <block type="read_details" id="rd1">
+                <field name="DETAIL_INDEX">4</field>
+              </block>
+            </value>
+          </block>
+        </value>
+        <next>
+          <block type="controls_if" id="if3">
+            <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+            <value name="IF0">
+              <block type="contract_check_result" id="ccr1">
+                <field name="CHECK_RESULT">win</field>
+              </block>
+            </value>
+            <statement name="DO0">
+              <block type="variables_set" id="win1">
+                <field name="VAR" id="stake_var">Current Stake</field>
+                <value name="VALUE">
+                  <block type="variables_get" id="g7">
+                    <field name="VAR" id="init_stake_var">Initial Stake</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="win2">
+                    <field name="VAR" id="pred_var">prediction</field>
+                    <value name="VALUE">
+                      <block type="variables_get" id="g8">
+                        <field name="VAR" id="normal_pred_var">Normal Prediction</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="win3">
+                        <field name="VAR" id="is_recovery_var">is_recovery</field>
+                        <value name="VALUE">
+                          <block type="logic_boolean" id="b4">
+                            <field name="BOOL">FALSE</field>
+                          </block>
+                        </value>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </statement>
+            <statement name="ELSE">
+              <block type="variables_set" id="loss1">
+                <field name="VAR" id="stake_var">Current Stake</field>
+                <value name="VALUE">
+                  <block type="math_arithmetic" id="ma2">
+                    <field name="OP">MULTIPLY</field>
+                    <value name="A">
+                      <block type="variables_get" id="g9">
+                        <field name="VAR" id="stake_var">Current Stake</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="variables_get" id="g10">
+                        <field name="VAR" id="mart_factor_var">Martingale Factor</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="loss2">
+                    <field name="VAR" id="pred_var">prediction</field>
+                    <value name="VALUE">
+                      <block type="variables_get" id="g11">
+                        <field name="VAR" id="recovery_pred_var">Recovery Prediction</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="loss3">
+                        <field name="VAR" id="is_recovery_var">is_recovery</field>
+                        <value name="VALUE">
+                          <block type="logic_boolean" id="b5">
+                            <field name="BOOL">TRUE</field>
+                          </block>
+                        </value>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </statement>
+          </block>
+          <block type="trade_again" id="ta1"></block>
+        </next>
+      </block>
     </statement>
   </block>
 </xml>
@@ -431,26 +668,27 @@ must reference a variable that was set somewhere in the bot first.
 ## HOW EACH BLOCK WORKS:
 
 ### trade_definition_tradeoptions:
-- DURATIONTYPE_LIST: "t" for ticks, "m" for minutes
-- DURATION: number of ticks/minutes
-- AMOUNT: stake amount (decimal allowed)
-- PREDICTION: digit for DIGITMATCH/DIGITDIFF/DIGITOVER/DIGITUNDER
-- BARRIER: barrier offset for barrier trades
+- DURATIONTYPE_LIST: "t" for ticks, "m" for minutes, "h" for hours
+- DURATION: number of ticks/minutes/hours
+- AMOUNT: stake amount (decimal allowed). Read a variable (variables_get) so recovery can change stake.
+- PREDICTION: digit for DIGITMATCH/DIGITDIFF/DIGITOVER/DIGITUNDER. Read a variable (variables_get) so recovery can change prediction.
+- The <mutation> on this block MUST have has_prediction="true" when the contract needs a prediction digit.
 
 ### read_details:
-- DETAIL_INDEX: "profit" to check if win/loss
-- Returns: number (positive = win, negative = loss, 0 = even)
+- DETAIL_INDEX: MUST be a NUMBER. Use 4 = profit. Positive = win, negative = loss.
+- Other indices: 1=deal reference id, 2=purchase price, 3=payout, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
 
-### trade_option:
-- TRADE_OPTION: "BARRIER", "PREDICTION", "AMOUNT"
-- TRADE_OPTION_VALUE: the new value
-
-### check_result:
-- Returns: "win", "loss", or "draw"
+### contract_check_result:
+- Field name is CHECK_RESULT with value "win" or "loss" (this block tells you the last trade result)
+- Returns a Boolean you put directly in a controls_if IF0 condition
+- Do NOT change the amount/prediction with trade_option - there is no such block. Change variables instead.
 
 ### variables_set:
-- VAR: variable name (string)
+- <field name="VAR" id="varId">Variable Name</field> - id MUST match a <variable id="..."> declared in the top <variables> block
 - VALUE: the value to assign
+
+### variables_get:
+- <field name="VAR" id="varId">Variable Name</field> - same id/name as declared
 
 ### logic_compare:
 - OP: EQ, NEQ, LT, LTE, GT, GTE
@@ -465,7 +703,9 @@ must reference a variable that was set somewhere in the bot first.
 □ All <field> elements have values
 □ All <value> elements have child blocks
 □ All <statement> elements have child blocks
-□ All variables_set have matching variables_get
+□ EVERY variable used in variables_set/get is DECLARED in the top <variables> block, and the id matches
+□ All variables are initialized in the trade_definition INITIALIZATION statement
+□ read_details uses numeric DETAIL_INDEX (4 = profit)
 □ All math_number blocks have NUM field
 □ All text blocks have TEXT field
 □ All logic_compare blocks have OP, A, B
@@ -486,8 +726,10 @@ must reference a variable that was set somewhere in the bot first.
    - END with trade_again so the bot loops continuously
 
 ## COMPLEX STRATEGY RULES:
-- Any value that changes over time (stake, loss-count, martingale level, current barrier) MUST be a variable
-- Set the variable in tick_analysis or before_purchase; read it in before_purchase / after_purchase
+- Any value that changes over time (stake, prediction, is_recovery, total profit, loss-count, martingale level) MUST be a variable
+- Initialize variables in the trade_definition INITIALIZATION statement (runs once at start)
+- Do the martingale/recovery logic in after_purchase: on win reset stake to initial + is_recovery=FALSE + prediction=normal; on loss multiply stake by martingale factor + is_recovery=TRUE + prediction=recovery
+- The SUBMARKET amount/prediction must READ variables (variables_get) so they change every trade
 - Use notify or text_print to report each trade result; use text_join to combine text with variables
 - If you need conditions, nest logic_compare inside controls_if IF0. For win/loss, use contract_check_result
 - Always double the stake on loss ×2 (martingale) unless the user specifies another multiplier
@@ -506,7 +748,7 @@ async function callGroq(messages: any[]): Promise<string> {
             body: JSON.stringify({
                 messages,
                 temperature: 0.3,
-                max_tokens: 4096,
+                max_tokens: 8192,
             }),
         });
         const data = await res.json();
@@ -690,6 +932,29 @@ function sanitizeXml(rawXml: string): { cleanXml: string; fixes: string[]; remov
         }
         cleanXml = fixed;
     }
+
+    // Autocorrect read_details DETAIL_INDEX text values → numeric indices
+    const DETAIL_INDEX_VALUES: Record<string, string> = {
+        profit: '4',
+        payout: '3',
+        'purchase price': '2',
+        'deal reference id': '1',
+        'contract type': '5',
+        'entry spot time': '6',
+        'entry spot price': '7',
+        'exit spot time': '8',
+        'exit spot price': '9',
+        barrier: '10',
+        result: '11',
+    };
+    for (const [bad, good] of Object.entries(DETAIL_INDEX_VALUES)) {
+        const re = new RegExp(`(<field name="DETAIL_INDEX">)\\s*${bad}\\s*(</field>)`, 'gi');
+        if (re.test(cleanXml)) {
+            cleanXml = cleanXml.replace(re, `$1${good}$2`);
+            fixes.push(`DETAIL_INDEX ${bad} → ${good}`);
+        }
+    }
+
     return { cleanXml, fixes, removed };
 }
 
@@ -736,11 +1001,12 @@ export const BuildBot = observer(() => {
         setError('');
 
         try {
-            // Build conversation for AI
+            // Build conversation for AI (trim old history to avoid token limits)
+            const recentHistory = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
             const chatMessages = [
                 { role: 'system', content: SYSTEM_PROMPT },
                 { role: 'user', content: `Here is the current bot XML:\n\`\`\`xml\n${generatedXml || DEFAULT_BOT_XML}\n\`\`\`` },
-                ...messages.map(m => ({ role: m.role, content: m.content })),
+                ...recentHistory,
                 { role: 'user', content: text },
             ];
 

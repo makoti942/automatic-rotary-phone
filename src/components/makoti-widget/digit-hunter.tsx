@@ -43,6 +43,7 @@ const DEFAULT_CFG = {
     confidenceThreshold: String(CONFIDENCE_THRESHOLD),
     recoveryEnabled: 'true',
     maxRecoveryAttempts: String(MAX_RECOVERY_ATTEMPTS),
+    martingaleFactor: String(MARTINGALE_FACTOR),
 };
 
 function loadCfg() { try { const r = localStorage.getItem(LS_KEY); return r ? { ...DEFAULT_CFG, ...JSON.parse(r) } : DEFAULT_CFG; } catch { return DEFAULT_CFG; } }
@@ -138,6 +139,7 @@ export const DigitHunter: React.FC = () => {
     const [confidenceThreshold, setConfidenceThreshold] = useState(cfg.confidenceThreshold);
     const [recoveryEnabled, setRecoveryEnabled] = useState(cfg.recoveryEnabled === 'true');
     const [maxRecoveryAttempts, setMaxRecoveryAttempts] = useState(cfg.maxRecoveryAttempts);
+    const [martingaleFactor, setMartingaleFactor] = useState(cfg.martingaleFactor);
     const [running, setRunning] = useState(false);
     const [paused, setPaused] = useState(false);
     const [logs, setLogs] = useState<LogEntry[]>([]);
@@ -159,7 +161,7 @@ export const DigitHunter: React.FC = () => {
     const winsRef = useRef(0);
     const lossesRef = useRef(0);
     const currentStakeRef = useRef(parseFloat(cfg.stake));
-    const cfgRef = useRef({ stake: parseFloat(cfg.stake), threshold: parseFloat(cfg.confidenceThreshold), recovery: cfg.recoveryEnabled === 'true', maxRecovery: parseInt(cfg.maxRecoveryAttempts) });
+    const cfgRef = useRef({ stake: parseFloat(cfg.stake), threshold: parseFloat(cfg.confidenceThreshold), recovery: cfg.recoveryEnabled === 'true', maxRecovery: parseInt(cfg.maxRecoveryAttempts), martFactor: parseFloat(cfg.martingaleFactor) || MARTINGALE_FACTOR });
     const lastTradeTime = useRef(0);
     const contractMapRef = useRef<Map<string, { symbol: string; stake: number; contractType: string }>>(new Map());
     const allMarketDataRef = useRef<Record<string, MarketData>>({});
@@ -169,8 +171,8 @@ export const DigitHunter: React.FC = () => {
     const lastConsecutiveLossRef = useRef(0);
 
     // Config sync
-    useEffect(() => { cfgRef.current = { stake: parseFloat(stake), threshold: parseFloat(confidenceThreshold), recovery: recoveryEnabled, maxRecovery: parseInt(maxRecoveryAttempts) }; }, [stake, confidenceThreshold, recoveryEnabled, maxRecoveryAttempts]);
-    useEffect(() => { saveCfg({ stake, confidenceThreshold, recoveryEnabled: String(recoveryEnabled), maxRecoveryAttempts }); }, [stake, confidenceThreshold, recoveryEnabled, maxRecoveryAttempts]);
+    useEffect(() => { cfgRef.current = { stake: parseFloat(stake), threshold: parseFloat(confidenceThreshold), recovery: recoveryEnabled, maxRecovery: parseInt(maxRecoveryAttempts), martFactor: parseFloat(martingaleFactor) || MARTINGALE_FACTOR }; }, [stake, confidenceThreshold, recoveryEnabled, maxRecoveryAttempts, martingaleFactor]);
+    useEffect(() => { saveCfg({ stake, confidenceThreshold, recoveryEnabled: String(recoveryEnabled), maxRecoveryAttempts, martingaleFactor }); }, [stake, confidenceThreshold, recoveryEnabled, maxRecoveryAttempts, martingaleFactor]);
 
     const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
         setLogs(prev => [...prev.slice(-99), { time: ts(), msg, type }]);
@@ -181,11 +183,12 @@ export const DigitHunter: React.FC = () => {
         setPnl(pnlRef.current);
     }, []);
 
-    const updateWins = useCallback((isWin: boolean, stakeAmt: number) => {
+    const updateWins = useCallback((isWin: boolean, profit: number) => {
         cntRef.current++;
         setTrades(cntRef.current);
-        if (isWin) { winsRef.current++; setWins(winsRef.current); updatePnl(stakeAmt * 0.95); }
-        else { lossesRef.current++; setLosses(lossesRef.current); updatePnl(-stakeAmt); }
+        if (isWin) { winsRef.current++; setWins(winsRef.current); }
+        else { lossesRef.current++; setLosses(lossesRef.current); }
+        updatePnl(profit);
     }, [updatePnl]);
 
     // ── Initialize market data for all symbols ──
@@ -248,20 +251,35 @@ export const DigitHunter: React.FC = () => {
             const isRecovery = recoveryPhaseRef.current === 'recovering';
 
             if (isRecovery) {
-                // ── RECOVERY MODE: use tighter barriers for higher win rate ──
-                // OVER 4 wins if digit 4,5,6,7,8,9 (60%)
-                // OVER 5 wins if digit 5,6,7,8,9 (50%)
-                // UNDER 5 wins if digit 0,1,2,3,4 (50%)
+                // ── RECOVERY MODE: high-paying barriers (40-50% win, 2-2.5x payout) ──
+                // OVER 4 wins if digit 4,5,6,7,8,9 (60%) — payout ~2x
+                // OVER 5 wins if digit 5,6,7,8,9 (50%) — payout ~2.5x
+                // UNDER 5 wins if digit 0,1,2,3,4 (50%) — payout ~2x
+                // UNDER 4 wins if digit 0,1,2,3 (40%) — payout ~2.5x
+
+                // Strong low-digit (0-4) overrepresentation → high digits due → OVER 5
                 if (d01234 > 52) {
-                    // Low digits overrepresented → high digits due → OVER 4
-                    contractType = 'DIGITOVER';
-                    barrier = 4;
-                    reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% → OVER 4`;
-                } else if (d6789 > 52) {
-                    // High digits overrepresented → low digits due → UNDER 5
-                    contractType = 'DIGITUNDER';
-                    barrier = 5;
-                    reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% → UNDER 5`;
+                    if (d01234 > 55) {
+                        contractType = 'DIGITOVER';
+                        barrier = 5;
+                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% (>55%) → OVER 5 (2.5x)`;
+                    } else {
+                        contractType = 'DIGITOVER';
+                        barrier = 4;
+                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% → OVER 4 (2x)`;
+                    }
+                }
+                // Strong high-digit (6-9) overrepresentation → low digits due → UNDER 4
+                else if (d6789 > 52) {
+                    if (d6789 > 55) {
+                        contractType = 'DIGITUNDER';
+                        barrier = 4;
+                        reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% (>55%) → UNDER 4 (2.5x)`;
+                    } else {
+                        contractType = 'DIGITUNDER';
+                        barrier = 5;
+                        reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% → UNDER 5 (2x)`;
+                    }
                 } else {
                     // Balanced → default recovery OVER 5 (50/50)
                     contractType = 'DIGITOVER';
@@ -381,10 +399,10 @@ export const DigitHunter: React.FC = () => {
         contractMapRef.current.delete(contractId);
         globalLock.current = false;
 
-        updateWins(isWin, info.stake);
+        updateWins(isWin, profit);
 
         if (isWin) {
-            addLog(`✅ WIN +$${(info.stake * 0.95).toFixed(2)} on ${SYMBOL_LABELS[info.symbol]}`, 'win');
+            addLog(`✅ WIN +$${profit.toFixed(2)} on ${SYMBOL_LABELS[info.symbol]}`, 'win');
             // Reset recovery on win
             if (recoveryPhaseRef.current === 'recovering') {
                 addLog('🟢 Recovery successful — resetting to base stake', 'recovery');
@@ -395,7 +413,7 @@ export const DigitHunter: React.FC = () => {
             }
             lastConsecutiveLossRef.current = 0;
         } else {
-            addLog(`❌ LOSS -$${info.stake.toFixed(2)} on ${SYMBOL_LABELS[info.symbol]}`, 'loss');
+            addLog(`❌ LOSS -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[info.symbol]}`, 'loss');
             lastConsecutiveLossRef.current++;
 
             // Recovery logic
@@ -416,7 +434,7 @@ export const DigitHunter: React.FC = () => {
                     }, RECOVERY_PAUSE_MS);
                 } else {
                     // Increase stake for recovery
-                    currentStakeRef.current = parseFloat((info.stake * MARTINGALE_FACTOR).toFixed(2));
+                    currentStakeRef.current = parseFloat((info.stake * cfgRef.current.martFactor).toFixed(2));
                     recoveryPhaseRef.current = 'recovering';
                     setRecoveryInfo({ phase: 'recovering', attempts: recoveryAttemptsRef.current, currentStake: currentStakeRef.current });
                     addLog(`🔄 Recovery attempt ${recoveryAttemptsRef.current}/${cfgRef.current.maxRecovery} — stake: $${currentStakeRef.current.toFixed(2)}`, 'recovery');
@@ -582,7 +600,12 @@ export const DigitHunter: React.FC = () => {
                 </label>
                 <label style={{ fontSize: 10, color: '#888', display: 'flex', alignItems: 'center', gap: 4 }}>
                     <input type="checkbox" checked={recoveryEnabled} onChange={e => setRecoveryEnabled(e.target.checked)} />
-                    Recovery (1.5x)
+                    Recovery (x{martingaleFactor})
+                </label>
+                <label style={{ fontSize: 10, color: '#888' }}>Martingale
+                    <input type="number" value={martingaleFactor} onChange={e => setMartingaleFactor(e.target.value)}
+                        style={{ width: '100%', background: '#1a1a2e', border: '1px solid #333', color: '#fff', padding: 2, fontSize: 10, borderRadius: 3 }}
+                        step="0.1" min="1" max="5" />
                 </label>
                 <label style={{ fontSize: 10, color: '#888' }}>Max Recovery
                     <input type="number" value={maxRecoveryAttempts} onChange={e => setMaxRecoveryAttempts(e.target.value)}
