@@ -50,6 +50,16 @@ const getBotInterface = tradeEngine => {
                     tradeEngine.vh_state.stopLoss = Number(settings.stopLoss);
             }
         },
+        setBulkTrade: settings => {
+            if (tradeEngine.vh_state) {
+                if (typeof settings.enabled !== 'undefined') {
+                    tradeEngine.vh_state.bulk_enabled = !!settings.enabled;
+                }
+                if (typeof settings.count !== 'undefined') {
+                    tradeEngine.vh_state.bulk_count = Math.max(1, Number(settings.count) || 1);
+                }
+            }
+        },
     };
 };
 

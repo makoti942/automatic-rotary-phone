@@ -62,7 +62,17 @@ export default Engine =>
     class Purchase extends Engine {
         async purchase(contract_type) {
             if (this.$scope?.paused_) return;
-            if (this.vh_state.enabled && this.vh_state.is_virtual) {
+
+            const is_bulk = this.vh_state.bulk_enabled && this.vh_state.bulk_count > 1;
+            const is_virtual = this.vh_state.enabled && this.vh_state.is_virtual;
+
+            if (is_bulk && is_virtual) {
+                return this.bulkVirtualPurchase(contract_type);
+            }
+            if (is_bulk && !is_virtual) {
+                return this.bulkRealPurchase(contract_type);
+            }
+            if (is_virtual) {
                 return this.virtualPurchase(contract_type);
             }
             return this.realPurchase(contract_type);
@@ -237,6 +247,21 @@ export default Engine =>
             };
 
             this.updateVirtualTotals(simulated_contract);
+
+            // Save the interpreter's Stake variable BEFORE dispatching sell(),
+            // because sell() triggers the bot's after_purchase blocks which may
+            // contain martingale logic that doubles/modifies the Stake variable.
+            // Virtual trades must never affect the real trading stake.
+            const savedStakes = {};
+            getStakeVariableCandidates().forEach(name => {
+                try {
+                    const val = this.getInterpreterVariable(name);
+                    if (typeof val === 'number' && !isNaN(val)) {
+                        savedStakes[name] = val;
+                    }
+                } catch (e) { /* noop */ }
+            });
+
             this.store.dispatch(sell());
 
             setTimeout(() => {
@@ -246,24 +271,366 @@ export default Engine =>
                 // Space consecutive virtual trades out by VIRTUAL_TRADE_DELAY_MS
                 // so they cannot fire back-to-back in the same instant.
                 setTimeout(() => {
-                    if (resolve) resolve();
+                    // Restore the Stake variable to its pre-sale value, undoing
+                    // any martingale modifications made by after_purchase blocks.
+                    // This is the core fix: after_purchase DOES run (triggered by
+                    // sell()), but we roll back its stake changes immediately.
+                    Object.entries(savedStakes).forEach(([name, val]) => {
+                        this.setInterpreterVariable(name, val);
+                    });
 
-                    // For virtual trades, do NOT run the bot's after_purchase blocks
-                    // (e.g. martingale logic) — virtual results should not affect
-                    // real trading stake calculations.
-                    try {
-                        if (typeof console !== 'undefined') {
-                            console.debug('[Virtual Hook] Skipping afterPromise for virtual trade');
-                        }
-                    } catch (e) {
-                        /* noop */
-                    }
+                    if (resolve) resolve();
 
                     setTimeout(() => {
                         this.store.dispatch(start());
                     }, 10);
                 }, VIRTUAL_TRADE_DELAY_MS);
             }, 0);
+        }
+
+        // ─── Bulk virtual purchase ────────────────────────────────────────
+        async bulkVirtualPurchase(contract_type) {
+            this.applyAlternateMarketsToCurrentTradeOptions();
+
+            const { duration, duration_unit, symbol } = this.tradeOptions;
+            const bulk_count = this.vh_state.bulk_count || 1;
+
+            let target_ticks = 0;
+            if (duration_unit === 't') {
+                target_ticks = duration;
+            } else {
+                const duration_seconds = duration * (duration_unit === 'm' ? 60 : 1);
+                target_ticks = Math.ceil(duration_seconds);
+            }
+
+            let resolved_prediction = this.tradeOptions.prediction;
+            if (typeof window !== 'undefined' && window.BinaryBotCustomPrediction !== undefined) {
+                resolved_prediction = Number(window.BinaryBotCustomPrediction);
+                window.BinaryBotCustomPrediction = undefined;
+            }
+
+            const configured_stake = Number(this.tradeOptions.amount) || 1;
+            if (!this.vh_state.initial_stake || this.vh_state.initial_stake === 0) {
+                this.vh_state.initial_stake = configured_stake;
+            }
+            if (!this.vh_state.current_stake || this.vh_state.current_stake === 0) {
+                this.vh_state.current_stake = configured_stake;
+            }
+
+            this.vh_state.virtual_trade_active = true;
+            this.vh_state.virtual_tick_count = 0;
+            this.vh_state.virtual_target_duration = target_ticks;
+            this.vh_state.virtual_contract_type = contract_type;
+            this.vh_state.virtual_prediction = resolved_prediction;
+            this.vh_state.virtual_entry_spot = 0;
+            this.vh_state.entry_spot_captured = false;
+            this.vh_state.last_tick_epoch = null;
+
+            this.setInterpreterVariable('BinaryBotPrivateLastTradeVirtual', true);
+
+            this.store.dispatch(purchaseSuccessful());
+            this.store.dispatch(openContractReceived());
+
+            this.vh_state.virtual_tick_subscription = api_base.api.onMessage().subscribe(({ data }) => {
+                if (data?.msg_type === 'tick' && data?.tick?.symbol === symbol) {
+                    this.processBulkVirtualTick({
+                        quote: data.tick.quote,
+                        symbol: data.tick.symbol,
+                        epoch: data.tick.epoch,
+                    });
+                }
+            });
+            api_base.pushSubscription(this.vh_state.virtual_tick_subscription);
+            if (!api_base.api.sent_requests?.some(req => req.ticks === symbol)) {
+                api_base.api.send({ ticks: symbol, subscribe: 1 });
+            }
+
+            return new Promise((resolve, reject) => {
+                this.vh_state.virtual_resolve = resolve;
+                this.vh_state.virtual_reject = reject;
+                const vtTimeout = () => {
+                    if (this.vh_state.virtual_trade_active) {
+                        if (this.$scope?.paused_) {
+                            this.vh_state.virtual_timeout = setTimeout(vtTimeout, 1000);
+                            return;
+                        }
+                        this.resetVirtualTrade();
+                        reject(new Error('Bulk virtual trade timed out'));
+                    }
+                };
+                this.vh_state.virtual_timeout = setTimeout(vtTimeout, 8000);
+            });
+        }
+
+        processBulkVirtualTick(tick_data) {
+            if (!this.vh_state.virtual_trade_active) return;
+            if (this.$scope?.paused_) return;
+
+            const symbol = this.tradeOptions?.symbol;
+            if (!symbol || tick_data.symbol !== symbol) return;
+
+            const tick_epoch = tick_data.epoch;
+            if (tick_epoch && tick_epoch === this.vh_state.last_tick_epoch) return;
+            this.vh_state.last_tick_epoch = tick_epoch;
+
+            const { virtual_target_duration, virtual_contract_type } = this.vh_state;
+            const isDigitTrade = !['CALL', 'PUT'].includes(virtual_contract_type);
+
+            if (!this.vh_state.entry_spot_captured) {
+                this.vh_state.virtual_entry_spot = tick_data.quote;
+                this.vh_state.entry_spot_captured = true;
+
+                if (isDigitTrade && virtual_target_duration === 1) {
+                    this.settleBulkVirtualTrade(tick_data);
+                }
+                return;
+            }
+
+            this.vh_state.virtual_tick_count++;
+            const current_tick_count = this.vh_state.virtual_tick_count;
+
+            const settle_after = isDigitTrade ? virtual_target_duration - 1 : virtual_target_duration;
+
+            if (current_tick_count >= settle_after) {
+                this.settleBulkVirtualTrade(tick_data);
+            }
+        }
+
+        settleBulkVirtualTrade(tick_data) {
+            if (this.$scope?.paused_) return;
+            const bulk_count = this.vh_state.bulk_count || 1;
+            const raw_end_spot = tick_data.quote;
+            const raw_entry_spot = this.vh_state.virtual_entry_spot;
+
+            const pip_size = this.getPipSize() || 0;
+            const end_spot_str = Number(raw_end_spot).toFixed(pip_size);
+            const entry_spot_str = Number(raw_entry_spot).toFixed(pip_size);
+
+            const end_spot = Number(end_spot_str);
+            const entry_spot = Number(entry_spot_str);
+
+            const trade_contract_type = this.vh_state.virtual_contract_type;
+            const prediction_barrier = parseInt(this.vh_state.virtual_prediction, 10);
+            const last_digit = Number(end_spot_str.slice(-1));
+
+            let is_win;
+            switch (trade_contract_type) {
+                case 'CALL':  is_win = end_spot > entry_spot; break;
+                case 'PUT':   is_win = end_spot < entry_spot; break;
+                case 'DIGITMATCH': is_win = last_digit === prediction_barrier; break;
+                case 'DIGITDIFF':  is_win = last_digit !== prediction_barrier; break;
+                case 'DIGITOVER':  is_win = last_digit > prediction_barrier; break;
+                case 'DIGITUNDER': is_win = last_digit < prediction_barrier; break;
+                case 'DIGITODD':   is_win = last_digit % 2 !== 0; break;
+                case 'DIGITEVEN':  is_win = last_digit % 2 === 0; break;
+                default: is_win = false; break;
+            }
+
+            const stake = this.vh_state.current_stake || this.tradeOptions.amount || 1;
+
+            for (let i = 0; i < bulk_count; i++) {
+                const virtual_id = `bulk_virtual_${Math.floor(Date.now() / 1000)}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+
+                const simulated_contract = {
+                    ask_price: stake,
+                    payout: stake * 1.95,
+                    profit: is_win ? stake * 0.95 : -stake,
+                    status: 'sold',
+                    is_sold: true,
+                    entry_spot: entry_spot_str,
+                    exit_spot: end_spot_str,
+                    is_virtual: true,
+                    contract_type: trade_contract_type,
+                    symbol: this.tradeOptions.symbol,
+                };
+
+                this.updateVirtualTotals(simulated_contract);
+
+                const now = Math.floor(Date.now() / 1000);
+                const entrySpotNum = Number(entry_spot_str);
+                const exitSpotNum = Number(end_spot_str);
+                const virtual_contract = {
+                    ask_price: Number(stake),
+                    buy_price: Number(stake),
+                    sell_price: is_win ? Number(stake * 1.95) : 0,
+                    payout: stake * 1.95,
+                    profit: is_win ? Number(stake * 0.95) : -Number(stake),
+                    status: 'sold',
+                    is_sold: true,
+                    is_virtual: true,
+                    is_completed: true,
+                    contract_type: trade_contract_type,
+                    symbol: this.tradeOptions.symbol,
+                    entry_spot: entrySpotNum,
+                    exit_spot: exitSpotNum,
+                    entry_tick: entrySpotNum,
+                    exit_tick: exitSpotNum,
+                    transaction_ids: { buy: virtual_id },
+                    date_start: now,
+                    entry_tick_time: now,
+                    exit_tick_time: now + (this.vh_state.virtual_target_duration || 1),
+                    display_name: is_win ? localize('Virtual Win') : localize('Virtual Loss'),
+                    underlying: this.tradeOptions.symbol,
+                    currency: this.tradeOptions.currency || 'USD',
+                    shortcode: `${trade_contract_type}_S0P_${this.tradeOptions.symbol.toUpperCase()}`,
+                    id: virtual_id,
+                    contract_id: virtual_id,
+                };
+
+                globalObserver.emit('bot.contract', { ...virtual_contract, is_sold: true });
+            }
+
+            const savedStakes = {};
+            getStakeVariableCandidates().forEach(name => {
+                try {
+                    const val = this.getInterpreterVariable(name);
+                    if (typeof val === 'number' && !isNaN(val)) savedStakes[name] = val;
+                } catch (e) { /* noop */ }
+            });
+
+            this.store.dispatch(sell());
+
+            setTimeout(() => {
+                const resolve = this.vh_state.virtual_resolve;
+                this.resetVirtualTrade();
+
+                setTimeout(() => {
+                    Object.entries(savedStakes).forEach(([name, val]) => {
+                        this.setInterpreterVariable(name, val);
+                    });
+
+                    if (resolve) resolve();
+
+                    setTimeout(() => {
+                        this.store.dispatch(start());
+                    }, 10);
+                }, VIRTUAL_TRADE_DELAY_MS);
+            }, 0);
+        }
+
+        // ─── Bulk real purchase ───────────────────────────────────────────
+        async bulkRealPurchase(contract_type) {
+            if (this.$scope?.paused_) return;
+            this.setInterpreterVariable('BinaryBotPrivateLastTradeVirtual', false);
+
+            if (this.store.getState().scope !== BEFORE_PURCHASE) {
+                return Promise.resolve();
+            }
+
+            const bulk_count = this.vh_state.bulk_count || 1;
+
+            if (this.vh_state?.enabled && this.vh_state.needs_stake_reset) {
+                this.tradeOptions.amount = this.vh_state.initial_stake || this.tradeOptions.amount || 1;
+            }
+
+            const sendBuy = () => {
+                if (this.is_proposal_subscription_required) {
+                    const { id, askPrice } = this.selectProposal(contract_type);
+                    return doUntilDone(() => api_base.api.send({ buy: id, price: askPrice }));
+                }
+                const trade_option = tradeOptionToBuy(contract_type, this.tradeOptions);
+                return doUntilDone(() => api_base.api.send(trade_option));
+            };
+
+            if (this.is_proposal_subscription_required) {
+                this.applyAlternateMarketsToCurrentTradeOptions();
+                try {
+                    this.makeProposals({ ...this.options, ...this.tradeOptions });
+                    this.checkProposalReady && this.checkProposalReady();
+                } catch {}
+
+                const { askPrice } = this.selectProposal(contract_type);
+
+                contractStatus({
+                    id: 'contract.purchase_sent',
+                    data: `${askPrice} × ${bulk_count}`,
+                });
+
+                this.isSold = false;
+
+                const buyPromises = [];
+                for (let i = 0; i < bulk_count; i++) {
+                    buyPromises.push(
+                        sendBuy().then(response => {
+                            const { buy } = response;
+                            contractStatus({
+                                id: 'contract.purchase_received',
+                                data: buy.transaction_id,
+                                buy,
+                            });
+                            log(LogTypes.PURCHASE, { transaction_id: buy.transaction_id });
+                            info({
+                                accountID: this.accountInfo.loginid,
+                                totalRuns: this.updateAndReturnTotalRuns(),
+                                transaction_ids: { buy: buy.transaction_id },
+                                contract_type,
+                                buy_price: buy.buy_price,
+                            });
+                            return buy;
+                        })
+                    );
+                }
+
+                const results = await Promise.all(buyPromises);
+                this.contractId = results[results.length - 1].contract_id;
+                this.store.dispatch(purchaseSuccessful());
+
+                if (this.is_proposal_subscription_required) {
+                    this.renewProposalsOnPurchase();
+                }
+
+                delayIndex = 0;
+                return results;
+            }
+
+            this.applyAlternateMarketsToCurrentTradeOptions();
+
+            if (this.vh_state?.enabled && this.vh_state.needs_stake_reset) {
+                this.tradeOptions.amount = this.vh_state.initial_stake || this.tradeOptions.amount || 1;
+            }
+
+            const trade_option = tradeOptionToBuy(contract_type, this.tradeOptions);
+
+            contractStatus({
+                id: 'contract.purchase_sent',
+                data: `${this.tradeOptions.amount} × ${bulk_count}`,
+            });
+
+            this.isSold = false;
+
+            const buyPromises = [];
+            for (let i = 0; i < bulk_count; i++) {
+                buyPromises.push(
+                    sendBuy().then(response => {
+                        const { buy } = response;
+                        contractStatus({
+                            id: 'contract.purchase_received',
+                            data: buy.transaction_id,
+                            buy,
+                        });
+                        log(LogTypes.PURCHASE, { transaction_id: buy.transaction_id });
+                        info({
+                            accountID: this.accountInfo.loginid,
+                            totalRuns: this.updateAndReturnTotalRuns(),
+                            transaction_ids: { buy: buy.transaction_id },
+                            contract_type,
+                            buy_price: buy.buy_price,
+                        });
+                        return buy;
+                    })
+                );
+            }
+
+            const results = await Promise.all(buyPromises);
+            this.contractId = results[results.length - 1].contract_id;
+            this.store.dispatch(purchaseSuccessful());
+
+            if (this.is_proposal_subscription_required) {
+                this.renewProposalsOnPurchase();
+            }
+
+            delayIndex = 0;
+            return results;
         }
 
         resetVirtualTrade() {
@@ -366,6 +733,39 @@ export default Engine =>
             } catch (e) {
                 // noop
             }
+        }
+
+        getInterpreterVariable(name) {
+            try {
+                const dbot = window?.DBot;
+                if (!dbot?.interpreter?.bot?.tradeEngine) return undefined;
+
+                const interpreter = dbot.interpreter.getInterpreter?.() || {};
+                if (!interpreter || typeof interpreter.getProperty !== 'function') return undefined;
+
+                const scopeCandidates = [
+                    interpreter.globalObject,
+                    interpreter.globalScope && interpreter.globalScope.object,
+                    interpreter.global,
+                    interpreter.stateStack &&
+                        interpreter.stateStack[0] &&
+                        interpreter.stateStack[0].scope &&
+                        interpreter.stateStack[0].scope.object,
+                ];
+
+                for (const candidate of scopeCandidates) {
+                    if (!candidate || typeof candidate !== 'object') continue;
+                    try {
+                        const pseudoVal = interpreter.getProperty(candidate, name);
+                        return interpreter.pseudoToNative ? interpreter.pseudoToNative(pseudoVal) : pseudoVal;
+                    } catch (e) {
+                        // not the right scope, try the next candidate
+                    }
+                }
+            } catch (e) {
+                // noop
+            }
+            return undefined;
         }
 
         resetStakeVariableForRealTrading() {

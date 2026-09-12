@@ -103,6 +103,8 @@ export default class TradeEngine extends Balance(Purchase(Sell(OpenContract(Prop
             virtual_resolve: null,
             virtual_reject: null,
             virtual_timeout: null,
+            bulk_enabled: false,
+            bulk_count: 1,
         };
     }
 
