@@ -3,10 +3,22 @@ import { observer } from 'mobx-react-lite';
 import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
 
+interface ChatQuestionOption {
+    label: string;
+    value: string;
+}
+
+interface ChatQuestion {
+    id: string;
+    question: string;
+    options: ChatQuestionOption[];
+}
+
 interface ChatMessage {
     role: 'user' | 'assistant';
     content: string;
     xml?: string;
+    questions?: ChatQuestion[];
 }
 
 // Default bot XML - starting template that AI can modify
@@ -103,6 +115,34 @@ const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create and m
 2. **Confirm understanding** before generating XML
 3. **Generate COMPLETE XML** - no empty spaces, all fields filled
 4. **Test mentally** - trace through the logic to verify it works
+
+## HOW TO ASK QUESTIONS (IMPORTANT):
+When you need more details before building, end your reply with a questions block in EXACTLY this format:
+
+[QUESTIONS]
+Q: Which symbol do you want to trade?
+- R_50
+- R_100
+- 1HZ100V
+Q: What stake per trade?
+- 0.35
+- 0.50
+- 1.00
+Q: What recovery after a loss?
+- None
+- Double stake (martingale x2)
+- Switch to safer barrier
+[/QUESTIONS]
+
+RULES:
+- Each question line starts with "Q: " (exactly one space after the colon)
+- Each option line starts with "- " (dash + one space)
+- Provide 2-4 options per question ALWAYS — never ask a question with no options
+- Include the most likely/common choices as options
+- If you need a numeric value, give sensible default options (e.g. stakes: 0.35, 0.50, 1.00)
+- The user will CLICK one option per question (they do NOT type), so every question MUST have options
+- You may add a short intro text before the block (e.g. "A few quick choices:"), but the block itself must be exactly as shown
+- When you have all the answers you need, STOP asking and build the bot
 
 ## COMPLETE LIST OF ALL 133 VALID BLOCK TYPES (use ONLY these):
 
@@ -488,6 +528,36 @@ function extractXml(text: string): string | null {
     return null;
 }
 
+// Parse [QUESTIONS]...[/QUESTIONS] block into selectable cards
+function parseQuestions(text: string): ChatQuestion[] | null {
+    const m = text.match(/\[QUESTIONS\]([\s\S]*?)\[\/QUESTIONS\]/);
+    if (!m) return null;
+    const questions: ChatQuestion[] = [];
+    let current: ChatQuestion | null = null;
+    for (const rawLine of m[1].split('\n')) {
+        const line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith('Q:')) {
+            if (current) questions.push(current);
+            current = {
+                id: `q${questions.length + 1}`,
+                question: line.slice(2).trim(),
+                options: [],
+            };
+        } else if (line.startsWith('- ') && current) {
+            const optRaw = line.slice(2).trim();
+            current.options.push({ label: optRaw, value: optRaw });
+        }
+    }
+    if (current) questions.push(current);
+    return questions.length > 0 ? questions : null;
+}
+
+// Strip the [QUESTIONS] block from displayed content
+function stripQuestions(text: string): string {
+    return text.replace(/\[QUESTIONS\][\s\S]*?\[\/QUESTIONS\]/, '').replace(/\n{2,}/g, '\n').trim();
+}
+
 // ── Valid block types (verified from source code) ──
 const VALID_BLOCKS: Set<string> = new Set([
     // Trade Definition
@@ -639,6 +709,7 @@ export const BuildBot = observer(() => {
     const [loading, setLoading] = useState(false);
     const [generatedXml, setGeneratedXml] = useState<string>(() => ls('buildbot_xml', ''));
     const [error, setError] = useState('');
+    const [selections, setSelections] = useState<Record<number, Record<string, string>>>({});
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -654,8 +725,8 @@ export const BuildBot = observer(() => {
         lsSet('buildbot_xml', generatedXml);
     }, [generatedXml]);
 
-    const sendMessage = useCallback(async () => {
-        const text = input.trim();
+    const sendMessage = useCallback(async (overrideText?: string) => {
+        const text = (overrideText ?? input).trim();
         if (!text || loading) return;
 
         const userMsg: ChatMessage = { role: 'user', content: text };
@@ -675,11 +746,14 @@ export const BuildBot = observer(() => {
 
             const response = await callGroq(chatMessages);
             const xml = extractXml(response);
+            const questions = parseQuestions(response);
+            const cleanContent = questions ? stripQuestions(response) : response;
 
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
-                content: response,
+                content: cleanContent,
                 xml: xml || undefined,
+                questions: questions || undefined,
             };
             setMessages(prev => [...prev, assistantMsg]);
 
@@ -694,6 +768,20 @@ export const BuildBot = observer(() => {
             setLoading(false);
         }
     }, [input, loading, messages, generatedXml]);
+
+    const submitAnswers = useCallback(async (msgIndex: number, questions: ChatQuestion[]) => {
+        const answers = selections[msgIndex] || {};
+        const answered = questions.filter(q => answers[q.id]).map(q => ({ q, v: answers[q.id] }));
+        if (answered.length === 0) return;
+        const text = answered.map((a, i) => `${i + 1}) ${a.q.question}: ${a.v}`).join('\n');
+        // Clear the selections for this message
+        setSelections(prev => {
+            const next = { ...prev };
+            delete next[msgIndex];
+            return next;
+        });
+        await sendMessage(text);
+    }, [selections, sendMessage]);
 
     const loadToWorkspace = useCallback(async () => {
         if (!generatedXml) return;
@@ -847,6 +935,62 @@ export const BuildBot = observer(() => {
                                 </div>
                             ) : msg.content}
                         </div>
+                        {msg.questions && msg.questions.length > 0 && (
+                            <div style={{ marginTop: 6 }}>
+                                {msg.questions.map(q => {
+                                    const msgSel = selections[i] || {};
+                                    const selected = msgSel[q.id];
+                                    const setOne = (v: string) => setSelections(prev => ({
+                                        ...prev,
+                                        [i]: { ...(prev[i] || {}), [q.id]: v },
+                                    }));
+                                    return (
+                                        <div key={q.id} style={{ marginBottom: 6 }}>
+                                            <div style={{ fontSize: 10, color: '#eee', marginBottom: 3 }}>
+                                                {q.question}
+                                            </div>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3 }}>
+                                                {q.options.map(opt => {
+                                                    const isSel = selected === opt.value;
+                                                    return (
+                                                        <button
+                                                            key={opt.value}
+                                                            onClick={() => setOne(opt.value)}
+                                                            style={{
+                                                                padding: '2px 8px',
+                                                                fontSize: 10,
+                                                                fontFamily: 'monospace',
+                                                                background: isSel ? '#2196f3' : '#1a1a2e',
+                                                                color: isSel ? '#fff' : '#bbb',
+                                                                border: isSel ? '1px solid #2196f3' : '1px solid #444',
+                                                                borderRadius: 12,
+                                                                cursor: 'pointer',
+                                                            }}>
+                                                            {opt.label}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                                <button onClick={() => submitAnswers(i, msg.questions!)}
+                                    disabled={loading || Object.keys(selections[i] || {}).length === 0}
+                                    style={{
+                                        padding: '3px 12px',
+                                        background: loading || Object.keys(selections[i] || {}).length === 0 ? '#333' : '#4caf50',
+                                        color: '#fff',
+                                        border: 'none',
+                                        borderRadius: 3,
+                                        cursor: loading || Object.keys(selections[i] || {}).length === 0 ? 'not-allowed' : 'pointer',
+                                        fontSize: 10,
+                                        fontWeight: 'bold',
+                                        marginTop: 4,
+                                    }}>
+                                    ✓ Submit Answers
+                                </button>
+                            </div>
+                        )}
                     </div>
                 ))}
                 {loading && (
