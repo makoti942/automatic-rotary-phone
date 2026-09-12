@@ -33,14 +33,15 @@ export default Engine =>
                             contract,
                         });
 
-                        const isBulkActive = this.bulkContractIds && this.bulkContractIds.size > 0;
+                        const bulkIds = this.vh_state?.bulkContractIds;
+                        const isBulkActive = bulkIds && bulkIds.size > 0;
 
                         if (isBulkActive) {
                             // Track how many bulk contracts have settled
                             if (!this._bulkSettledCount) this._bulkSettledCount = 0;
                             this._bulkSettledCount++;
-                            const totalBulk = this._bulkSettledStart || this.bulkContractIds.size;
-                            if (!this._bulkSettledStart) this._bulkSettledStart = this.bulkContractIds.size;
+                            const totalBulk = this._bulkSettledStart || bulkIds.size;
+                            if (!this._bulkSettledStart) this._bulkSettledStart = bulkIds.size;
 
                             // Only trigger bot-level sell (which clears state) when ALL are done
                             if (this._bulkSettledCount >= this._bulkSettledStart) {
@@ -109,10 +110,8 @@ export default Engine =>
         }
 
         expectedContractId(contractId) {
-            // For bulk trades: check the set FIRST, before the empty check,
-            // because the first settlement clears this.contractId which
-            // would cause all remaining bulk contracts to be rejected.
-            if (this.bulkContractIds && this.bulkContractIds.has(contractId)) return true;
+            const bulkIds = this.vh_state?.bulkContractIds;
+            if (bulkIds && bulkIds.has(contractId)) return true;
             if (!this.contractId) return false;
             return contractId === this.contractId;
         }
