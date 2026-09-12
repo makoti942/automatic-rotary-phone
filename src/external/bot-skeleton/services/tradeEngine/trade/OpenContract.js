@@ -24,7 +24,6 @@ export default Engine =>
                     broadcastContract({ accountID: api_base.account_info.loginid, ...contract });
 
                     if (this.isSold) {
-                        this.contractId = '';
                         clearTimeout(this.transaction_recovery_timeout);
                         this.stopSettlementPolling();
                         this.updateTotals(contract);
@@ -34,13 +33,32 @@ export default Engine =>
                             contract,
                         });
 
-                        if (this.afterPromise) {
-                            this.afterPromise();
+                        const isBulkActive = this.bulkContractIds && this.bulkContractIds.size > 0;
+
+                        if (isBulkActive) {
+                            // Track how many bulk contracts have settled
+                            if (!this._bulkSettledCount) this._bulkSettledCount = 0;
+                            this._bulkSettledCount++;
+                            const totalBulk = this._bulkSettledStart || this.bulkContractIds.size;
+                            if (!this._bulkSettledStart) this._bulkSettledStart = this.bulkContractIds.size;
+
+                            // Only trigger bot-level sell (which clears state) when ALL are done
+                            if (this._bulkSettledCount >= this._bulkSettledStart) {
+                                this.contractId = '';
+                                if (this.afterPromise) this.afterPromise();
+                                this.onRealContractSettled?.(contract);
+                                this.store.dispatch(sell());
+                                this._bulkSettledCount = 0;
+                                this._bulkSettledStart = 0;
+                            }
+                        } else {
+                            this.contractId = '';
+                            if (this.afterPromise) {
+                                this.afterPromise();
+                            }
+                            this.onRealContractSettled?.(contract);
+                            this.store.dispatch(sell());
                         }
-
-                        this.onRealContractSettled?.(contract);
-
-                        this.store.dispatch(sell());
                     } else {
                         this.startSettlementPolling();
                         this.store.dispatch(openContractReceived());
@@ -91,11 +109,12 @@ export default Engine =>
         }
 
         expectedContractId(contractId) {
-            if (!this.contractId) return false;
-            if (contractId === this.contractId) return true;
-            // For bulk trades: track all contract IDs in the set
+            // For bulk trades: check the set FIRST, before the empty check,
+            // because the first settlement clears this.contractId which
+            // would cause all remaining bulk contracts to be rejected.
             if (this.bulkContractIds && this.bulkContractIds.has(contractId)) return true;
-            return false;
+            if (!this.contractId) return false;
+            return contractId === this.contractId;
         }
 
         getSellPrice() {
