@@ -97,41 +97,29 @@
         }
 
         .free-bot-card__avatar {
-            transform: scale(1.15) translateY(-5px);
-            filter: drop-shadow(0 8px 16px rgba(249, 115, 22, 0.5));
+            transform: scale(1.1);
+            filter: brightness(1) contrast(1.1);
         }
     }
 
     &__icon {
         width: 100%;
-        height: 90px;
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        height: 100px;
+        background: #0f172a;
         display: flex;
         align-items: center;
         justify-content: center;
         overflow: hidden;
         border-bottom: 2px solid rgba(249, 115, 22, 0.3);
         position: relative;
-
-        &::after {
-            content: '';
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            height: 20px;
-            background: linear-gradient(to top, rgba(15, 23, 42, 0.9), transparent);
-        }
     }
 
     &__avatar {
-        width: 75px;
-        height: 75px;
-        object-fit: contain;
-        transition: transform 0.3s ease, filter 0.3s ease;
-        filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.5));
-        position: relative;
-        z-index: 1;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.4s ease, filter 0.4s ease;
+        filter: brightness(0.9) contrast(1.1);
     }
 
     &__body {
@@ -293,12 +281,7 @@
         border-radius: 10px;
 
         &__icon {
-            height: 70px;
-        }
-
-        &__avatar {
-            width: 60px;
-            height: 60px;
+            height: 80px;
         }
 
         &__body {
