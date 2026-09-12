@@ -427,28 +427,28 @@ export default Engine =>
             }
 
             const stake = this.vh_state.current_stake || this.tradeOptions.amount || 1;
+            const now = Math.floor(Date.now() / 1000);
+            const entrySpotNum = Number(entry_spot_str);
+            const exitSpotNum = Number(end_spot_str);
 
+            // Track wins/losses for virtual hook state
+            if (is_win) {
+                this.vh_state.loss_count = 0;
+                this.vh_state.current_stake = this.vh_state.initial_stake;
+            } else {
+                this.vh_state.loss_count++;
+                if (this.vh_state.threshold > 0 && this.vh_state.loss_count >= this.vh_state.threshold) {
+                    this.vh_state.is_virtual = false;
+                    this.vh_state.needs_stake_reset = true;
+                    this.resetStakeVariableForRealTrading();
+                }
+            }
+
+            // Emit a separate bot.contract event for EACH bulk trade
+            // so the transaction panel shows all N trades individually
             for (let i = 0; i < bulk_count; i++) {
-                const virtual_id = `bulk_virtual_${Math.floor(Date.now() / 1000)}_${i}_${Math.random().toString(36).slice(2, 6)}`;
+                const virtual_id = `bulk_v_${now}_${i}_${Math.random().toString(36).slice(2, 8)}`;
 
-                const simulated_contract = {
-                    ask_price: stake,
-                    payout: stake * 1.95,
-                    profit: is_win ? stake * 0.95 : -stake,
-                    status: 'sold',
-                    is_sold: true,
-                    entry_spot: entry_spot_str,
-                    exit_spot: end_spot_str,
-                    is_virtual: true,
-                    contract_type: trade_contract_type,
-                    symbol: this.tradeOptions.symbol,
-                };
-
-                this.updateVirtualTotals(simulated_contract);
-
-                const now = Math.floor(Date.now() / 1000);
-                const entrySpotNum = Number(entry_spot_str);
-                const exitSpotNum = Number(end_spot_str);
                 const virtual_contract = {
                     ask_price: Number(stake),
                     buy_price: Number(stake),
@@ -573,6 +573,8 @@ export default Engine =>
 
                 const results = await Promise.all(buyPromises);
                 this.contractId = results[results.length - 1].contract_id;
+                // Track all bulk contract IDs so OpenContract settlement handler picks them up
+                results.forEach(buy => this.vh_state.bulkContractIds?.add(buy.contract_id));
                 this.store.dispatch(purchaseSuccessful());
 
                 if (this.is_proposal_subscription_required) {
@@ -623,6 +625,7 @@ export default Engine =>
 
             const results = await Promise.all(buyPromises);
             this.contractId = results[results.length - 1].contract_id;
+            results.forEach(buy => this.vh_state.bulkContractIds?.add(buy.contract_id));
             this.store.dispatch(purchaseSuccessful());
 
             if (this.is_proposal_subscription_required) {

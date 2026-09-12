@@ -91,7 +91,11 @@ export default Engine =>
         }
 
         expectedContractId(contractId) {
-            return this.contractId && contractId === this.contractId;
+            if (!this.contractId) return false;
+            if (contractId === this.contractId) return true;
+            // For bulk trades: track all contract IDs in the set
+            if (this.bulkContractIds && this.bulkContractIds.has(contractId)) return true;
+            return false;
         }
 
         getSellPrice() {
