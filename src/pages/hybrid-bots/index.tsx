@@ -101,54 +101,58 @@ const SYSTEM_PROMPT = `You are an expert Deriv Bot XML builder. You create and m
 3. **Generate COMPLETE XML** - no empty spaces, all fields filled
 4. **Test mentally** - trace through the logic to verify it works
 
-## COMPLETE LIST OF VALID BLOCK TYPES:
+## COMPLETE LIST OF ALL 133 VALID BLOCK TYPES (use ONLY these):
 
-### Trade Definition:
-- trade_definition, trade_definition_market, trade_definition_tradetype
-- trade_definition_contracttype, trade_definition_candleinterval
-- trade_definition_tradeoptions, trade_definition_restartbuysell
-- trade_definition_restartonerror, trade_definition_multiplier
-- trade_definition_accumulator
+### Trade Definition (14):
+trade_definition, trade_definition_market, trade_definition_tradetype, trade_definition_contracttype, trade_definition_candleinterval, trade_definition_tradeoptions, trade_definition_restartbuysell, trade_definition_restartonerror, trade_definition_multiplier, trade_definition_accumulator, multiplier_take_profit, multiplier_stop_loss, accumulator_take_profit
 
-### Before Purchase:
-- before_purchase, purchase, ask_price, payout
+### Before Purchase (4):
+before_purchase, purchase, ask_price, payout
 
-### During Purchase:
-- during_purchase, check_sell, sell
+### During Purchase (4):
+during_purchase, check_sell, sell_price, sell_at_market
 
-### After Purchase:
-- after_purchase, trade_again, trade_option, check_result, read_details
+### After Purchase (4):
+after_purchase, trade_again, read_details, contract_check_result
 
-### Tick Analysis:
-- tick_analysis, ticks, tick, stat, stat_list, ohlc, ohlc_values
-- readOhlc, get_ohlc, last_digit, lastDigitList, check_direction
+### Tick Analysis (14):
+tick_analysis, ticks, ticks_string, tick, tick_string, ohlc, stat_list, stat, last_digit, read_ohlc, lastDigitList, ohlc_values, check_direction, get_ohlc
 
-### Logic:
-- controls_if, controls_if_else, logic_compare, logic_operation
-- logic_negate, logic_boolean, logic_null, logic_ternary
+### Indicators (9):
+sma_statement, smaa_statement, ema_statement, rsi_statement, rsia_statement, emaa_statement, bb_statement, bba_statement, macda_statement
 
-### Math:
-- math_number, math_number_positive, math_arithmetic, math_single
-- math_trig, math_constant, math_number_property, math_round
-- math_on_list, math_modulo, math_constrain, math_random_int
-- math_random_float, math_change
+### Indicator Parts (7):
+fast_ema_period, signal_ema_period, std_dev_multiplier_up, period, std_dev_multiplier_down, input_list, slow_ema_period
 
-### Text:
-- text, text_join, text_length, text_isEmpty, text_indexOf
-- text_charAt, text_getSubstring, text_changeCase, text_trim
-- text_print, text_prompt_ext, text_statement
+### Logic (7):
+controls_if, logic_boolean, logic_compare, logic_negate, logic_null, logic_operation, logic_ternary
 
-### Lists:
-- lists_create_empty, lists_create_with, lists_repeat, lists_length
-- lists_isEmpty, lists_indexOf, lists_getIndex, lists_setIndex
-- lists_getSublist, lists_sort, lists_split, lists_statement
+### Math (14):
+math_arithmetic, math_change, math_constant, math_constrain, math_modulo, math_number, math_number_positive, math_number_property, math_on_list, math_random_float, math_random_int, math_round, math_single, math_trig
 
-### Variables:
-- variables_set, variables_get
+### Text (13):
+text, text_append, text_changeCase, text_charAt, text_getSubstring, text_indexOf, text_isEmpty, text_join, text_length, text_print, text_prompt_ext, text_statement, text_trim
 
-### Loops:
-- controls_repeat, controls_repeat_ext, controls_whileUntil
-- controls_for, controls_forEach, controls_flow_statements
+### Lists (11):
+lists_create_with, lists_getIndex, lists_getSublist, lists_indexOf, lists_isEmpty, lists_length, lists_repeat, lists_setIndex, lists_sort, lists_split, lists_statement
+
+### Variables (2):
+variables_get, variables_set
+
+### Loops (6):
+controls_flow_statements, controls_for, controls_forEach, controls_repeat, controls_repeat_ext, controls_whileUntil
+
+### Functions (5):
+procedures_callnoreturn, procedures_callreturn, procedures_defnoreturn, procedures_defreturn, procedures_ifreturn
+
+### Tools > Time (5):
+totimestamp, todatetime, timeout, tick_delay, epoch
+
+### Tools > Misc (11):
+console, useless_block, block_holder, total_runs, barrier_offset, total_profit, total_profit_string, notify_telegram, notify, loader, balance
+
+### Tools > Candle (3):
+read_ohlc_obj, ohlc_values_in_list, is_candle_black
 
 ## FIELD VALUES:
 
@@ -458,10 +462,18 @@ export const BuildBot: React.FC = () => {
             const issues: string[] = [];
 
             // Check for invalid block types
-            const invalidBlocks = ['contract_details'];
+            const invalidBlocks = ['contract_details', 'check_result', 'sell', 'trade_option', 'readOhlc', 'controls_if_else', 'lists_create_empty'];
             for (const b of invalidBlocks) {
                 if (generatedXml.includes(`type="${b}"`)) {
-                    issues.push(`Invalid block type: ${b}`);
+                    let fix = '';
+                    if (b === 'sell') fix = 'use sell_at_market or sell_price';
+                    else if (b === 'trade_option') fix = 'use trade_again';
+                    else if (b === 'check_result') fix = 'use contract_check_result';
+                    else if (b === 'readOhlc') fix = 'use read_ohlc';
+                    else if (b === 'controls_if_else') fix = 'use controls_if with ELSE statement';
+                    else if (b === 'lists_create_empty') fix = 'use lists_create_with';
+                    else if (b === 'contract_details') fix = 'use read_details';
+                    issues.push(`Invalid block: ${b} → ${fix}`);
                 }
             }
 
