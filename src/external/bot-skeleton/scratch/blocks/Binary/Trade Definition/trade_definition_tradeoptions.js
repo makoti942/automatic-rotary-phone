@@ -30,13 +30,31 @@ window.Blockly.Blocks.trade_definition_tradeoptions = {
         container.setAttribute('bulk_enabled', bulk_enabled);
         return container;
     },
+    saveExtraState() {
+        return {
+            vh_enabled: this.getFieldValue('VIRTUAL_HOOK_ENABLED') === 'TRUE',
+            bulk_enabled: this.getFieldValue('BULK_TRADE_ENABLED') === 'TRUE',
+        };
+    },
+    loadExtraState(state) {
+        if (state.vh_enabled) {
+            this.setFieldValue('TRUE', 'VIRTUAL_HOOK_ENABLED');
+            this.updateVirtualHookThresholdInput(true);
+        }
+        if (state.bulk_enabled) {
+            this.setFieldValue('TRUE', 'BULK_TRADE_ENABLED');
+            this.updateBulkTradeCountInput(true);
+        }
+    },
     domToMutation(xmlElement) {
         const vh_enabled = xmlElement.getAttribute('vh_enabled') === 'true';
         if (vh_enabled) {
+            this.setFieldValue('TRUE', 'VIRTUAL_HOOK_ENABLED');
             this.updateVirtualHookThresholdInput(true);
         }
         const bulk_enabled = xmlElement.getAttribute('bulk_enabled') === 'true';
         if (bulk_enabled) {
+            this.setFieldValue('TRUE', 'BULK_TRADE_ENABLED');
             this.updateBulkTradeCountInput(true);
         }
     },

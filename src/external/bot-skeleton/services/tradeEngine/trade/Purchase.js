@@ -444,40 +444,44 @@ export default Engine =>
                 }
             }
 
-            // Emit a separate bot.contract event for EACH bulk trade
-            // so the transaction panel shows all N trades individually
+            // Space out the bot.contract emissions so MobX commits each
+            // transaction individually. All N fire synchronously → MobX
+            // batches → only last one renders. Staggering fixes this.
+            const BULK_EMIT_DELAY_MS = 50;
             for (let i = 0; i < bulk_count; i++) {
-                const virtual_id = `bulk_v_${now}_${i}_${Math.random().toString(36).slice(2, 8)}`;
-
-                const virtual_contract = {
-                    ask_price: Number(stake),
-                    buy_price: Number(stake),
-                    sell_price: is_win ? Number(stake * 1.95) : 0,
-                    payout: stake * 1.95,
-                    profit: is_win ? Number(stake * 0.95) : -Number(stake),
-                    status: 'sold',
-                    is_sold: true,
-                    is_virtual: true,
-                    is_completed: true,
-                    contract_type: trade_contract_type,
-                    symbol: this.tradeOptions.symbol,
-                    entry_spot: entrySpotNum,
-                    exit_spot: exitSpotNum,
-                    entry_tick: entrySpotNum,
-                    exit_tick: exitSpotNum,
-                    transaction_ids: { buy: virtual_id },
-                    date_start: now,
-                    entry_tick_time: now,
-                    exit_tick_time: now + (this.vh_state.virtual_target_duration || 1),
-                    display_name: is_win ? localize('Virtual Win') : localize('Virtual Loss'),
-                    underlying: this.tradeOptions.symbol,
-                    currency: this.tradeOptions.currency || 'USD',
-                    shortcode: `${trade_contract_type}_S0P_${this.tradeOptions.symbol.toUpperCase()}`,
-                    id: virtual_id,
-                    contract_id: virtual_id,
-                };
-
-                globalObserver.emit('bot.contract', { ...virtual_contract, is_sold: true });
+                ((idx) => {
+                    setTimeout(() => {
+                        const virtual_id = `bulk_v_${now}_${idx}_${Math.random().toString(36).slice(2, 8)}`;
+                        const virtual_contract = {
+                            ask_price: Number(stake),
+                            buy_price: Number(stake),
+                            sell_price: is_win ? Number(stake * 1.95) : 0,
+                            payout: stake * 1.95,
+                            profit: is_win ? Number(stake * 0.95) : -Number(stake),
+                            status: 'sold',
+                            is_sold: true,
+                            is_virtual: true,
+                            is_completed: true,
+                            contract_type: trade_contract_type,
+                            symbol: this.tradeOptions.symbol,
+                            entry_spot: entrySpotNum,
+                            exit_spot: exitSpotNum,
+                            entry_tick: entrySpotNum,
+                            exit_tick: exitSpotNum,
+                            transaction_ids: { buy: virtual_id },
+                            date_start: now,
+                            entry_tick_time: now,
+                            exit_tick_time: now + (this.vh_state.virtual_target_duration || 1),
+                            display_name: is_win ? localize('Virtual Win') : localize('Virtual Loss'),
+                            underlying: this.tradeOptions.symbol,
+                            currency: this.tradeOptions.currency || 'USD',
+                            shortcode: `${trade_contract_type}_S0P_${this.tradeOptions.symbol.toUpperCase()}`,
+                            id: virtual_id,
+                            contract_id: virtual_id,
+                        };
+                        globalObserver.emit('bot.contract', { ...virtual_contract, is_sold: true });
+                    }, idx * BULK_EMIT_DELAY_MS);
+                })(i);
             }
 
             const savedStakes = {};
