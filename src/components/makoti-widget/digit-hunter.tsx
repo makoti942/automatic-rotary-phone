@@ -227,48 +227,59 @@ export const DigitHunter: React.FC = () => {
             // Weighted total
             const totalScore = (freq.score * 0.30) + (streak.score * 0.25) + (pair.score * 0.25) + (echo.score * 0.20);
 
-            // ── Smart contract selection ──
-            let contractType = 'DIGITMATCH';
-            let barrier = freq.digit;
-            let reason = freq.reason;
-            let digit = freq.digit;
+            // ── Contract selection: OVER/UNDER only ──
+            // Analyze digit distribution to determine direction
+            const pcts = getDigitPcts(md.ticks, 200);
+            const lowPct = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // digits 0-4
+            const highPct = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 5-9
 
-            // Priority 1: Streak → DIGITDIFF (bet against streak digit)
-            if (streak.score >= 50 && streak.streakCount >= 2) {
-                contractType = 'DIGITDIFF';
-                barrier = streak.digit;
-                reason = streak.reason;
-                digit = streak.digit;
-            }
-            // Priority 2: Frequency skew → DIGITOVER or DIGITUNDER
-            else if (freq.skewScore >= 40 && freq.skew !== 'none') {
-                if (freq.skew === 'high') {
-                    // High digits (6-9) overrepresented → bet UNDER (digits 0-4 will catch up)
-                    contractType = 'DIGITUNDER';
-                    barrier = 5;
-                    reason = `High digits ${(freq as any).highPct || ''} skewed → UNDER 5`;
-                    digit = 5;
+            // Determine which side is overdue
+            const lowDeviation = 50 - lowPct; // positive means low digits are underrepresented
+            const highDeviation = 50 - highPct; // positive means high digits are underrepresented
+
+            let contractType: string;
+            let barrier: number;
+            let reason: string;
+            let digit: number;
+
+            // Combined score from all layers boosts confidence
+            const combinedBoost = (freq.score + streak.score + pair.score + echo.score) / 4;
+
+            if (lowDeviation > highDeviation && lowDeviation > 2) {
+                // Low digits (0-4) underrepresented → they will catch up → bet OVER 5
+                contractType = 'DIGITOVER';
+                barrier = 5;
+                reason = `Low digits ${lowPct.toFixed(0)}% < 50% → OVER 5 (need 5,6,7,8,9)`;
+                digit = 5;
+            } else if (highDeviation > lowDeviation && highDeviation > 2) {
+                // High digits (5-9) underrepresented → they will catch up → bet UNDER 5
+                contractType = 'DIGITUNDER';
+                barrier = 5;
+                reason = `High digits ${highPct.toFixed(0)}% < 50% → UNDER 5 (need 0,1,2,3,4)`;
+                digit = 5;
+            } else {
+                // No clear skew → use streak direction
+                if (streak.streakCount >= 2) {
+                    if (streak.digit <= 4) {
+                        // Streak of low digits → high digits overdue → OVER 5
+                        contractType = 'DIGITOVER';
+                        barrier = 5;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → OVER 5 (high digits due)`;
+                        digit = 5;
+                    } else {
+                        // Streak of high digits → low digits overdue → UNDER 5
+                        contractType = 'DIGITUNDER';
+                        barrier = 5;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → UNDER 5 (low digits due)`;
+                        digit = 5;
+                    }
                 } else {
-                    // Low digits (0-4) overrepresented → bet OVER (digits 6-9 will catch up)
+                    // Default: OVER 5 (slight statistical edge as digits 5-9 include 5)
                     contractType = 'DIGITOVER';
                     barrier = 5;
-                    reason = `Low digits skewed → OVER 5`;
+                    reason = `Balanced distribution → OVER 5 (default)`;
                     digit = 5;
                 }
-            }
-            // Priority 3: Pair pattern → DIGITMATCH predicted digit
-            else if (pair.score >= 40 && pair.predictedDigit >= 0) {
-                contractType = 'DIGITMATCH';
-                barrier = pair.predictedDigit;
-                reason = pair.reason;
-                digit = pair.predictedDigit;
-            }
-            // Priority 4: Frequency → DIGITMATCH overdue digit
-            else if (freq.score >= 30) {
-                contractType = 'DIGITMATCH';
-                barrier = freq.digit;
-                reason = freq.reason;
-                digit = freq.digit;
             }
 
             const scored: ScoredMarket = {
@@ -295,9 +306,9 @@ export const DigitHunter: React.FC = () => {
             barrier: String(market.barrier),
         };
 
-        const label = market.contractType === 'DIGITMATCH'
-            ? `MATCH ${market.barrier}`
-            : `DIFF ${market.barrier}`;
+        const label = market.contractType === 'DIGITOVER'
+            ? `OVER ${market.barrier}`
+            : `UNDER ${market.barrier}`;
         const prefix = isRecovery ? '🔄 RECOVERY' : '🎯';
 
         try {

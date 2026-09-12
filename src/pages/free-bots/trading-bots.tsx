@@ -60,10 +60,10 @@ const TradingBots: React.FC = () => {
                             fill={active_tool === 'speedbots' ? '#3b82f6' : '#1e3a8a'}
                         />
                         <span className='trading-bots__card-label'>
-                            <Localize i18n_default_text='SpeedBots' />
+                            <Localize i18n_default_text='Build Bot' />
                         </span>
                         <span className='nav-speedbots-rocket' aria-hidden='true'>
-                            🚀
+                            🤖
                         </span>
                     </div>
                 </div>
