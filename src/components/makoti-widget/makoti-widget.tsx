@@ -8,12 +8,13 @@ import { UnderUnderMarket } from './under-under-market';
 import { DiffersAuto } from './differs-auto';
 import { AiAnalystStrategy } from './ai-analyst-strategy';
 import { MultiKiller } from './MultiKiller';
+import { DigitHunter } from './digit-hunter';
 import { ALL_SYMBOLS } from './makoti-ws';
 import './makoti-widget.scss';
 
-type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer';
+type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer' | 'digit_hunter';
 const PAD = 8;
-const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer'];
+const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer', 'digit_hunter'];
 
 const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'scanner', label: 'Scanner' },
@@ -24,6 +25,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'differs_auto', label: 'DIFFERS AUTO' },
     { value: 'ai_analyst', label: 'AI Analyst' },
     { value: 'multi_killer', label: 'Multi-Killer' },
+    { value: 'digit_hunter', label: 'Digit Hunter' },
 ];
 
 function isLoggedIn(): boolean {
@@ -421,6 +423,7 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'differs_auto' && <DiffersAuto />}
                     {tab === 'ai_analyst' && <AiAnalystStrategy />}
                     {tab === 'multi_killer' && <MultiKiller />}
+                    {tab === 'digit_hunter' && <DigitHunter />}
                 </div>
 
                 <div className='mw-resize-handle' onPointerDown={onResizePointerDown}>
