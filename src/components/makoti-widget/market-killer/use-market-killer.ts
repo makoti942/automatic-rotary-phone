@@ -295,7 +295,8 @@ export const useMarketKiller = (): MarketKillerEngine => {
                 );
                 if (vhStateRef.current.lossCount >= vhStateRef.current.threshold) {
                     vhStateRef.current.isVirtual = false;
-                    addLog(`🤖 🔄 THRESHOLD REACHED (${vhStateRef.current.lossCount} virtual losses) — switching to REAL trades`, 'recovery');
+                    currentStakeRef.current = baseStakeRef.current;
+                    addLog(`🤖 🔄 THRESHOLD REACHED (${vhStateRef.current.lossCount} virtual losses) — switching to REAL trades | Stake reset to $${baseStakeRef.current.toFixed(2)}`, 'recovery');
                 }
             }
             virtualRef.current = null;
@@ -420,7 +421,7 @@ export const useMarketKiller = (): MarketKillerEngine => {
                 }
             } else {
                 if (sd) sd.losses++;
-                const nextStake = Number((tradeStake * mgRef.current).toFixed(2));
+                const nextStake = Math.min(Number((tradeStake * mgRef.current).toFixed(2)), 10);
                 currentStakeRef.current = nextStake;
                 addLog(
                     `❌ LOST -$${Math.abs(profit).toFixed(2)} on ${SYMBOL_LABELS[sym]} — next stake $${nextStake.toFixed(2)} | P&L $${pnlRef.current.toFixed(2)}`,
