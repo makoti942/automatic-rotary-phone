@@ -246,42 +246,44 @@ const FreeBots = observer(() => {
                                     className={`free-bot-card ${bot.badge_class ? `free-bot-card--${bot.badge_class}` : ''}`}
                                     data-badge={bot.badge_text || 'PREMIUM'}
                                 >
-                                <div className='free-bot-card__header'>
-                                    <Text size='s' weight='bold' className='free-bot-card__title'>
-                                        {bot.name}
-                                    </Text>
+                                <div className='free-bot-card__icon'>🤖</div>
+                                <div className='free-bot-card__body'>
+                                    <div className='free-bot-card__header'>
+                                        <Text size='s' weight='bold' className='free-bot-card__title'>
+                                            {bot.name}
+                                        </Text>
 
-                                    {/* Bot Description */}
-                                    <Text size='xs' className='free-bot-card__description'>
-                                        {bot.description}
-                                    </Text>
+                                        <Text size='xs' className='free-bot-card__description'>
+                                            {bot.description}
+                                        </Text>
+                                    </div>
+
+                                    <div className='free-bot-card__badges'>
+                                        <span className={`free-bot-card__badge free-bot-card__badge--${bot.difficulty.toLowerCase()}`}>
+                                            {bot.difficulty}
+                                        </span>
+                                        <span className='free-bot-card__badge free-bot-card__badge--strategy'>
+                                            {bot.strategy}
+                                        </span>
+                                    </div>
+
+                                    <div className='free-bot-card__features'>
+                                        {bot.features.map((f, i) => (
+                                            <span key={i} className='free-bot-card__feature-tag'>{f}</span>
+                                        ))}
+                                    </div>
+
+                                    <Button
+                                        className='free-bot-card__load-btn'
+                                        onClick={() => loadBotIntoBuilder(bot)}
+                                        primary
+                                        has_effect
+                                        type='button'
+                                        disabled={!bot.xml}
+                                    >
+                                        {bot.xml ? 'LAUNCH BOT' : 'LOADING...'}
+                                    </Button>
                                 </div>
-
-                                <div className='free-bot-card__badges'>
-                                    <span className={`free-bot-card__badge free-bot-card__badge--${bot.difficulty.toLowerCase()}`}>
-                                        {bot.difficulty}
-                                    </span>
-                                    <span className='free-bot-card__badge free-bot-card__badge--strategy'>
-                                        {bot.strategy}
-                                    </span>
-                                </div>
-
-                                <div className='free-bot-card__features'>
-                                    {bot.features.map((f, i) => (
-                                        <span key={i} className='free-bot-card__feature-tag'>{f}</span>
-                                    ))}
-                                </div>
-
-                                <Button
-                                    className='free-bot-card__load-btn'
-                                    onClick={() => loadBotIntoBuilder(bot)}
-                                    primary
-                                    has_effect
-                                    type='button'
-                                    disabled={!bot.xml}
-                                >
-                                    {bot.xml ? 'LOAD BOT' : 'LOADING...'}
-                                </Button>
                             </div>
                         ))}
                     </div>
