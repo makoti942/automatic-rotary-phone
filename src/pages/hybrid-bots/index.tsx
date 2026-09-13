@@ -624,9 +624,11 @@ export const BuildBot = observer(() => {
 
             // Fill empty Deriv Bot XML fields so the bot always has text (notification, description, label).
             const filledXml = xml
-                .replace(/<field name="display_name"><\/field>/gi, '<field name="display_name">Custom Bot</field>')
-                .replace(/<field name="description"><\/field>/gi, '<field name="description">Built with AI</field>')
-                .replace(/<field name="label"><\/field>/gi, '<field name="label">Trade</field>');
+                ? xml
+                    .replace(/<field name="display_name"><\/field>/gi, '<field name="display_name">Custom Bot</field>')
+                    .replace(/<field name="description"><\/field>/gi, '<field name="description">Built with AI</field>')
+                    .replace(/<field name="label"><\/field>/gi, '<field name="label">Trade</field>')
+                : null;
 
             const questions = parseQuestions(response);
             const content = questions ? stripQuestions(response) : response;
