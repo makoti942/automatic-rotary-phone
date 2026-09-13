@@ -353,7 +353,7 @@ Example:
 {"symbol":"R_100","tradetype":"overunder","type":"both","barrier":2,"direction":"over","duration":60,"stake":0.35,"recovery":{"enabled":true,"barrier":5,"direction":"under"},"martingale":{"enabled":true,"factor":2},"loop":true,"description":"Over 2 with Under 5 recovery"}
 \`\`\`
 
-If the user asks questions, use [QUESTIONS]...[/QUESTIONS] format as before.`;
+If the strategy is unclear or incomplete, ask clarifying questions using [QUESTIONS]...[/QUESTIONS] format as before. Only output the JSON spec when you have enough information.`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -395,29 +395,19 @@ function buildBotXml(spec: any): string | null {
         stake: Number(spec.stake) || 0.35, currency: spec.currency || 'USD',
         recovery: { enabled: false, barrier: 5, direction: 'under', ...spec.recovery },
         martingale: { enabled: false, factor: 2, ...spec.martingale },
-        loop: spec.loop !== false, description: spec.description || '',
+        loop: spec.loop !== false,
     };
-
-    const v: string[] = [];
-    v.push('<variable id="init_stake">Initial Stake</variable>');
-    v.push('<variable id="stake">Current Stake</variable>');
-    v.push('<variable id="is_recovery">is_recovery</variable>');
-    if (s.martingale.enabled) v.push('<variable id="mart_factor">Martingale Factor</variable>');
-
-    const i: string[] = [];
-    i.push(`<block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value>`);
-    i.push(`<next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value>`);
-    i.push(`<next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>`);
-    if (s.martingale.enabled) {
-        i.push(`</block><next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${s.martingale.factor}</field></block></value></block>`);
-    }
-    const closeNest = s.martingale.enabled ? 3 : 2;
-    for (let j = 0; j < closeNest; j++) i.push('</block>');
-
-    const ap = s.loop ? `<block type="after_purchase" id="ap1" x="0" y="400"><statement name="AFTERPurchase"><block type="trade_again" id="ta1"><field name="TRADE_AGAIN">1</field></block></statement></block>` : '';
+    const rec = s.recovery.enabled;
+    const mart = s.martingale.enabled;
+    const f = s.martingale.factor;
+    const symLabel = s.symbol.replace('R_', 'R_');
+    const recLabel = rec ? `RECOVERY: ${s.recovery.direction.toUpperCase()} ${s.recovery.barrier}` : '';
 
     return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
-  <variables>${v.map(x => '\n    ' + x).join('')}
+  <variables>
+    <variable id="init_stake">Initial Stake</variable>
+    <variable id="stake">Current Stake</variable>
+    <variable id="is_recovery">is_recovery</variable>${mart ? '\n    <variable id="mart_factor">Martingale Factor</variable>' : ''}
   </variables>
   <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
@@ -444,12 +434,40 @@ function buildBotXml(spec: any): string | null {
       </block>
     </statement>
     <statement name="INITIALIZATION">
-      ${i.join('\n      ')}
+      <block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value><next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value><next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>${mart ? `<next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${f}</field></block></value></block>` : ''}</block></next></block></next></block>
     </statement>
   </block>
-  ${ap}
-</xml>`;
-}
+  <block type="before_purchase" id="bp1" x="0" y="200">
+    <statement name="BEFOREPurchase">
+      <block type="controls_if" id="bp_if1">
+        <value name="IF0"><block type="logic_compare" id="bp_cmp1"><field name="OP">EQ</field><value name="A"><block type="appended_computed_value" id="bp_acv1"><field name="VAR">CHECK_RESULT</field></block></value><value name="B"><block type="field" id="bp_f1"><field name="FIELD">win</field></block></value></block></value>
+        <statement name="DO0">
+          <block type="variables_set" id="bp_win1"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="bp_win2"><field name="BOOL">FALSE</field></block></value></block>
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="bp_lose1"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="bp_lose2"><field name="BOOL">TRUE</field></block></value></block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+  <block type="after_purchase" id="ap1" x="0" y="400">
+    <statement name="AFTERPurchase">
+      <block type="controls_if" id="ap_if1">
+        <value name="IF0"><block type="variables_get" id="ap_var1"><field name="VAR" id="is_recovery">is_recovery</field></block></value>
+        <statement name="DO0">${mart ? `
+          <block type="variables_set" id="ap_mart1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="math_arithmetic" id="ap_mart2"><field name="OP">MULTIPLY</field><value name="A"><block type="variables_get" id="ap_mart3"><field name="VAR" id="stake">Current Stake</field></block></value><value name="B"><block type="variables_get" id="ap_mart4"><field name="VAR" id="mart_factor">Martingale Factor</field></block></value></block></value></block>` : `
+          <block type="variables_set" id="ap_rst1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_rst2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>`}
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="ap_nrm1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_nrm2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>
+        </statement>
+      </block>${s.loop ? `
+      <block type="trade_again" id="ta1">
+        <field name="TRADE_AGAIN">1</field>
+      </block>` : ''}
+    </statement>
+  </block>
+</xml>`;}
 
 // Parse [QUESTIONS]...[/QUESTIONS] block into selectable cards
 function parseQuestions(text: string): ChatQuestion[] | null {
