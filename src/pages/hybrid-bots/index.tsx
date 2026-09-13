@@ -481,6 +481,7 @@ function buildBotXml(spec: any): string | null {
   <block type="after_purchase" id="ap1" x="714" y="292">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="ap_if1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
         <value name="IF0">
           <block type="logic_compare" id="ap_lc1">
             <field name="OP">GT</field>
@@ -725,7 +726,7 @@ export const BuildBot = observer(() => {
     }, [generatedXml]);
 
     const sendMessage = useCallback(async (overrideText?: string) => {
-        const text = (typeof overrideText === 'string' ? overrideText : input).trim();
+        let text = (typeof overrideText === 'string' ? overrideText : input).trim();
         if (!text || loading) return;
 
         // Cooldown: Groq free tier = 7000 input tokens/min. Enforce 60s gap.
@@ -742,22 +743,23 @@ export const BuildBot = observer(() => {
         setInput('');
         setLoading(true);
         setError('');
+        setGeneratedXml('');
 
         try {
             // Build conversation for AI — keep payload minimal to stay under 7000 ITPM
-            const recentHistory = messages.slice(-2).map(m => ({ role: m.role, content: m.content }));
-            const chatMessages = [
-                { role: 'system', content: SYSTEM_PROMPT },
-                ...recentHistory,
-                { role: 'user', content: text },
-            ];
-
             // Token budget: ~5000 (system) + ~200 (history) + ~200 (user) = ~5400. Under 7000 ITPM.
             const MAX_INPUT_CHARS = 2000;
             if (text.length > MAX_INPUT_CHARS) {
                 addLog(`⚠️ Strategy truncated to ${MAX_INPUT_CHARS} chars to fit Groq limits.`, 'warn');
                 text = text.slice(0, MAX_INPUT_CHARS) + '...';
             }
+
+            const recentHistory = messages.slice(-2).map(m => ({ role: m.role, content: m.content }));
+            const chatMessages = [
+                { role: 'system', content: SYSTEM_PROMPT },
+                ...recentHistory,
+                { role: 'user', content: text },
+            ];
 
             const response = await callGroq(chatMessages);
             console.log('[BuildBot] AI raw response:', response);
