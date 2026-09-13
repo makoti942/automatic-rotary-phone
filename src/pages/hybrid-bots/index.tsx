@@ -124,75 +124,67 @@ const DEFAULT_BOT_XML = `<xml xmlns="https://developers.google.com/blockly/xml" 
   </block>
 </xml>`;
 
-const SYSTEM_PROMPT = `You are an expert Deriv Bot builder. You create COMPLETE, LOADABLE Deriv Bot XML from user strategy descriptions.
+const SYSTEM_PROMPT = `You are an expert Deriv Bot builder. You output a JSON specification — the client builds the full Blockly XML from your spec. Keep the JSON concise (under 800 chars).
 
-## HARD RULES
-1. NO empty fields/values/statements. No placeholders/TODO/empty strings.
-2. Use ONLY the block types and field values listed below.
-3. EVERY variables_get/set uses <field name="VAR" id="...">Name</field> and MUST match a <variable id="...">Name</variable> declared in the top <variables> block.
-4. All variables are initialized in the trade_definition INITIALIZATION statement (runs once at start).
-5. The XML must be COMPLETE and LOADABLE into Deriv Bot Builder — output the FULL XML, not a summary.
+## RULES
+- If details are missing, use sensible defaults. Do NOT ask questions.
+- Always output the JSON spec, nothing else (no explanations, no XML).
 
-## IF DETAILS ARE MISSING, USE SENSIBLE DEFAULTS. Do NOT ask questions — the user can edit everything after loading. Always output the complete XML.
+## DEFAULTS (use when user doesn't specify)
+symbol: R_100, stake: 1, duration: 1, duration_unit: "t" (tick), market: synthetic_index, submarket: random_index, tradetype: overunder, type: both, candle_interval: 60, restart_on_error: true, loop: true, martingale_factor: 2
 
-## VALID BLOCK TYPES (use ONLY these)
-Trade Definition: trade_definition, trade_definition_market, trade_definition_tradetype, trade_definition_contracttype, trade_definition_candleinterval, trade_definition_tradeoptions, trade_definition_restartbuysell, trade_definition_restartonerror, trade_definition_multiplier, trade_definition_accumulator, multiplier_take_profit, multiplier_stop_loss, accumulator_take_profit
-Before/During/After: before_purchase, purchase, ask_price, payout, during_purchase, check_sell, sell_price, sell_at_market, after_purchase, trade_again, read_details, contract_check_result
-Tick Analysis: tick_analysis, ticks, ticks_string, tick, tick_string, ohlc, stat_list, stat, last_digit, read_ohlc, lastDigitList, ohlc_values, check_direction, get_ohlc
-Indicators: sma_statement, smaa_statement, ema_statement, rsi_statement, rsia_statement, emaa_statement, bb_statement, bba_statement, macda_statement
-Indicator Parts: fast_ema_period, signal_ema_period, std_dev_multiplier_up, period, std_dev_multiplier_down, input_list, slow_ema_period
-Logic: controls_if, logic_boolean, logic_compare, logic_negate, logic_null, logic_operation, logic_ternary
-Math: math_arithmetic, math_change, math_constant, math_constrain, math_modulo, math_number, math_number_positive, math_number_property, math_on_list, math_random_float, math_random_int, math_round, math_single, math_trig
-Text: text, text_append, text_changeCase, text_charAt, text_getSubstring, text_indexOf, text_isEmpty, text_join, text_length, text_print, text_prompt_ext, text_statement, text_trim
-Lists: lists_create_with, lists_getIndex, lists_getSublist, lists_indexOf, lists_isEmpty, lists_length, lists_repeat, lists_setIndex, lists_sort, lists_split, lists_statement
-Variables: variables_get, variables_set
-Loops: controls_flow_statements, controls_for, controls_forEach, controls_repeat, controls_repeat_ext, controls_whileUntil
-Functions: procedures_callnoreturn, procedures_callreturn, procedures_defnoreturn, procedures_defreturn, procedures_ifreturn
-Time: totimestamp, todatetime, timeout, tick_delay, epoch
-Misc: console, useless_block, block_holder, total_runs, barrier_offset, total_profit, total_profit_string, notify_telegram, notify, loader, balance
-Candle: read_ohlc_obj, ohlc_values_in_list, is_candle_black
+## JSON SPEC FORMAT
+\`\`\`json
+{
+  "symbol": "R_100",
+  "stake": 1,
+  "duration": 1,
+  "duration_unit": "t",
+  "market": "synthetic_index",
+  "submarket": "random_index",
+  "tradetype": "overunder",
+  "type": "both",
+  "candle_interval": 60,
+  "loop": true,
 
-## FIELD VALUES (EXACT names/values)
-MARKET_LIST: synthetic_index, forex, commodities, indices, stocks
-SUBMARKET_LIST: random_index, major_pairs, minor_pairs, exotic_pairs, etc.
-SYMBOL_LIST: R_10, R_25, R_50, R_75, R_100, 1HZ10V, 1HZ25V, 1HZ50V, 1HZ75V, 1HZ100V
-TRADETYPECAT_LIST: callput, digits, touchnotouch, rises_falls, endsinouts, staysinouts, multiders
-TRADETYPE_LIST: callput, callputeuropean, overunder (digits Over/Under), matchesdiffers (digits Matches/Differs), touchnotouch, etc.
-TYPE_LIST: both, call, put, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, DIGITEVEN, DIGITODD, CALL, PUT, RUNHIGH, RUNLOW
-PURCHASE_LIST: CALL, PUT, DIGITMATCH, DIGITDIFF, DIGITOVER, DIGITUNDER, RUNHIGH, RUNLOW
-DURATIONTYPE_LIST: t (tick), m (minute), h (hour), d (day)
-CANDLEINTERVAL_LIST: 60, 300, 900, 1800, 3600
-DETAIL_INDEX (read_details - use the NUMBER): 1=deal ref, 2=purchase price, 3=payout, 4=profit, 5=contract type, 6=entry spot time, 7=entry spot price, 8=exit spot time, 9=exit spot price, 10=barrier, 11=result
-CHECK_RESULT (contract_check_result): win, loss
-COMPARE_OP: EQ, NEQ, LT, LTE, GT, GTE
-MATH_OP: ADD, MINUS, MULTIPLY, DIVIDE, POWER, MOD
-LOGIC_OP: AND, OR
-BOOLEAN: TRUE, FALSE
-STAT_TYPE: average, count, sum, minimum, maximum
-DIRECTION: both, forwards, backwards
-OHLC_FIELD: open, high, low, close
-For DIGIT OVER/UNDER bots: TRADETYPECAT_LIST=digits, TRADETYPE_LIST=overunder, TYPE_LIST=both. The actual contract is chosen by the purchase block's PURCHASE_LIST (DIGITOVER or DIGITUNDER).
+  "normal_direction": "over",
+  "normal_barrier": 2,
+  "recovery_enabled": true,
+  "recovery_direction": "under",
+  "recovery_barrier": 7,
+  "martingale_enabled": true,
+  "martingale_factor": 2,
 
-## REQUIRED BOT STRUCTURE (distinct x,y coords)
-1. trade_definition (x=0,y=0): FULL nested TRADE_OPTIONS chain (market > tradetype > contracttype > candleinterval > restartbuysell > restartonerror) + INITIALIZATION (variable setup) + SUBMARKET (trade_definition_tradeoptions with duration + amount reading stake variable + prediction/barrier).
-2. before_purchase (x=0,y=658): a purchase block (PURCHASE_LIST matching contract type). Optional: tick_analysis for entry digit logic.
-3. during_purchase (x=714,y=60): optional check_sell → sell_at_market.
-4. after_purchase (x=714,y=292): win/loss check with contract_check_result or read_details(profit>0). On LOSS: multiply stake, switch barrier for recovery, set is_recovery=TRUE. On WIN: reset stake, set is_recovery=FALSE. END with trade_again.
+  "entry": {
+    "type": "last_digit_eq",
+    "digit": 0
+  },
 
-## COMPLEX STRATEGY RULES
-- Anything that changes over time (stake, prediction, is_recovery, total profit, loss count, digit expectations) MUST be a variable, initialized in INITIALIZATION.
-- Do martingale/recovery in after_purchase: on win reset stake=initial + is_recovery=FALSE + barrier=normal; on loss stake=stake*martingale + is_recovery=TRUE + barrier=recovery_digit.
-- SUBMARKET amount/prediction MUST READ variables (variables_get) so after_purchase can change them every trade.
-- For entry digit logic (e.g., "wait for digit 7 before entering"): use tick_analysis with last_digit + logic_compare + controls_if.
-- For conditional contract selection: use controls_if in before_purchase with logic_compare on variables.
-- Report each result with notify or text_print (use text_join for text + variables).
-- controls_if with ELSE needs: <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+  "notify_win": true,
+  "notify_loss": true,
+  "variables": [
+    {"id": "loss_count", "name": "Loss Count", "initial_value": 0}
+  ]
+}
+\`\`\`
 
-## COMPLETENESS CHECKLIST (verify before outputting)
-All block IDs unique; all <field> filled; all <value>/<statement> have child blocks; every variable used IS declared in <variables> with matching id; all variables initialized in INITIALIZATION; DETAIL_INDEX numeric (4=profit); math_number has NUM; text has TEXT; logic_compare has OP/A/B; controls_if has IF0; controls_if with ELSE has mutation else="1"; no empty strings/placeholders.
+## ENTRY CONDITIONS (what "entry" object values mean)
+- \`{"type": "last_digit_eq", "digit": 0}\` — wait until last digit equals 0, then trade
+- \`{"type": "last_digit_in", "digits": [0, 5, 9]}\` — wait until last digit is one of these
+- \`{"type": "last_digit_not_in", "digits": [0, 5, 9]}\` — wait until last digit is NOT one of these
+- \`{"type": "always"}\` — no entry condition, trade immediately (DEFAULT if no entry field)
 
-## OUTPUT FORMAT
-Output the COMPLETE Deriv Bot XML inside \`\`\`xml ... \`\`\` blocks. Start with the <xml> tag and end with </xml>. Include EVERY block needed for the strategy. Do NOT output summaries or partial XML.`;
+## STRATEGY MAPPING
+- "Over 7" → normal_direction:"over", normal_barrier:7
+- "Under 4" → normal_direction:"under", normal_barrier:4
+- "Waits for digit 0 then execute" → entry:{type:"last_digit_eq", digit:0}
+- "Recovery Under 5" → recovery_direction:"under", recovery_barrier:5
+- "Martingale 2x" → martingale_factor:2
+- "R_50" → symbol:"R_50"
+- "stake 0.50" → stake:0.50
+
+## OUTPUT
+Output ONLY the JSON spec inside \`\`\`json ... \`\`\` blocks. Nothing else.`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -226,54 +218,270 @@ function extractXml(text: string): string | null {
 
 function buildBotXml(spec: any): string | null {
     if (!spec || typeof spec !== 'object') return null;
-    const s = {
-        symbol: spec.symbol || 'R_100', market: spec.market || 'synthetic_index',
-        submarket: spec.submarket || 'random_index', tradetype: spec.tradetype || 'overunder',
-        type: spec.type || 'both', barrier: Number(spec.barrier) || 2,
-        direction: spec.direction || 'over', duration: Number(spec.duration) || 60,
-        stake: Number(spec.stake) || 0.35, currency: spec.currency || 'USD',
-        recovery: { enabled: false, barrier: 5, direction: 'under', ...spec.recovery },
-        martingale: { enabled: false, factor: 2, ...spec.martingale },
-        loop: spec.loop !== false,
-        customVars: Array.isArray(spec.variables) ? spec.variables.filter((v: any) => v?.id && v?.name) : [],
+
+    // Normalize the richer spec format
+    const symbol = spec.symbol || 'R_100';
+    const stake = Number(spec.stake) || 1;
+    const duration = Number(spec.duration) || 1;
+    const durationUnit = spec.duration_unit || 't';
+    const market = spec.market || 'synthetic_index';
+    const submarket = spec.submarket || 'random_index';
+    const tradetype = spec.tradetype || 'overunder';
+    const type = spec.type || 'both';
+    const candleInterval = Number(spec.candle_interval) || 60;
+    const restartOnError = spec.restart_on_error !== false;
+    const loop = spec.loop !== false;
+
+    // Normal trade settings
+    const normalDir = spec.normal_direction || 'over';
+    const normalBarrier = Number(spec.normal_barrier) || 2;
+
+    // Recovery settings
+    const recEnabled = spec.recovery_enabled === true;
+    const recDir = spec.recovery_direction || 'under';
+    const recBarrier = Number(spec.recovery_barrier) || 7;
+
+    // Martingale
+    const martEnabled = spec.martingale_enabled === true;
+    const martFactor = Number(spec.martingale_factor) || 2;
+
+    // Entry condition
+    const entry = spec.entry || { type: 'always' };
+    const hasEntry = entry.type && entry.type !== 'always';
+
+    // Notification
+    const notifyWin = spec.notify_win === true;
+    const notifyLoss = spec.notify_loss === true;
+
+    // Custom variables
+    const customVars: Array<{ id: string; name: string; initial_value: number | string | boolean }> =
+        Array.isArray(spec.variables) ? spec.variables.filter((v: any) => v?.id && v?.name) : [];
+
+    // Purchase list based on direction
+    const normalPurchase = normalDir === 'under' ? 'DIGITUNDER' : 'DIGITOVER';
+    const recPurchase = recDir === 'under' ? 'DIGITUNDER' : 'DIGITOVER';
+
+    // ── Build XML ──
+    const uid = () => Math.random().toString(36).slice(2, 8);
+
+    // Variable declarations
+    const baseVars = [
+        '<variable id="init_stake">Initial Stake</variable>',
+        '<variable id="stake">Current Stake</variable>',
+        '<variable id="is_recovery">is_recovery</variable>',
+    ];
+    if (martEnabled) baseVars.push('<variable id="mart_factor">Martingale Factor</variable>');
+    if (hasEntry) baseVars.push('<variable id="digit_triggered">Digit Triggered</variable>');
+    if (recEnabled) {
+        baseVars.push('<variable id="normal_barrier">Normal Barrier</variable>');
+        baseVars.push('<variable id="recovery_barrier">Recovery Barrier</variable>');
+        baseVars.push('<variable id="current_barrier">Current Barrier</variable>');
+    }
+    const customVarDecl = customVars.map(v => `<variable id="${v.id}">${v.name}</variable>`);
+    const allVars = [...baseVars, ...customVarDecl];
+
+    // INITIALIZATION chain
+    const initBlocks: string[] = [];
+    let initId = 0;
+    const addInit = (varId: string, varName: string, valueXml: string) => {
+        const nid = `ini${initId++}`;
+        initBlocks.push(`<block type="variables_set" id="${nid}"><field name="VAR" id="${varId}">${varName}</field><value name="VALUE">${valueXml}</value>`);
     };
-    const mart = s.martingale.enabled;
-    const f = s.martingale.factor;
+    const numVal = (id: string, n: number) => `<block type="math_number" id="${id}"><field name="NUM">${n}</field></block>`;
+    const boolVal = (id: string, b: boolean) => `<block type="logic_boolean" id="${id}"><field name="BOOL">${b ? 'TRUE' : 'FALSE'}</block>`;
+    const varGet = (id: string, varId: string, varName: string) => `<block type="variables_get" id="${id}"><field name="VAR" id="${varId}">${varName}</field></block>`;
 
-    // Build custom variable declarations and initialization blocks
-    const customVarDecl = s.customVars.map((v: any) => `    <variable id="${v.id}">${v.name}</variable>`).join('\n');
-    const customVarInit = s.customVars.map((v: any, idx: number) => {
-        const val = v.initial_value ?? 0;
-        const numBlock = typeof val === 'string'
-            ? `<block type="text" id="cv${idx}t"><field name="TEXT">${val}</field></block>`
-            : `<block type="math_number" id="cv${idx}n"><field name="NUM">${val}</field></block>`;
-        return `<next><block type="variables_set" id="cv${idx}"><field name="VAR" id="${v.id}">${v.name}</field><value name="VALUE">${numBlock}</value></block>`;
-    }).join('');
-    const customClose = s.customVars.length > 0 ? '</block>'.repeat(s.customVars.length) : '';
+    addInit('init_stake', 'Initial Stake', numVal('v_is', stake));
+    addInit('stake', 'Current Stake', varGet('v_gs', 'init_stake', 'Initial Stake'));
+    addInit('is_recovery', 'is_recovery', boolVal('v_ir', false));
+    if (martEnabled) addInit('mart_factor', 'Martingale Factor', numVal('v_mf', martFactor));
+    if (hasEntry) addInit('digit_triggered', 'Digit Triggered', boolVal('v_dt', false));
+    if (recEnabled) {
+        addInit('normal_barrier', 'Normal Barrier', numVal('v_nb', normalBarrier));
+        addInit('recovery_barrier', 'Recovery Barrier', numVal('v_rb', recBarrier));
+        addInit('current_barrier', 'Current Barrier', varGet('v_gc', 'normal_barrier', 'Normal Barrier'));
+    }
+    customVars.forEach((v, i) => {
+        const val = typeof v.initial_value === 'number' ? numVal(`v_cv${i}`, v.initial_value) : boolVal(`v_cv${i}`, v.initial_value === true);
+        addInit(v.id, v.name, val);
+    });
 
+    // Close the chain: each block wraps in <next>
+    let initChain = '';
+    for (let i = initBlocks.length - 1; i >= 0; i--) {
+        if (i === initBlocks.length - 1) {
+            initChain = initBlocks[i] + '</block>';
+        } else {
+            initChain = initBlocks[i] + `<next>${initChain}</next></block>`;
+        }
+    }
+
+    // ── TICK ANALYSIS (entry digit check) ──
+    let tickAnalysisXml = '';
+    if (hasEntry) {
+        let conditionXml = '';
+        if (entry.type === 'last_digit_eq') {
+            conditionXml = `<block type="logic_compare" id="tdc1"><field name="OP">EQ</field><value name="A"><block type="last_digit" id="tld1"></block></value><value name="B"><block type="math_number" id="tdv1"><field name="NUM">${entry.digit ?? 0}</field></block></value></block>`;
+        } else if (entry.type === 'last_digit_in' && Array.isArray(entry.digits)) {
+            // OR chain: last_digit == d1 OR last_digit == d2 OR ...
+            const parts = entry.digits.map((d: number, i: number) => {
+                return `<block type="logic_compare" id="tdc${i}"><field name="OP">EQ</field><value name="A"><block type="last_digit" id="tld${i}"></block></value><value name="B"><block type="math_number" id="tdv${i}"><field name="NUM">${d}</field></block></value></block>`;
+            });
+            if (parts.length === 1) {
+                conditionXml = parts[0];
+            } else {
+                let orChain = `<block type="logic_operation" id="tdor1"><field name="OP">OR</field><value name="A">${parts[0]}</value><value name="B">${parts[1]}</value></block>`;
+                for (let i = 2; i < parts.length; i++) {
+                    orChain = `<block type="logic_operation" id="tdor${i}"><field name="OP">OR</field><value name="A">${orChain}</value><value name="B">${parts[i]}</value></block>`;
+                }
+                conditionXml = orChain;
+            }
+        } else if (entry.type === 'last_digit_not_in' && Array.isArray(entry.digits)) {
+            const parts = entry.digits.map((d: number, i: number) => {
+                return `<block type="logic_compare" id="tdc${i}"><field name="OP">EQ</field><value name="A"><block type="last_digit" id="tld${i}"></block></value><value name="B"><block type="math_number" id="tdv${i}"><field name="NUM">${d}</field></block></value></block>`;
+            });
+            let orChain = parts.length > 1
+                ? (() => { let c = `<block type="logic_operation" id="tdor1"><field name="OP">OR</field><value name="A">${parts[0]}</value><value name="B">${parts[1]}</value></block>`; for (let i = 2; i < parts.length; i++) c = `<block type="logic_operation" id="tdor${i}"><field name="OP">OR</field><value name="A">${c}</value><value name="B">${parts[i]}</value></block>`; return c; })()
+                : parts[0];
+            conditionXml = `<block type="logic_negate" id="tdng1"><value name="BOOL">${orChain}</value></block>`;
+        }
+
+        if (conditionXml) {
+            tickAnalysisXml = `
+  <block type="tick_analysis" id="ta1" x="350" y="60">
+    <statement name="TICKANALYSIS_STACK">
+      <block type="controls_if" id="ta_if1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+        <value name="IF0">${conditionXml}</value>
+        <statement name="DO0">
+          <block type="variables_set" id="ta_set1"><field name="VAR" id="digit_triggered">Digit Triggered</field><value name="VALUE">${boolVal('ta_b1', true)}</value></block>
+        </statement>
+        <statement name="ELSE">
+          <block type="variables_set" id="ta_set2"><field name="VAR" id="digit_triggered">Digit Triggered</field><value name="VALUE">${boolVal('ta_b2', false)}</value></block>
+        </statement>
+      </block>
+    </statement>
+  </block>`;
+        }
+    }
+
+    // ── BEFORE PURCHASE ──
+    let beforePurchaseXml: string;
+    if (hasEntry) {
+        // Conditional: if digit_triggered, purchase normally; else do nothing
+        if (recEnabled) {
+            // Also switch barrier based on recovery mode
+            beforePurchaseXml = `
+  <block type="before_purchase" id="bp1" deletable="false" x="0" y="658">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if" id="bp_if1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+        <value name="IF0"><block type="variables_get" id="bp_vg1"><field name="VAR" id="digit_triggered">Digit Triggered</field></block></value>
+        <statement name="DO0">
+          <block type="controls_if" id="bp_if2">
+            <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+            <value name="IF0"><block type="variables_get" id="bp_vg2"><field name="VAR" id="is_recovery">is_recovery</field></block></value>
+            <statement name="DO0"><block type="purchase" id="bp_pu1"><field name="PURCHASE_LIST">${recPurchase}</field></block></statement>
+            <statement name="ELSE"><block type="purchase" id="bp_pu2"><field name="PURCHASE_LIST">${normalPurchase}</field></block></statement>
+          </block>
+        </statement>
+      </block>
+    </statement>
+  </block>`;
+        } else {
+            beforePurchaseXml = `
+  <block type="before_purchase" id="bp1" deletable="false" x="0" y="658">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if" id="bp_if1">
+        <value name="IF0"><block type="variables_get" id="bp_vg1"><field name="VAR" id="digit_triggered">Digit Triggered</field></block></value>
+        <statement name="DO0">
+          <block type="purchase" id="bp_pu1"><field name="PURCHASE_LIST">${normalPurchase}</field></block>
+        </statement>
+      </block>
+    </statement>
+  </block>`;
+        }
+    } else {
+        // No entry condition — just purchase
+        beforePurchaseXml = `
+  <block type="before_purchase" id="bp1" deletable="false" x="0" y="658">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="purchase" id="bp_pu1"><field name="PURCHASE_LIST">${normalPurchase}</field></block>
+    </statement>
+  </block>`;
+    }
+
+    // ── AFTER PURCHASE ──
+    const winStatements: string[] = [];
+    winStatements.push(`<block type="variables_set" id="ap_w1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE">${varGet('ap_wg1', 'init_stake', 'Initial Stake')}</value></block>`);
+    winStatements.push(`<block type="variables_set" id="ap_w2"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE">${boolVal('ap_wb1', false)}</value></block>`);
+    if (recEnabled) winStatements.push(`<block type="variables_set" id="ap_w3"><field name="VAR" id="current_barrier">Current Barrier</field><value name="VALUE">${varGet('ap_wg2', 'normal_barrier', 'Normal Barrier')}</value></block>`);
+    if (hasEntry) winStatements.push(`<block type="variables_set" id="ap_w4"><field name="VAR" id="digit_triggered">Digit Triggered</field><value name="VALUE">${boolVal('ap_wb2', false)}</value></block>`);
+
+    // Chain win statements with <next>
+    let winChain = '';
+    for (let i = winStatements.length - 1; i >= 0; i--) {
+        if (i === winStatements.length - 1) winChain = winStatements[i];
+        else winChain = winStatements[i].replace(/<\/block>$/, `<next>${winChain}</next></block>`);
+    }
+
+    // Notify on win
+    if (notifyWin) {
+        winChain += `<next><block type="notify" id="ap_wn1"><field name="NOTIFICATION_TYPE">success</field><field name="NOTIFICATION_SOUND">earned-money</field><value name="MESSAGE"><block type="text_join" id="ap_wtj1"><mutation items="2"></mutation><value name="ADD0"><block type="text" id="ap_wt1"><field name="TEXT">Win! Stake reset to </field></block></value><value name="ADD1"><block type="variables_get" id="ap_wg3"><field name="VAR" id="stake">Current Stake</field></block></value></block></value></block></next>`;
+    }
+
+    const lossStatements: string[] = [];
+    if (martEnabled) {
+        lossStatements.push(`<block type="variables_set" id="ap_l1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="math_arithmetic" id="ap_lm1"><field name="OP">MULTIPLY</field><value name="A">${varGet('ap_lg1', 'stake', 'Current Stake')}</value><value name="B">${varGet('ap_lg2', 'mart_factor', 'Martingale Factor')}</value></block></value></block>`);
+    }
+    lossStatements.push(`<block type="variables_set" id="ap_l2"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE">${boolVal('ap_lb1', true)}</value></block>`);
+    if (recEnabled) lossStatements.push(`<block type="variables_set" id="ap_l3"><field name="VAR" id="current_barrier">Current Barrier</field><value name="VALUE">${varGet('ap_lg3', 'recovery_barrier', 'Recovery Barrier')}</value></block>`);
+
+    let lossChain = '';
+    for (let i = lossStatements.length - 1; i >= 0; i--) {
+        if (i === lossStatements.length - 1) lossChain = lossStatements[i];
+        else lossChain = lossStatements[i].replace(/<\/block>$/, `<next>${lossChain}</next></block>`);
+    }
+
+    if (notifyLoss) {
+        lossChain += `<next><block type="notify" id="ap_ln1"><field name="NOTIFICATION_TYPE">error</field><field name="NOTIFICATION_SOUND">severe-error</field><value name="MESSAGE"><block type="text_join" id="ap_ltj1"><mutation items="2"></mutation><value name="ADD0"><block type="text" id="ap_lt1"><field name="TEXT">Loss! New stake: </field></block></value><value name="ADD1"><block type="variables_get" id="ap_lg4"><field name="VAR" id="stake">Current Stake</field></block></value></block></value></block></next>`;
+    }
+
+    const afterPurchaseXml = `
+  <block type="after_purchase" id="ap1" x="714" y="292">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="ap_if1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+        <value name="IF0"><block type="logic_compare" id="ap_lc1"><field name="OP">GT</field><value name="A"><block type="read_details" id="ap_rd1"><field name="DETAIL_INDEX_LIST">4</field></block></value><value name="B"><block type="math_number" id="ap_mn1"><field name="NUM">0</field></block></value></block></value>
+        <statement name="DO0">${winChain}</statement>
+        <statement name="ELSE">${lossChain}</statement>
+      </block>${loop ? `
+      <block type="trade_again" id="ta1"><field name="TRADE_AGAIN">1</field></block>` : ''}
+    </statement>
+  </block>`;
+
+    // ── ASSEMBLE ──
     return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
-    <variable id="init_stake">Initial Stake</variable>
-    <variable id="stake">Current Stake</variable>
-    <variable id="is_recovery">is_recovery</variable>${mart ? '\n    <variable id="mart_factor">Martingale Factor</variable>' : ''}${customVarDecl ? '\n' + customVarDecl : ''}
+    ${allVars.join('\n    ')}
   </variables>
   <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="m1" deletable="false" movable="false">
-        <field name="MARKET_LIST">${s.market}</field>
-        <field name="SUBMARKET_LIST">${s.submarket}</field>
-        <field name="SYMBOL_LIST">${s.symbol}</field>
+        <field name="MARKET_LIST">${market}</field>
+        <field name="SUBMARKET_LIST">${submarket}</field>
+        <field name="SYMBOL_LIST">${symbol}</field>
         <next><block type="trade_definition_tradetype" id="tt1" deletable="false" movable="false">
           <field name="TRADETYPECAT_LIST">digits</field>
-          <field name="TRADETYPE_LIST">${s.tradetype}</field>
+          <field name="TRADETYPE_LIST">${tradetype}</field>
           <next><block type="trade_definition_contracttype" id="ct1" deletable="false" movable="false">
-            <field name="TYPE_LIST">${s.type}</field>
+            <field name="TYPE_LIST">${type}</field>
             <next><block type="trade_definition_candleinterval" id="ci1" deletable="false" movable="false">
-              <field name="CANDLEINTERVAL_LIST">${s.duration}</field>
+              <field name="CANDLEINTERVAL_LIST">${candleInterval}</field>
               <next><block type="trade_definition_restartbuysell" id="rbs1" deletable="false" movable="false">
                 <field name="TIME_MACHINE_ENABLED">FALSE</field>
                 <next><block type="trade_definition_restartonerror" id="roe1" deletable="false" movable="false">
-                  <field name="RESTARTONERROR">TRUE</field>
+                  <field name="RESTARTONERROR">${restartOnError ? 'TRUE' : 'FALSE'}</field>
                 </block></next>
               </block></next>
             </block></next>
@@ -281,54 +489,22 @@ function buildBotXml(spec: any): string | null {
         </block></next>
       </block>
     </statement>
-    <statement name="INITIALIZATION">
-      <block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value><next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value><next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>${mart ? `<next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${f}</field></block></value></block>` : ''}${customVarInit}${customClose}</block></next></block></next></block>
-    </statement>
+    <statement name="INITIALIZATION">${initChain}</statement>
     <statement name="SUBMARKET">
       <block type="trade_definition_tradeoptions" id="so1">
         <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true" vh_enabled="false"></mutation>
-        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="DURATIONTYPE_LIST">${durationUnit}</field>
         <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
         <field name="BULK_TRADE_ENABLED">FALSE</field>
-        <value name="DURATION"><shadow type="math_number_positive" id="d1"><field name="NUM">${s.duration}</field></shadow></value>
-        <value name="AMOUNT"><block type="variables_get" id="g2"><field name="VAR" id="stake">Current Stake</field></block></value>
+        <value name="DURATION"><shadow type="math_number_positive" id="d1"><field name="NUM">${duration}</field></shadow></value>
+        <value name="AMOUNT">${varGet('so_am', 'stake', 'Current Stake')}</value>
         <value name="PREDICTION">
-          <shadow type="math_number_positive" id="d2"><field name="NUM">${s.barrier}</field></shadow>
+          <shadow type="math_number_positive" id="d2"><field name="NUM">${recEnabled ? normalBarrier : normalBarrier}</field></shadow>
+          ${recEnabled ? varGet('so_pr', 'current_barrier', 'Current Barrier') : ''}
         </value>
       </block>
     </statement>
-  </block>
-  <block type="before_purchase" id="bp1" deletable="false" x="0" y="700">
-    <statement name="BEFOREPURCHASE_STACK">
-      <block type="purchase" id="pu1">
-        <field name="PURCHASE_LIST">${s.direction === 'under' ? 'DIGITUNDER' : 'DIGITOVER'}</field>
-      </block>
-    </statement>
-  </block>
-  <block type="after_purchase" id="ap1" x="714" y="292">
-    <statement name="AFTERPURCHASE_STACK">
-      <block type="controls_if" id="ap_if1">
-        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
-        <value name="IF0">
-          <block type="logic_compare" id="ap_lc1">
-            <field name="OP">GT</field>
-            <value name="A"><block type="read_details" id="ap_rd1"><field name="DETAIL_INDEX_LIST">profit</field></block></value>
-            <value name="B"><block type="math_number" id="ap_mn1"><field name="NUM">0</field></block></value>
-          </block>
-        </value>
-        <statement name="DO0">
-          <block type="variables_set" id="ap_win1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_win2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>
-        </statement>
-        <statement name="ELSE">${mart ? `
-          <block type="variables_set" id="ap_loss1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="math_arithmetic" id="ap_loss2"><field name="OP">MULTIPLY</field><value name="A"><block type="variables_get" id="ap_loss3"><field name="VAR" id="stake">Current Stake</field></block></value><value name="B"><block type="variables_get" id="ap_loss4"><field name="VAR" id="mart_factor">Martingale Factor</field></block></value></block></value></block>` : `
-          <block type="variables_set" id="ap_loss1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_loss2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>`}
-        </statement>
-      </block>${s.loop ? `
-      <block type="trade_again" id="ta1">
-        <field name="TRADE_AGAIN">1</field>
-      </block>` : ''}
-    </statement>
-  </block>
+  </block>${tickAnalysisXml}${beforePurchaseXml}${afterPurchaseXml}
 </xml>`;}
 
 // Parse [QUESTIONS]...[/QUESTIONS] block into selectable cards
