@@ -457,15 +457,28 @@ function buildBotXml(spec: any): string | null {
     <statement name="INITIALIZATION">
       <block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value><next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value><next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>${mart ? `<next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${f}</field></block></value></block>` : ''}${customVarInit}${customClose}</block></next></block></next></block>
     </statement>
+    <statement name="SUBMARKET">
+      <block type="trade_definition_tradeoptions" id="so1">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true" vh_enabled="false"></mutation>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
+        <field name="BULK_TRADE_ENABLED">FALSE</field>
+        <value name="DURATION"><shadow type="math_number_positive" id="d1"><field name="NUM">${s.duration}</field></shadow></value>
+        <value name="AMOUNT"><block type="variables_get" id="g2"><field name="VAR" id="stake">Current Stake</field></block></value>
+        <value name="PREDICTION">
+          <shadow type="math_number_positive" id="d2"><field name="NUM">${s.barrier}</field></shadow>
+        </value>
+      </block>
+    </statement>
   </block>
-  <block type="before_purchase" id="bp1" x="0" y="200">
+  <block type="before_purchase" id="bp1" deletable="false" x="0" y="700">
     <statement name="BEFOREPURCHASE_STACK">
       <block type="purchase" id="pu1">
         <field name="PURCHASE_LIST">${s.direction === 'under' ? 'DIGITUNDER' : 'DIGITOVER'}</field>
       </block>
     </statement>
   </block>
-  <block type="after_purchase" id="ap1" x="0" y="400">
+  <block type="after_purchase" id="ap1" x="714" y="292">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="ap_if1">
         <value name="IF0"><block type="contract_check_result" id="ap_ccr1"><field name="CHECK_RESULT">win</field></block></value>
