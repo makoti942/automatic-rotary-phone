@@ -686,6 +686,7 @@ export const BuildBot = observer(() => {
     const [selections, setSelections] = useState<Record<number, Record<string, string>>>({});
     const chatEndRef = useRef<HTMLDivElement>(null);
     const inputRef = useRef<HTMLTextAreaElement>(null);
+    const lastRequestTime = useRef<number>(0);
 
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -703,6 +704,15 @@ export const BuildBot = observer(() => {
         const text = (typeof overrideText === 'string' ? overrideText : input).trim();
         if (!text || loading) return;
 
+        // Cooldown: Groq free tier = 7000 input tokens/min. Enforce 60s gap.
+        const now = Date.now();
+        if (lastRequestTime.current && now - lastRequestTime.current < 60000) {
+            const wait = Math.ceil((60000 - (now - lastRequestTime.current)) / 1000);
+            setError(`Please wait ${wait}s before sending another request (Groq rate limit).`);
+            return;
+        }
+        lastRequestTime.current = now;
+
         const userMsg: ChatMessage = { role: 'user', content: text };
         setMessages(prev => [...prev, userMsg]);
         setInput('');
@@ -710,17 +720,16 @@ export const BuildBot = observer(() => {
         setError('');
 
         try {
-            // Build conversation for AI (trim old history to avoid token limits)
-            const recentHistory = messages.slice(-4).map(m => ({ role: m.role, content: m.content }));
+            // Build conversation for AI — keep payload minimal to stay under 7000 ITPM
+            const recentHistory = messages.slice(-2).map(m => ({ role: m.role, content: m.content }));
             const chatMessages = [
                 { role: 'system', content: SYSTEM_PROMPT },
-                ...(generatedXml ? [{ role: 'user', content: `Here is the current bot XML:\n\`\`\`xml\n${generatedXml}\n\`\`\`` }] : []),
                 ...recentHistory,
                 { role: 'user', content: text },
             ];
 
-            // Token budget: ~4500 (system) + ~500 (history) + ~800 (output) = ~5800. Max user ≈ 1200 tokens ≈ 4500 chars.
-            const MAX_INPUT_CHARS = 4500;
+            // Token budget: ~5000 (system) + ~200 (history) + ~200 (user) = ~5400. Under 7000 ITPM.
+            const MAX_INPUT_CHARS = 2000;
             if (text.length > MAX_INPUT_CHARS) {
                 addLog(`⚠️ Strategy truncated to ${MAX_INPUT_CHARS} chars to fit Groq limits.`, 'warn');
                 text = text.slice(0, MAX_INPUT_CHARS) + '...';
