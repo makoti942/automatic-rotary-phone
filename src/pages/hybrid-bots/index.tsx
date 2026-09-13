@@ -350,7 +350,7 @@ async function callGroq(messages: any[]): Promise<string> {
             body: JSON.stringify({
                 messages,
                 temperature: 0.3,
-                max_tokens: 4096,
+                max_tokens: 800,
             }),
         });
         const data = await res.json();
@@ -612,8 +612,22 @@ export const BuildBot = observer(() => {
                 { role: 'user', content: text },
             ];
 
+            // Token budget: ~4500 (system) + ~500 (history) + ~800 (output) = ~5800. Max user ≈ 1200 tokens ≈ 4500 chars.
+            const MAX_INPUT_CHARS = 4500;
+            if (text.length > MAX_INPUT_CHARS) {
+                addLog(`⚠️ Strategy truncated to ${MAX_INPUT_CHARS} chars to fit Groq limits.`, 'warn');
+                text = text.slice(0, MAX_INPUT_CHARS) + '...';
+            }
+
             const response = await callGroq(chatMessages);
             const xml = extractXml(response);
+
+            // Fill empty Deriv Bot XML fields so the bot always has text (notification, description, label).
+            const filledXml = xml
+                .replace(/<field name="display_name"><\/field>/gi, '<field name="display_name">Custom Bot</field>')
+                .replace(/<field name="description"><\/field>/gi, '<field name="description">Built with AI</field>')
+                .replace(/<field name="label"><\/field>/gi, '<field name="label">Trade</field>');
+
             const questions = parseQuestions(response);
             const content = questions ? stripQuestions(response) : response;
             // Strip embedded XML from the stored message text (kept separately in `xml`),
@@ -623,13 +637,13 @@ export const BuildBot = observer(() => {
             const assistantMsg: ChatMessage = {
                 role: 'assistant',
                 content: cleanContent,
-                xml: xml || undefined,
+                xml: filledXml || undefined,
                 questions: questions || undefined,
             };
             setMessages(prev => [...prev, assistantMsg]);
 
-            if (xml) {
-                setGeneratedXml(xml);
+            if (filledXml) {
+                setGeneratedXml(filledXml);
             }
             // No error if no XML - AI might be asking questions
         } catch (e: any) {
