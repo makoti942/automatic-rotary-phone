@@ -407,11 +407,8 @@ function buildBotXml(spec: any): string | null {
         martingale: { enabled: false, factor: 2, ...spec.martingale },
         loop: spec.loop !== false,
     };
-    const rec = s.recovery.enabled;
     const mart = s.martingale.enabled;
     const f = s.martingale.factor;
-    const symLabel = s.symbol.replace('R_', 'R_');
-    const recLabel = rec ? `RECOVERY: ${s.recovery.direction.toUpperCase()} ${s.recovery.barrier}` : '';
 
     return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
@@ -448,9 +445,9 @@ function buildBotXml(spec: any): string | null {
     </statement>
   </block>
   <block type="before_purchase" id="bp1" x="0" y="200">
-    <statement name="BEFOREPurchase">
+    <statement name="BEFOREPURCHASE_STACK">
       <block type="controls_if" id="bp_if1">
-        <value name="IF0"><block type="logic_compare" id="bp_cmp1"><field name="OP">EQ</field><value name="A"><block type="appended_computed_value" id="bp_acv1"><field name="VAR">CHECK_RESULT</field></block></value><value name="B"><block type="field" id="bp_f1"><field name="FIELD">win</field></block></value></block></value>
+        <value name="IF0"><block type="contract_check_result" id="bp_ccr1"><field name="CHECK_RESULT">win</field></block></value>
         <statement name="DO0">
           <block type="variables_set" id="bp_win1"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="bp_win2"><field name="BOOL">FALSE</field></block></value></block>
         </statement>
@@ -461,15 +458,15 @@ function buildBotXml(spec: any): string | null {
     </statement>
   </block>
   <block type="after_purchase" id="ap1" x="0" y="400">
-    <statement name="AFTERPurchase">
+    <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="ap_if1">
-        <value name="IF0"><block type="variables_get" id="ap_var1"><field name="VAR" id="is_recovery">is_recovery</field></block></value>
-        <statement name="DO0">${mart ? `
-          <block type="variables_set" id="ap_mart1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="math_arithmetic" id="ap_mart2"><field name="OP">MULTIPLY</field><value name="A"><block type="variables_get" id="ap_mart3"><field name="VAR" id="stake">Current Stake</field></block></value><value name="B"><block type="variables_get" id="ap_mart4"><field name="VAR" id="mart_factor">Martingale Factor</field></block></value></block></value></block>` : `
-          <block type="variables_set" id="ap_rst1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_rst2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>`}
+        <value name="IF0"><block type="contract_check_result" id="ap_ccr1"><field name="CHECK_RESULT">win</field></block></value>
+        <statement name="DO0">
+          <block type="variables_set" id="ap_win1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_win2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>
         </statement>
-        <statement name="ELSE">
-          <block type="variables_set" id="ap_nrm1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_nrm2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>
+        <statement name="ELSE">${mart ? `
+          <block type="variables_set" id="ap_loss1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="math_arithmetic" id="ap_loss2"><field name="OP">MULTIPLY</field><value name="A"><block type="variables_get" id="ap_loss3"><field name="VAR" id="stake">Current Stake</field></block></value><value name="B"><block type="variables_get" id="ap_loss4"><field name="VAR" id="mart_factor">Martingale Factor</field></block></value></block></value></block>` : `
+          <block type="variables_set" id="ap_loss1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_loss2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>`}
         </statement>
       </block>${s.loop ? `
       <block type="trade_again" id="ta1">
