@@ -365,7 +365,7 @@ Example — user says "Over 7 on R_50 with recovery Under 5 and martingale 2x, s
 {"symbol":"R_50","tradetype":"overunder","type":"both","barrier":7,"direction":"over","duration":60,"stake":0.50,"recovery":{"enabled":true,"barrier":5,"direction":"under"},"martingale":{"enabled":true,"factor":2},"loop":true}
 \`\`\`
 
-If the strategy is unclear or incomplete, ask clarifying questions using [QUESTIONS]...[/QUESTIONS] format as before. Only output the JSON spec when you have enough information.`;
+If the strategy is unclear or incomplete, use sensible defaults. Do NOT ask questions — the user can edit everything after loading into the workspace. Always output the JSON spec.`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -460,14 +460,8 @@ function buildBotXml(spec: any): string | null {
   </block>
   <block type="before_purchase" id="bp1" x="0" y="200">
     <statement name="BEFOREPURCHASE_STACK">
-      <block type="controls_if" id="bp_if1">
-        <value name="IF0"><block type="contract_check_result" id="bp_ccr1"><field name="CHECK_RESULT">win</field></block></value>
-        <statement name="DO0">
-          <block type="variables_set" id="bp_win1"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="bp_win2"><field name="BOOL">FALSE</field></block></value></block>
-        </statement>
-        <statement name="ELSE">
-          <block type="variables_set" id="bp_lose1"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="bp_lose2"><field name="BOOL">TRUE</field></block></value></block>
-        </statement>
+      <block type="purchase" id="pu1">
+        <field name="PURCHASE_LIST">${s.direction === 'under' ? 'DIGITUNDER' : 'DIGITOVER'}</field>
       </block>
     </statement>
   </block>
