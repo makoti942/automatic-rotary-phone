@@ -340,7 +340,20 @@ notify: REQUIRED fields NOTIFICATION_TYPE (success/info/warn/error) and NOTIFICA
 - Default martingale multiplier on loss is x2 unless the user specifies another.
 
 ## COMPLETENESS CHECKLIST (verify before outputting)
-All block IDs unique; all <field> filled; all <value>/<statement> have child blocks; every variable used IS declared in <variables> with matching id; all variables initialized in INITIALIZATION; DETAIL_INDEX numeric (4=profit); math_number has NUM; text has TEXT; logic_compare has OP/A/B; controls_if has IF0; no empty strings/placeholders.`;
+All block IDs unique; all <field> filled; all <value>/<statement> have child blocks; every variable used IS declared in <variables> with matching id; all variables initialized in INITIALIZATION; DETAIL_INDEX numeric (4=profit); math_number has NUM; text has TEXT; logic_compare has OP/A/B; controls_if has IF0; no empty strings/placeholders.
+
+## OUTPUT FORMAT (CRITICAL — use this instead of raw XML)
+To avoid token limits, output a JSON spec inside \`\`\`json ... \`\`\` instead of raw XML. The client builds the full XML from your spec.
+
+Required fields: symbol, tradetype, barrier, direction, stake.
+Optional fields: type (default "both"), duration (default 60), recovery {enabled, barrier, direction}, martingale {enabled, factor}, loop (default true), description.
+
+Example:
+\`\`\`json
+{"symbol":"R_100","tradetype":"overunder","type":"both","barrier":2,"direction":"over","duration":60,"stake":0.35,"recovery":{"enabled":true,"barrier":5,"direction":"under"},"martingale":{"enabled":true,"factor":2},"loop":true,"description":"Over 2 with Under 5 recovery"}
+\`\`\`
+
+If the user asks questions, use [QUESTIONS]...[/QUESTIONS] format as before.`;
 
 async function callGroq(messages: any[]): Promise<string> {
     try {
@@ -350,7 +363,7 @@ async function callGroq(messages: any[]): Promise<string> {
             body: JSON.stringify({
                 messages,
                 temperature: 0.3,
-                max_tokens: 950,
+                max_tokens: 500,
             }),
         });
         const data = await res.json();
@@ -370,6 +383,72 @@ function extractXml(text: string): string | null {
     // If the whole response looks like XML
     if (text.trim().startsWith('<xml')) return text.trim();
     return null;
+}
+
+function buildBotXml(spec: any): string | null {
+    if (!spec || typeof spec !== 'object') return null;
+    const s = {
+        symbol: spec.symbol || 'R_100', market: spec.market || 'synthetic_index',
+        submarket: spec.submarket || 'random_index', tradetype: spec.tradetype || 'overunder',
+        type: spec.type || 'both', barrier: Number(spec.barrier) || 2,
+        direction: spec.direction || 'over', duration: Number(spec.duration) || 60,
+        stake: Number(spec.stake) || 0.35, currency: spec.currency || 'USD',
+        recovery: { enabled: false, barrier: 5, direction: 'under', ...spec.recovery },
+        martingale: { enabled: false, factor: 2, ...spec.martingale },
+        loop: spec.loop !== false, description: spec.description || '',
+    };
+
+    const v: string[] = [];
+    v.push('<variable id="init_stake">Initial Stake</variable>');
+    v.push('<variable id="stake">Current Stake</variable>');
+    v.push('<variable id="is_recovery">is_recovery</variable>');
+    if (s.martingale.enabled) v.push('<variable id="mart_factor">Martingale Factor</variable>');
+
+    const i: string[] = [];
+    i.push(`<block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value>`);
+    i.push(`<next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value>`);
+    i.push(`<next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>`);
+    if (s.martingale.enabled) {
+        i.push(`</block><next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${s.martingale.factor}</field></block></value></block>`);
+    }
+    const closeNest = s.martingale.enabled ? 3 : 2;
+    for (let j = 0; j < closeNest; j++) i.push('</block>');
+
+    const ap = s.loop ? `<block type="after_purchase" id="ap1" x="0" y="400"><statement name="AFTERPurchase"><block type="trade_again" id="ta1"><field name="TRADE_AGAIN">1</field></block></statement></block>` : '';
+
+    return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
+  <variables>${v.map(x => '\n    ' + x).join('')}
+  </variables>
+  <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market" id="m1" deletable="false" movable="false">
+        <field name="MARKET_LIST">${s.market}</field>
+        <field name="SUBMARKET_LIST">${s.submarket}</field>
+        <field name="SYMBOL_LIST">${s.symbol}</field>
+        <next><block type="trade_definition_tradetype" id="tt1" deletable="false" movable="false">
+          <field name="TRADETYPECAT_LIST">digits</field>
+          <field name="TRADETYPE_LIST">${s.tradetype}</field>
+          <next><block type="trade_definition_contracttype" id="ct1" deletable="false" movable="false">
+            <field name="TYPE_LIST">${s.type}</field>
+            <next><block type="trade_definition_candleinterval" id="ci1" deletable="false" movable="false">
+              <field name="CANDLEINTERVAL_LIST">${s.duration}</field>
+              <next><block type="trade_definition_restartbuysell" id="rbs1" deletable="false" movable="false">
+                <field name="TIME_MACHINE_ENABLED">FALSE</field>
+                <next><block type="trade_definition_restartonerror" id="roe1" deletable="false" movable="false">
+                  <field name="RESTARTONERROR">TRUE</field>
+                </block></next>
+              </block></next>
+            </block></next>
+          </block></next>
+        </block></next>
+      </block>
+    </statement>
+    <statement name="INITIALIZATION">
+      ${i.join('\n      ')}
+    </statement>
+  </block>
+  ${ap}
+</xml>`;
 }
 
 // Parse [QUESTIONS]...[/QUESTIONS] block into selectable cards
@@ -620,7 +699,25 @@ export const BuildBot = observer(() => {
             }
 
             const response = await callGroq(chatMessages);
-            const xml = extractXml(response);
+            let xml = extractXml(response);
+
+            // If no XML found, try extracting a JSON bot spec and building XML from it
+            if (!xml) {
+                const jsonMatch = response.match(/```json\s*([\s\S]*?)```/) || response.match(/\{[\s\S]*"symbol"[\s\S]*\}/);
+                if (jsonMatch) {
+                    try {
+                        const spec = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+                        xml = buildBotXml(spec);
+                    } catch {}
+                }
+                // Also try the whole response as JSON
+                if (!xml) {
+                    try {
+                        const spec = JSON.parse(response);
+                        if (spec.symbol || spec.tradetype) xml = buildBotXml(spec);
+                    } catch {}
+                }
+            }
 
             // Fill empty Deriv Bot XML fields so the bot always has text (notification, description, label).
             const filledXml = xml
