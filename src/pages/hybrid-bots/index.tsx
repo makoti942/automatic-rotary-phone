@@ -350,7 +350,7 @@ async function callGroq(messages: any[]): Promise<string> {
             body: JSON.stringify({
                 messages,
                 temperature: 0.3,
-                max_tokens: 800,
+                max_tokens: 950,
             }),
         });
         const data = await res.json();
