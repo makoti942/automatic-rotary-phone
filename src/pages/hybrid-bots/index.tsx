@@ -357,6 +357,8 @@ To avoid token limits, output a JSON spec inside \`\`\`json ... \`\`\` instead o
 
 Required fields: symbol, tradetype, barrier, direction, stake.
 Optional fields: type (default "both"), duration (default 60), recovery {enabled, barrier, direction}, martingale {enabled, factor}, loop (default true).
+Custom variables: variables [{id, name, initial_value}] — add any extra variables the strategy needs (e.g., consecutive_losses, session_profit, dynamic_barrier).
+The built-in variables (init_stake, stake, is_recovery, mart_factor) are created automatically — don't duplicate them.
 
 Example — user says "Over 7 on R_50 with recovery Under 5 and martingale 2x, stake 0.50":
 \`\`\`json
@@ -406,15 +408,27 @@ function buildBotXml(spec: any): string | null {
         recovery: { enabled: false, barrier: 5, direction: 'under', ...spec.recovery },
         martingale: { enabled: false, factor: 2, ...spec.martingale },
         loop: spec.loop !== false,
+        customVars: Array.isArray(spec.variables) ? spec.variables.filter((v: any) => v?.id && v?.name) : [],
     };
     const mart = s.martingale.enabled;
     const f = s.martingale.factor;
+
+    // Build custom variable declarations and initialization blocks
+    const customVarDecl = s.customVars.map((v: any) => `    <variable id="${v.id}">${v.name}</variable>`).join('\n');
+    const customVarInit = s.customVars.map((v: any, idx: number) => {
+        const val = v.initial_value ?? 0;
+        const numBlock = typeof val === 'string'
+            ? `<block type="text" id="cv${idx}t"><field name="TEXT">${val}</field></block>`
+            : `<block type="math_number" id="cv${idx}n"><field name="NUM">${val}</field></block>`;
+        return `<next><block type="variables_set" id="cv${idx}"><field name="VAR" id="${v.id}">${v.name}</field><value name="VALUE">${numBlock}</value></block>`;
+    }).join('');
+    const customClose = s.customVars.length > 0 ? '</block>'.repeat(s.customVars.length) : '';
 
     return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
     <variable id="init_stake">Initial Stake</variable>
     <variable id="stake">Current Stake</variable>
-    <variable id="is_recovery">is_recovery</variable>${mart ? '\n    <variable id="mart_factor">Martingale Factor</variable>' : ''}
+    <variable id="is_recovery">is_recovery</variable>${mart ? '\n    <variable id="mart_factor">Martingale Factor</variable>' : ''}${customVarDecl ? '\n' + customVarDecl : ''}
   </variables>
   <block type="trade_definition" id="td1" deletable="false" x="0" y="0">
     <statement name="TRADE_OPTIONS">
@@ -441,7 +455,7 @@ function buildBotXml(spec: any): string | null {
       </block>
     </statement>
     <statement name="INITIALIZATION">
-      <block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value><next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value><next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>${mart ? `<next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${f}</field></block></value></block>` : ''}</block></next></block></next></block>
+      <block type="variables_set" id="i1"><field name="VAR" id="init_stake">Initial Stake</field><value name="VALUE"><block type="math_number" id="n1"><field name="NUM">${s.stake}</field></block></value><next><block type="variables_set" id="i2"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="g1"><field name="VAR" id="init_stake">Initial Stake</field></block></value><next><block type="variables_set" id="i3"><field name="VAR" id="is_recovery">is_recovery</field><value name="VALUE"><block type="logic_boolean" id="b1"><field name="BOOL">FALSE</field></block></value>${mart ? `<next><block type="variables_set" id="i4"><field name="VAR" id="mart_factor">Martingale Factor</field><value name="VALUE"><block type="math_number" id="n2"><field name="NUM">${f}</field></block></value></block>` : ''}${customVarInit}${customClose}</block></next></block></next></block>
     </statement>
   </block>
   <block type="before_purchase" id="bp1" x="0" y="200">
