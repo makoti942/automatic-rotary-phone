@@ -481,7 +481,13 @@ function buildBotXml(spec: any): string | null {
   <block type="after_purchase" id="ap1" x="714" y="292">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="ap_if1">
-        <value name="IF0"><block type="contract_check_result" id="ap_ccr1"><field name="CHECK_RESULT">win</field></block></value>
+        <value name="IF0">
+          <block type="logic_compare" id="ap_lc1">
+            <field name="OP">GT</field>
+            <value name="A"><block type="read_details" id="ap_rd1"><field name="DETAIL_INDEX_LIST">profit</field></block></value>
+            <value name="B"><block type="math_number" id="ap_mn1"><field name="NUM">0</field></block></value>
+          </block>
+        </value>
         <statement name="DO0">
           <block type="variables_set" id="ap_win1"><field name="VAR" id="stake">Current Stake</field><value name="VALUE"><block type="variables_get" id="ap_win2"><field name="VAR" id="init_stake">Initial Stake</field></block></value></block>
         </statement>
@@ -754,11 +760,12 @@ export const BuildBot = observer(() => {
             }
 
             const response = await callGroq(chatMessages);
-            console.log('[BuildBot] AI response:', response.substring(0, 500));
+            console.log('[BuildBot] AI raw response:', response);
             let xml = extractXml(response);
 
             // If no XML found, try extracting a JSON bot spec and building XML from it
             if (!xml) {
+                console.log('[BuildBot] No XML found, trying JSON extraction');
                 const jsonMatch = response.match(/```json\s*([\s\S]*?)```/) || response.match(/\{[\s\S]*"symbol"[\s\S]*\}/);
                 if (jsonMatch) {
                     try {
@@ -778,6 +785,8 @@ export const BuildBot = observer(() => {
                         }
                     } catch {}
                 }
+            } else {
+                console.log('[BuildBot] Found XML in response, length:', xml.length);
             }
 
             // Fill empty Deriv Bot XML fields so the bot always has text (notification, description, label).
