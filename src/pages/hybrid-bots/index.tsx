@@ -736,6 +736,7 @@ export const BuildBot = observer(() => {
             }
 
             const response = await callGroq(chatMessages);
+            console.log('[BuildBot] AI response:', response.substring(0, 500));
             let xml = extractXml(response);
 
             // If no XML found, try extracting a JSON bot spec and building XML from it
@@ -744,14 +745,19 @@ export const BuildBot = observer(() => {
                 if (jsonMatch) {
                     try {
                         const spec = JSON.parse(jsonMatch[1] || jsonMatch[0]);
+                        console.log('[BuildBot] Parsed JSON spec:', JSON.stringify(spec));
                         xml = buildBotXml(spec);
-                    } catch {}
+                        console.log('[BuildBot] Built XML from spec, length:', xml?.length);
+                    } catch (e) { console.log('[BuildBot] JSON parse failed:', e); }
                 }
                 // Also try the whole response as JSON
                 if (!xml) {
                     try {
                         const spec = JSON.parse(response);
-                        if (spec.symbol || spec.tradetype) xml = buildBotXml(spec);
+                        if (spec.symbol || spec.tradetype) {
+                            console.log('[BuildBot] Parsed whole-response JSON:', JSON.stringify(spec));
+                            xml = buildBotXml(spec);
+                        }
                     } catch {}
                 }
             }
