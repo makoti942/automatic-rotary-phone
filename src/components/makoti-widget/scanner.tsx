@@ -535,21 +535,49 @@ export const Scanner: React.FC = () => {
                 setResults(scanResults);
                 setBestSymbols(best.slice(0, 3));
             } else if (currentBot === 'entry_digit') {
-                // Entry Digit Trigger Analysis
-                const scanResults: TriggerDigitResult[] = [];
+                // Entry Digit Trigger Analysis — progressive, one volatility at a time
                 const entryType = botRef.current === 'entry_digit' ? entryContractTypeRef.current : 'DIGITOVER';
                 const entryBar = botRef.current === 'entry_digit' ? entryBarrierRef.current : 3;
 
-                collectedRef.current.forEach((prices: number[], sym) => {
-                    if (!prices || prices.length < 30) return;
+                const symbols = Array.from(collectedRef.current.entries()).filter(([, p]) => p && p.length >= 30);
+                const scanResults: TriggerDigitResult[] = [];
+                let idx = 0;
+
+                const analyzeNext = () => {
+                    if (idx >= symbols.length) {
+                        // Done — sort and finalize
+                        scanResults.sort((a, b) => {
+                            if (a.qualifies && !b.qualifies) return -1;
+                            if (!a.qualifies && b.qualifies) return 1;
+                            return (b.triggers[0]?.boost ?? 0) - (a.triggers[0]?.boost ?? 0);
+                        });
+                        best = scanResults.map(r => r.symbol);
+                        bestScore = Math.round(scanResults[0]?.triggers[0]?.boost ?? 0);
+                        setResults(scanResults);
+                        setBestSymbols(best.slice(0, 3));
+                        setScanning(false);
+                        scanningRef.current = false;
+
+                        // Show prediction
+                        const topResult = scanResults[0];
+                        const topTrigger = topResult?.triggers[0];
+                        if (topTrigger) {
+                            const winDigits = entryType === 'DIGITOVER' ? `${entryBar + 1}-9` : `0-${entryBar - 1}`;
+                            setProgress(`PREDICTION → Volatility: ${topResult.label} | Entry Digit: D${topTrigger.digit} | Win: ${topResult.baselineWinPct.toFixed(0)}% → ${topTrigger.avgWinPctAfter.toFixed(0)}% (+${topTrigger.boost.toFixed(1)}%) on ${winDigits}`);
+                        } else {
+                            setProgress('No strong trigger pattern found');
+                        }
+                        cleanup();
+                        return;
+                    }
+
+                    const [sym, prices] = symbols[idx];
                     const pipSize = PIP_SIZES[sym] || 2;
                     const digits = prices.map(p => Number(Number(p).toFixed(pipSize).slice(-1)));
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar);
 
-                    // Find best trigger
                     const bestTrigger = analysis.triggers[0];
                     const qualifies = bestTrigger !== undefined && bestTrigger.boost > 5 && bestTrigger.consistency >= 50;
-
                     const detail = bestTrigger
                         ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) → +${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent`
                         : 'No strong trigger found';
@@ -562,21 +590,17 @@ export const Scanner: React.FC = () => {
                         qualifies,
                         detail,
                     });
-                });
 
-                // Sort by best trigger boost
-                scanResults.sort((a, b) => {
-                    if (a.qualifies && !b.qualifies) return -1;
-                    if (!a.qualifies && b.qualifies) return 1;
-                    const aBoost = a.triggers[0]?.boost ?? 0;
-                    const bBoost = b.triggers[0]?.boost ?? 0;
-                    return bBoost - aBoost;
-                });
+                    idx++;
+                    setProgress(`Analyzing ${SYMBOL_LABELS[sym]}… (${idx}/${symbols.length})`);
+                    setResults([...scanResults]);
 
-                best = scanResults.map(r => r.symbol);
-                bestScore = Math.round(scanResults[0]?.triggers[0]?.boost ?? 0);
-                setResults(scanResults);
-                setBestSymbols(best.slice(0, 3));
+                    setTimeout(analyzeNext, 400);
+                };
+
+                // Start progressive analysis after a small delay
+                setTimeout(analyzeNext, 100);
+                return; // Exit finalize early — analysis continues async
             } else {
                 const scanResults: SymbolDirectionResult[] = [];
                 collectedRef.current.forEach((prices: number[], sym) => {
@@ -898,6 +922,8 @@ export const Scanner: React.FC = () => {
                                             </div>
                                             );
                                         })}
+                                    </div>
+                                )}
                                 {!isDigitResult(r) && !isTriggerResult(r) && (() => {
                                     const dr = r as SymbolDirectionResult;
                                     return (
