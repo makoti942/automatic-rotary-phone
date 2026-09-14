@@ -788,7 +788,14 @@ export const Scanner: React.FC = () => {
                 <button className={`mw-btn mw-btn--scan${scanning ? ' mw-btn--busy' : ''}`} onClick={analyze} disabled={scanning}>
                     {scanning ? <><span className='mw-spin' /> Analyzing…</> : 'Analyze'}
                 </button>
-                {progress && <div className='mw-scanner__progress'>{progress}</div>}
+                {progress && (
+                    <div className='mw-scanner__progress' style={progress.startsWith('PREDICTION') ? {
+                        background: '#1a3d1a', border: '1px solid #4caf50', borderRadius: 4,
+                        padding: 8, marginTop: 6, fontSize: 12, color: '#fff', fontWeight: 'bold',
+                    } : {}}>
+                        {progress}
+                    </div>
+                )}
             </div>
             {results.length > 0 && (
                 <div className='mw-scanner__results'>
