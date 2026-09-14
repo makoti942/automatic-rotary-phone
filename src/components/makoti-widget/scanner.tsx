@@ -4,7 +4,7 @@ import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { MwSelect } from './mw-select';
 import DBotStore from '@/external/bot-skeleton/scratch/dbot-store';
 
-type BotId = 'pvty_kill' | 'rf_v4';
+type BotId = 'pvty_kill' | 'rf_v4' | 'entry_digit';
 
 interface SymbolDigitResult {
     symbol: string;
@@ -27,10 +27,44 @@ interface SymbolDirectionResult {
     detail: string;
 }
 
-type ScanResult = SymbolDigitResult | SymbolDirectionResult;
+interface TriggerDigitResult {
+    symbol: string;
+    label: string;
+    baselinePcts: number[];
+    baselineWinPct: number;
+    triggers: TriggerInfo[];
+    qualifies: boolean;
+    detail: string;
+}
+
+interface TriggerInfo {
+    digit: number;
+    occurrences: number;
+    avgWinPctAfter: number;
+    boost: number;
+    consistency: number;
+    windowSizes: { window: number; winPct: number; boost: number }[];
+    // How each digit's % shifts after this trigger appears
+    digitShifts: { digit: number; before: number; after: number; shift: number }[];
+    // Pattern strength over time
+    patternTrend: {
+        olderBoost: number;    // boost in first 50 ticks
+        recentBoost: number;   // boost in last 50 ticks
+        olderOccurrences: number;
+        recentOccurrences: number;
+        trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
+        trendPercent: number;  // how much stronger/weaker (positive = strengthening)
+    };
+}
+
+type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
 
 function isDigitResult(r: ScanResult): r is SymbolDigitResult {
-    return (r as SymbolDigitResult).pcts !== undefined;
+    return (r as SymbolDigitResult).pcts !== undefined && 'totalTicks' in r && !('triggers' in r);
+}
+
+function isTriggerResult(r: ScanResult): r is TriggerDigitResult {
+    return 'triggers' in r;
 }
 
 function calcDigitPcts(digits: number[]): number[] {
@@ -38,6 +72,186 @@ function calcDigitPcts(digits: number[]): number[] {
     digits.forEach(d => { if (d >= 0 && d <= 9) counts[d]++; });
     const total = digits.length || 1;
     return counts.map(c => (c / total) * 100);
+}
+
+// ── Entry Digit Trigger Analysis ──
+// Deep analysis: how each digit's appearance affects ALL other digits
+// Shows percentage shifts, pattern strength, and winning digit surge
+function analyzeTriggerDigits(
+    digits: number[],
+    contractType: 'DIGITOVER' | 'DIGITUNDER',
+    barrier: number,
+): { baselinePcts: number[]; baselineWinPct: number; triggers: TriggerInfo[] } {
+    const len = digits.length;
+    if (len < 30) return { baselinePcts: Array(10).fill(0), baselineWinPct: 0, triggers: [] };
+
+    // Baseline: full digit distribution from all 100 ticks
+    const baselinePcts = calcDigitPcts(digits);
+
+    // Calculate baseline winning digit percentage
+    const isWin = (d: number) => contractType === 'DIGITOVER' ? d > barrier : d < barrier;
+    const winCount = digits.filter(d => isWin(d)).length;
+    const baselineWinPct = (winCount / len) * 100;
+
+    // Analysis window: 20 ticks (~1 minute of trading)
+    const windowSize = 20;
+
+    const triggers: TriggerInfo[] = [];
+
+    // For each possible trigger digit (0-9)
+    for (let triggerDigit = 0; triggerDigit <= 9; triggerDigit++) {
+        // Find all positions where this trigger digit appears
+        const positions: number[] = [];
+        for (let i = 0; i < len - 1; i++) {
+            if (digits[i] === triggerDigit) positions.push(i);
+        }
+
+        if (positions.length < 3) continue; // Need minimum occurrences
+
+        // Collect ALL digits that appear after each trigger occurrence
+        const afterDigits: number[] = [];
+        for (const pos of positions) {
+            const end = Math.min(pos + windowSize, len);
+            for (let j = pos + 1; j < end; j++) {
+                afterDigits.push(digits[j]);
+            }
+        }
+
+        if (afterDigits.length === 0) continue;
+
+        // Calculate digit distribution AFTER trigger
+        const afterPcts = calcDigitPcts(afterDigits);
+
+        // Calculate shift for each digit (after - before)
+        const digitShifts = baselinePcts.map((before, d) => ({
+            digit: d,
+            before,
+            after: afterPcts[d],
+            shift: afterPcts[d] - before,
+        }));
+
+        // Calculate winning digit % after trigger
+        const afterWinCount = afterDigits.filter(d => isWin(d)).length;
+        const avgWinPctAfter = (afterWinCount / afterDigits.length) * 100;
+        const boost = avgWinPctAfter - baselineWinPct;
+
+        // Consistency: check across multiple sub-windows
+        const subWindows = [5, 10, 15, 20];
+        let windowsWithBoost = 0;
+        const windowResults: { window: number; winPct: number; boost: number }[] = [];
+
+        for (const sw of subWindows) {
+            let swWin = 0, swTotal = 0;
+            for (const pos of positions) {
+                const end = Math.min(pos + sw, len);
+                for (let j = pos + 1; j < end; j++) {
+                    swTotal++;
+                    if (isWin(digits[j])) swWin++;
+                }
+            }
+            if (swTotal === 0) continue;
+            const swWinPct = (swWin / swTotal) * 100;
+            const swBoost = swWinPct - baselineWinPct;
+            windowResults.push({ window: sw, winPct: swWinPct, boost: swBoost });
+            if (swBoost > 0) windowsWithBoost++;
+        }
+
+        const consistency = windowResults.length > 0
+            ? (windowsWithBoost / windowResults.length) * 100
+            : 0;
+
+        // ── Pattern Strength Over Time ──
+        // Split into older (first 50 ticks) and recent (last 50 ticks)
+        const halfLen = Math.floor(len / 2);
+        const olderDigits = digits.slice(0, halfLen);
+        const recentDigits = digits.slice(halfLen);
+
+        // Find trigger occurrences in each half
+        const olderPositions = positions.filter(p => p < halfLen);
+        const recentPositions = positions.filter(p => p >= halfLen);
+
+        // Calculate boost in older half
+        let olderBoost = 0;
+        let olderOccurrences = olderPositions.length;
+        if (olderOccurrences >= 2) {
+            const olderAfter: number[] = [];
+            for (const pos of olderPositions) {
+                const end = Math.min(pos + windowSize, halfLen);
+                for (let j = pos + 1; j < end; j++) {
+                    olderAfter.push(digits[j]);
+                }
+            }
+            if (olderAfter.length > 0) {
+                const olderWinCount = olderAfter.filter(d => isWin(d)).length;
+                const olderWinPct = (olderWinCount / olderAfter.length) * 100;
+                olderBoost = olderWinPct - baselineWinPct;
+            }
+        }
+
+        // Calculate boost in recent half
+        let recentBoost = 0;
+        let recentOccurrences = recentPositions.length;
+        if (recentOccurrences >= 2) {
+            const recentAfter: number[] = [];
+            for (const pos of recentPositions) {
+                const end = Math.min(pos + windowSize, len);
+                for (let j = pos + 1; j < end; j++) {
+                    recentAfter.push(digits[j]);
+                }
+            }
+            if (recentAfter.length > 0) {
+                const recentWinCount = recentAfter.filter(d => isWin(d)).length;
+                const recentWinPct = (recentWinCount / recentAfter.length) * 100;
+                recentBoost = recentWinPct - baselineWinPct;
+            }
+        }
+
+        // Determine trend
+        let trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
+        let trendPercent = 0;
+
+        if (olderOccurrences < 2 && recentOccurrences >= 2) {
+            trend = 'new';
+            trendPercent = recentBoost;
+        } else if (olderOccurrences >= 2 && recentOccurrences < 2) {
+            trend = 'dying';
+            trendPercent = -olderBoost;
+        } else if (olderOccurrences >= 2 && recentOccurrences >= 2) {
+            trendPercent = recentBoost - olderBoost;
+            if (trendPercent > 5) trend = 'strengthening';
+            else if (trendPercent < -5) trend = 'weakening';
+            else trend = 'stable';
+        } else {
+            trend = 'stable';
+            trendPercent = 0;
+        }
+
+        triggers.push({
+            digit: triggerDigit,
+            occurrences: positions.length,
+            avgWinPctAfter,
+            boost,
+            consistency,
+            windowSizes: windowResults,
+            digitShifts,
+            patternTrend: {
+                olderBoost,
+                recentBoost,
+                olderOccurrences,
+                recentOccurrences,
+                trend,
+                trendPercent,
+            },
+        });
+    }
+
+    // Sort by boost (highest first), then consistency
+    triggers.sort((a, b) => {
+        if (Math.abs(a.boost - b.boost) < 1) return b.consistency - a.consistency;
+        return b.boost - a.boost;
+    });
+
+    return { baselinePcts, baselineWinPct, triggers };
 }
 
 /* ── Micro-choppiness analysis on the current growing candle ────────────── */
@@ -155,6 +369,10 @@ export const Scanner: React.FC = () => {
     const [pendingSymbol, setPendingSymbol] = useState('');
     const [notification, setNotification] = useState<{ msg: string; type: 'info' | 'success' | 'warn' } | null>(null);
 
+    // Entry Digit config
+    const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITOVER');
+    const [entryBarrier, setEntryBarrier] = useState(3);
+
     // Refs for logic (avoid stale closures)
     const wsRef = useRef<MakotiWS | null>(null);
     const pendingRef = useRef<Set<string>>(new Set());
@@ -167,6 +385,12 @@ export const Scanner: React.FC = () => {
     const pendingSymbolRef = useRef<string>('');
     const msgHandlerRef = useRef<(data: any) => void>(() => {});
     const cancelScanRef = useRef<(() => void) | null>(null);
+    const entryContractTypeRef = useRef<'DIGITOVER' | 'DIGITUNDER'>('DIGITOVER');
+    const entryBarrierRef = useRef(3);
+
+    // Sync Entry Digit refs
+    useEffect(() => { entryContractTypeRef.current = entryContractType; }, [entryContractType]);
+    useEffect(() => { entryBarrierRef.current = entryBarrier; }, [entryBarrier]);
 
     const showNotify = useCallback((msg: string, type: 'info' | 'success' | 'warn' = 'info') => {
         setNotification({ msg, type });
@@ -220,7 +444,7 @@ export const Scanner: React.FC = () => {
         const sendTicksRequest = () => {
             if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) return;
             const bot = botRef.current;
-            const count = bot === 'pvty_kill' ? 1000 : 60;
+            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 100 : 60;
             setProgress(`Fetching ${count} ticks from all 10 volatilities…`);
             ALL_SYMBOLS.forEach(sym => {
                 window._newSystemWS.send(JSON.stringify({ ticks_history: sym, count, end: 'latest', style: 'ticks' }));
@@ -249,7 +473,7 @@ export const Scanner: React.FC = () => {
         let finalized = false;
         pendingRef.current = new Set(ALL_SYMBOLS);
         collectedRef.current = new Map();
-        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : 10000;
+        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 15000 : 10000;
         const scanTimeout = setTimeout(() => {
             if (!finalized) finalize();
         }, timeoutMs);
@@ -310,6 +534,49 @@ export const Scanner: React.FC = () => {
                 bestScore = Math.round(Math.max(scanResults[0]?.pcts[7] ?? 0, scanResults[0]?.pcts[8] ?? 0, scanResults[0]?.pcts[9] ?? 0));
                 setResults(scanResults);
                 setBestSymbols(best.slice(0, 3));
+            } else if (currentBot === 'entry_digit') {
+                // Entry Digit Trigger Analysis
+                const scanResults: TriggerDigitResult[] = [];
+                const entryType = botRef.current === 'entry_digit' ? entryContractTypeRef.current : 'DIGITOVER';
+                const entryBar = botRef.current === 'entry_digit' ? entryBarrierRef.current : 3;
+
+                collectedRef.current.forEach((prices: number[], sym) => {
+                    if (!prices || prices.length < 30) return;
+                    const pipSize = PIP_SIZES[sym] || 2;
+                    const digits = prices.map(p => Number(Number(p).toFixed(pipSize).slice(-1)));
+                    const analysis = analyzeTriggerDigits(digits, entryType, entryBar);
+
+                    // Find best trigger
+                    const bestTrigger = analysis.triggers[0];
+                    const qualifies = bestTrigger !== undefined && bestTrigger.boost > 5 && bestTrigger.consistency >= 50;
+
+                    const detail = bestTrigger
+                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) → +${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent`
+                        : 'No strong trigger found';
+
+                    scanResults.push({
+                        symbol: sym, label: SYMBOL_LABELS[sym],
+                        baselinePcts: analysis.baselinePcts,
+                        baselineWinPct: analysis.baselineWinPct,
+                        triggers: analysis.triggers,
+                        qualifies,
+                        detail,
+                    });
+                });
+
+                // Sort by best trigger boost
+                scanResults.sort((a, b) => {
+                    if (a.qualifies && !b.qualifies) return -1;
+                    if (!a.qualifies && b.qualifies) return 1;
+                    const aBoost = a.triggers[0]?.boost ?? 0;
+                    const bBoost = b.triggers[0]?.boost ?? 0;
+                    return bBoost - aBoost;
+                });
+
+                best = scanResults.map(r => r.symbol);
+                bestScore = Math.round(scanResults[0]?.triggers[0]?.boost ?? 0);
+                setResults(scanResults);
+                setBestSymbols(best.slice(0, 3));
             } else {
                 const scanResults: SymbolDirectionResult[] = [];
                 collectedRef.current.forEach((prices: number[], sym) => {
@@ -354,6 +621,20 @@ export const Scanner: React.FC = () => {
                     setProgress(`Top: ${bestLabel} (${bestScore}%)`);
                     cleanup();
                 }
+            } else if (currentBot === 'entry_digit') {
+                const entryResults = results as TriggerDigitResult[];
+                const bestTrigger = entryResults[0]?.triggers[0];
+                if (bestTrigger) {
+                    const curType = entryContractTypeRef.current;
+                    const curBar = entryBarrierRef.current;
+                    const winDigits = curType === 'DIGITOVER'
+                        ? `${curBar + 1}-9`
+                        : `0-${curBar - 1}`;
+                    setProgress(`Best: ${bestLabel} | Trigger: D${bestTrigger.digit} → +${bestTrigger.boost.toFixed(1)}% boost on ${winDigits} | ${bestTrigger.consistency.toFixed(0)}% consistent`);
+                } else {
+                    setProgress('No strong trigger pattern found across volatilities');
+                }
+                cleanup();
             } else {
                 setProgress(`Top: ${bestLabel} (max 7/8/9: ${bestScore}%)`);
                 cleanup();
@@ -366,6 +647,9 @@ export const Scanner: React.FC = () => {
             if (currentBot === 'pvty_kill') {
                 setProgress('Fetching 1000 ticks from all 10 volatilities…');
                 ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' }));
+            } else if (currentBot === 'entry_digit') {
+                setProgress('Fetching 100 ticks from all 10 volatilities…');
+                ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
             } else {
                 setProgress('Fetching 60 ticks from all 10 volatilities…');
                 ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 60, end: 'latest', style: 'ticks' }));
@@ -429,13 +713,42 @@ export const Scanner: React.FC = () => {
             <div className='mw-scanner__controls'>
                 <div className='mw-field'>
                     <label className='mw-label'>Bot Selection</label>
-                    <MwSelect value={bot} options={[{ value: 'pvty_kill', label: 'Poverty Killer' }, { value: 'rf_v4', label: 'Rise/Fall V4' }]}
+                    <MwSelect value={bot} options={[
+                        { value: 'pvty_kill', label: 'Poverty Killer' },
+                        { value: 'rf_v4', label: 'Rise/Fall V4' },
+                        { value: 'entry_digit', label: 'Entry Digit' },
+                    ]}
                         onChange={v => setBot(v as BotId)} disabled={scanning} />
                 </div>
                 <div className='mw-scanner__desc'>
                     {bot === 'pvty_kill'
                         ? 'Scans 1 000 ticks per volatility. Finds markets where digits 7, 8 and 9 each stay below 10%.'
+                        : bot === 'entry_digit'
+                        ? 'Deep trigger analysis — finds which digit appearance causes winning digits to surge. Provides the perfect entry trigger digit for your contract.'
                         : 'Analyses 60 recent ticks per volatility (current candle). Finds choppy micro-markets — auto-switches every 3s.'}
+                </div>
+                {bot === 'entry_digit' && (
+                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                        <div className='mw-field' style={{ flex: 1 }}>
+                            <label className='mw-label'>Contract Type</label>
+                            <MwSelect value={entryContractType} options={[
+                                { value: 'DIGITOVER', label: 'OVER' },
+                                { value: 'DIGITUNDER', label: 'UNDER' },
+                            ]}
+                                onChange={v => setEntryContractType(v as 'DIGITOVER' | 'DIGITUNDER')} disabled={scanning} />
+                        </div>
+                        <div className='mw-field' style={{ flex: 1 }}>
+                            <label className='mw-label'>Barrier Digit</label>
+                            <MwSelect value={String(entryBarrier)} options={[
+                                { value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' },
+                                { value: '3', label: '3' }, { value: '4', label: '4' }, { value: '5', label: '5' },
+                                { value: '6', label: '6' }, { value: '7', label: '7' }, { value: '8', label: '8' },
+                                { value: '9', label: '9' },
+                            ]}
+                                onChange={v => setEntryBarrier(parseInt(v))} disabled={scanning} />
+                        </div>
+                    </div>
+                )}
                 </div>
                 {bot === 'rf_v4' && (
                     <label className='mw-switch-row'>
@@ -459,7 +772,9 @@ export const Scanner: React.FC = () => {
                     <div className='mw-scanner__results-head'>
                         {bot === 'pvty_kill'
                             ? 'Digit 7 / 8 / 9 Distribution (1 000 ticks)'
-                                                         : `Micro-Choppiness (current candle, 60 ticks) ${autoSwitcherActive ? '— Auto-switching ON' : ''}`}
+                            : bot === 'entry_digit'
+                            ? `Entry Digit Trigger Analysis (100 ticks) — ${entryContractType === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${entryBarrier}`
+                            : `Micro-Choppiness (current candle, 60 ticks) ${autoSwitcherActive ? '— Auto-switching ON' : ''}`}
                     </div>
                     {bestSymbols.length > 0 && (
                         <div className='mw-scanner__best'>
@@ -486,7 +801,122 @@ export const Scanner: React.FC = () => {
                                         ))}
                                     </div>
                                 )}
-                                {!isDigitResult(r) && (() => {
+                                {isTriggerResult(r) && (
+                                    <div style={{ padding: '4px 0' }}>
+                                        {/* Baseline digit distribution */}
+                                        <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
+                                            Baseline (100 ticks) — Win rate: <span style={{ color: '#ffd700' }}>{r.baselineWinPct.toFixed(1)}%</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: 3, marginBottom: 8, flexWrap: 'wrap' }}>
+                                            {r.baselinePcts.map((p, i) => {
+                                                const isWin = entryContractType === 'DIGITOVER' ? i > entryBarrier : i < entryBarrier;
+                                                return (
+                                                    <div key={i} style={{
+                                                        background: isWin ? '#1a3d1a' : '#2d1a1a',
+                                                        border: `1px solid ${isWin ? '#4caf50' : '#666'}`,
+                                                        borderRadius: 3, padding: '1px 4px', fontSize: 8, textAlign: 'center',
+                                                        minWidth: 32,
+                                                    }}>
+                                                        <div style={{ color: isWin ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>D{i}</div>
+                                                        <div style={{ color: '#ccc' }}>{p.toFixed(1)}%</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+
+                                        {/* Top triggers with full percentage comparison */}
+                                        {r.triggers.slice(0, 3).map((t, ti) => (
+                                            <div key={t.digit} style={{
+                                                background: ti === 0 ? '#1a2d1a' : '#1a1a2e',
+                                                border: `1px solid ${ti === 0 ? '#4caf50' : '#333'}`,
+                                                borderRadius: 4, padding: 6, marginBottom: 6,
+                                            }}>
+                                                {/* Header */}
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                                                    <div>
+                                                        <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: 11 }}>
+                                                            TRIGGER: D{t.digit}
+                                                        </span>
+                                                        <span style={{ color: '#888', fontSize: 9, marginLeft: 6 }}>
+                                                            ({t.occurrences}x in 100 ticks)
+                                                        </span>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <span style={{ color: t.boost > 10 ? '#4caf50' : '#ff9800', fontWeight: 'bold', fontSize: 11 }}>
+                                                            Win: {r.baselineWinPct.toFixed(0)}% → {t.avgWinPctAfter.toFixed(0)}%
+                                                        </span>
+                                                        <span style={{ color: t.boost > 10 ? '#4caf50' : '#ff9800', fontSize: 9, marginLeft: 4 }}>
+                                                            (+{t.boost.toFixed(1)}%)
+                                                        </span>
+                                                    </div>
+                                                </div>
+
+                                                {/* Full digit comparison: Baseline vs After D5 appears */}
+                                                <div style={{ fontSize: 8, color: '#aaa', marginBottom: 3 }}>
+                                                    When D{t.digit} appears, all digits shift:
+                                                </div>
+                                                <div style={{
+                                                    display: 'grid',
+                                                    gridTemplateColumns: 'repeat(10, 1fr)',
+                                                    gap: 2,
+                                                    marginBottom: 4,
+                                                }}>
+                                                    {t.digitShifts.map(s => {
+                                                        const isWin = entryContractType === 'DIGITOVER' ? s.digit > entryBarrier : s.digit < entryBarrier;
+                                                        const isPositive = isWin ? s.shift > 0 : s.shift < 0;
+                                                        return (
+                                                            <div key={s.digit} style={{
+                                                                background: isPositive ? '#0d290d' : '#290d0d',
+                                                                border: `1px solid ${s.shift > 0 ? '#2e7d32' : s.shift < 0 ? '#7d2d2d' : '#333'}`,
+                                                                borderRadius: 2, padding: '2px 1px', fontSize: 7, textAlign: 'center',
+                                                            }}>
+                                                                <div style={{ color: isWin ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>D{s.digit}</div>
+                                                                <div style={{ color: '#888' }}>{s.before.toFixed(0)}%</div>
+                                                                <div style={{ color: isPositive ? '#4caf50' : '#f44336' }}>→{s.after.toFixed(0)}%</div>
+                                                                <div style={{ color: isPositive ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>
+                                                                    {s.shift > 0 ? '+' : ''}{s.shift.toFixed(1)}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+
+                                                {/* Window breakdown */}
+                                                <div style={{ fontSize: 7, color: '#555', marginBottom: 4 }}>
+                                                    {t.windowSizes.map(w => `W${w.window}ticks: ${w.winPct.toFixed(0)}% win (${w.boost > 0 ? '+' : ''}${w.boost.toFixed(1)}%)`).join(' | ')}
+                                                </div>
+
+                                                {/* Pattern Strength Over Time */}
+                                                <div style={{
+                                                    display: 'flex', gap: 6, alignItems: 'center',
+                                                    background: '#0d0d1a', borderRadius: 3, padding: '3px 6px',
+                                                }}>
+                                                    <div style={{ fontSize: 8, color: '#888' }}>Trend:</div>
+                                                    <div style={{
+                                                        fontSize: 9, fontWeight: 'bold',
+                                                        color: t.patternTrend.trend === 'strengthening' ? '#4caf50'
+                                                            : t.patternTrend.trend === 'weakening' ? '#f44336'
+                                                            : t.patternTrend.trend === 'new' ? '#2196f3'
+                                                            : t.patternTrend.trend === 'dying' ? '#ff9800'
+                                                            : '#888',
+                                                    }}>
+                                                        {t.patternTrend.trend === 'strengthening' && '↑ STRENGTHENING'}
+                                                        {t.patternTrend.trend === 'weakening' && '↓ WEAKENING'}
+                                                        {t.patternTrend.trend === 'stable' && '→ STABLE'}
+                                                        {t.patternTrend.trend === 'new' && '★ NEW PATTERN'}
+                                                        {t.patternTrend.trend === 'dying' && '✕ DYING'}
+                                                    </div>
+                                                    <div style={{ fontSize: 7, color: '#666' }}>
+                                                        (first50: {t.patternTrend.olderBoost > 0 ? '+' : ''}{t.patternTrend.olderBoost.toFixed(1)}% {t.patternTrend.olderOccurrences}x
+                                                        {' | '}
+                                                        last50: {t.patternTrend.recentBoost > 0 ? '+' : ''}{t.patternTrend.recentBoost.toFixed(1)}% {t.patternTrend.recentOccurrences}x)
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                                {!isDigitResult(r) && !isTriggerResult(r) && (() => {
                                     const dr = r as SymbolDirectionResult;
                                     return (
                                         <div className='mw-scanner__dir-bar'>

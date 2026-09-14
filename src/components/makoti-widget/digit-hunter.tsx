@@ -25,6 +25,8 @@ interface ScoredMarket {
     barrier: number;
     digit: number;
     reason: string;
+    agreedDirection: string;
+    agreementCount: number;
 }
 
 const LS_KEY = 'mw_dh_config';
@@ -49,48 +51,84 @@ function loadCfg() { try { const r = localStorage.getItem(LS_KEY); return r ? { 
 function saveCfg(c: typeof DEFAULT_CFG) { try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch {} }
 function ts() { return new Date().toLocaleTimeString('en-US', { hour12: false }); }
 
+// ── Layer 5: Entry Digit Filter ──
+// Only enter when current digit is in the "losing zone" (reversion to mean)
+function isEntryFavorable(lastDigit: number, contractType: string, barrier: number): boolean {
+    if (contractType === 'DIGITOVER') {
+        // OVER X wins if digit > X. Enter when current digit is ≤ X (low digits due to revert)
+        return lastDigit <= barrier;
+    } else {
+        // UNDER X wins if digit < X. Enter when current digit is ≥ X (high digits due to revert)
+        return lastDigit >= barrier;
+    }
+}
+
+// ── Rolling Window Weighted Percentages ──
+function getWeightedPcts(ticks: number[], window: number = 30, recentWeight: number = 0.65): number[] {
+    const counts = Array(10).fill(0);
+    let totalCount = 0;
+    const len = ticks.length;
+    const recentLen = Math.min(window, len);
+    const olderLen = len - recentLen;
+
+    // Weight recent ticks
+    for (let i = len - recentLen; i < len; i++) {
+        counts[ticks[i]] += recentWeight;
+        totalCount += recentWeight;
+    }
+    // Weight older ticks
+    for (let i = 0; i < len - recentLen; i++) {
+        counts[ticks[i]] += (1 - recentWeight);
+        totalCount += (1 - recentWeight);
+    }
+
+    return counts.map(c => (c / totalCount) * 100);
+}
+
 // ── Layer 1: Digit Frequency Bias ──
-function calcFreqScore(ticks: number[]): { score: number; digit: number; reason: string; skew: 'high' | 'low' | 'none'; skewScore: number } {
-    if (ticks.length < MIN_TICKS) return { score: 0, digit: -1, reason: 'Not enough data', skew: 'none', skewScore: 0 };
-    const pcts = getDigitPcts(ticks, 200);
-    // Find most underrepresented digit
+function calcFreqScore(ticks: number[]): { score: number; digit: number; reason: string; skew: 'high' | 'low' | 'none'; skewScore: number; direction: 'over' | 'under' | 'none' } {
+    if (ticks.length < MIN_TICKS) return { score: 0, digit: -1, reason: 'Not enough data', skew: 'none', skewScore: 0, direction: 'none' };
+    const pcts = getWeightedPcts(ticks);
     let minPct = 100, minDigit = 0;
     pcts.forEach((p, d) => { if (p < minPct) { minPct = p; minDigit = d; } });
-    // Score: more aggressive scaling
     const deviation = 10 - minPct;
     const score = Math.min(100, Math.max(0, deviation * 15 + 20));
 
-    // Detect skew: are high digits (6-9) or low digits (0-4) overrepresented?
-    const lowPct = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // expected 50%
-    const highPct = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9]; // expected 50%
+    const lowPct = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4];
+    const highPct = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9];
     let skew: 'high' | 'low' | 'none' = 'none';
     let skewScore = 0;
-    if (highPct > 55) { skew = 'high'; skewScore = Math.min(100, (highPct - 50) * 8 + 30); }
-    else if (lowPct > 55) { skew = 'low'; skewScore = Math.min(100, (lowPct - 50) * 8 + 30); }
+    let direction: 'over' | 'under' | 'none' = 'none';
+    if (highPct > 55) { skew = 'high'; skewScore = Math.min(100, (highPct - 50) * 8 + 30); direction = 'under'; }
+    else if (lowPct > 55) { skew = 'low'; skewScore = Math.min(100, (lowPct - 50) * 8 + 30); direction = 'over'; }
 
-    return { score, digit: minDigit, reason: `D${minDigit} at ${minPct.toFixed(1)}% | Low:${lowPct.toFixed(0)}% High:${highPct.toFixed(0)}%`, skew, skewScore };
+    return { score, digit: minDigit, reason: `D${minDigit} at ${minPct.toFixed(1)}% | Low:${lowPct.toFixed(0)}% High:${highPct.toFixed(0)}%`, skew, skewScore, direction };
 }
 
 // ── Layer 2: Streak Probability ──
-function calcStreakScore(ticks: number[]): { score: number; digit: number; streakCount: number; reason: string } {
-    if (ticks.length < 10) return { score: 0, digit: -1, streakCount: 0, reason: 'Not enough data' };
+function calcStreakScore(ticks: number[]): { score: number; digit: number; streakCount: number; reason: string; direction: 'over' | 'under' | 'none' } {
+    if (ticks.length < 10) return { score: 0, digit: -1, streakCount: 0, reason: 'Not enough data', direction: 'none' };
     let streakDigit = ticks[ticks.length - 1];
     let streakCount = 1;
     for (let i = ticks.length - 2; i >= 0; i--) {
         if (ticks[i] === streakDigit) streakCount++;
         else break;
     }
-    // More aggressive scoring: 2 consecutive = 40, 3 = 65, 4+ = 90+
     let score = 0;
-    if (streakCount === 2) score = 40;
-    else if (streakCount === 3) score = 65;
-    else if (streakCount >= 4) score = Math.min(100, 80 + (streakCount - 4) * 10);
-    return { score, digit: streakDigit, streakCount, reason: `D${streakDigit} streak: ${streakCount}x → DIFF ${streakDigit}` };
+    let direction: 'over' | 'under' | 'none' = 'none';
+    if (streakCount === 2) score = 25;
+    else if (streakCount === 3) score = 45;
+    else if (streakCount >= 4) score = Math.min(100, 60 + (streakCount - 4) * 10);
+
+    if (score > 0) {
+        direction = streakDigit <= 4 ? 'over' : 'under';
+    }
+    return { score, digit: streakDigit, streakCount, reason: `D${streakDigit} streak: ${streakCount}x → DIFF ${streakDigit}`, direction };
 }
 
 // ── Layer 3: Pair Sequence Memory ──
-function calcPairScore(ticks: number[]): { score: number; predictedDigit: number; reason: string } {
-    if (ticks.length < 20) return { score: 0, predictedDigit: -1, reason: 'Not enough data' };
+function calcPairScore(ticks: number[]): { score: number; predictedDigit: number; reason: string; direction: 'over' | 'under' | 'none' } {
+    if (ticks.length < 20) return { score: 0, predictedDigit: -1, reason: 'Not enough data', direction: 'none' };
     const lastDigit = ticks[ticks.length - 1];
     const followCounts = Array(10).fill(0);
     let total = 0;
@@ -100,13 +138,17 @@ function calcPairScore(ticks: number[]): { score: number; predictedDigit: number
             total++;
         }
     }
-    if (total < 3) return { score: 0, predictedDigit: -1, reason: `D${lastDigit} pair data insufficient` };
+    if (total < 3) return { score: 0, predictedDigit: -1, reason: `D${lastDigit} pair data insufficient`, direction: 'none' };
     let maxCount = 0, predicted = 0;
     followCounts.forEach((c, d) => { if (c > maxCount) { maxCount = c; predicted = d; } });
     const ratio = maxCount / total;
-    // More aggressive: 15% = 40, 20% = 60, 25%+ = 80+
     const score = Math.min(100, Math.max(0, (ratio - 0.1) * 250 + 20));
-    return { score, predictedDigit: predicted, reason: `After D${lastDigit} → D${predicted} (${(ratio * 100).toFixed(0)}%)` };
+
+    let direction: 'over' | 'under' | 'none' = 'none';
+    if (score > 0) {
+        direction = predicted <= 4 ? 'over' : 'under';
+    }
+    return { score, predictedDigit: predicted, reason: `After D${lastDigit} → D${predicted} (${(ratio * 100).toFixed(0)}%)`, direction };
 }
 
 // ── Layer 4: Cross-Market Echo ──
@@ -114,7 +156,7 @@ function calcEchoScore(
     currentSymbol: string,
     currentDigit: number,
     allMarketData: Record<string, MarketData>,
-): { score: number; echoDigit: number; reason: string } {
+): { score: number; echoDigit: number; reason: string; direction: 'over' | 'under' | 'none' } {
     let echoCount = 0;
     let totalChecks = 0;
     for (const [sym, md] of Object.entries(allMarketData)) {
@@ -124,11 +166,15 @@ function calcEchoScore(
         totalChecks++;
         if (recent.includes(currentDigit)) echoCount++;
     }
-    if (totalChecks < 3) return { score: 0, echoDigit: currentDigit, reason: 'Insufficient cross-market data' };
+    if (totalChecks < 3) return { score: 0, echoDigit: currentDigit, reason: 'Insufficient cross-market data', direction: 'none' };
     const echoRatio = echoCount / totalChecks;
-    // More aggressive: 40% = 40, 60% = 65, 80%+ = 90+
     const score = Math.min(100, Math.max(0, echoRatio * 110 + 20));
-    return { score, echoDigit: currentDigit, reason: `D${currentDigit} in ${echoCount}/${totalChecks} markets` };
+
+    let direction: 'over' | 'under' | 'none' = 'none';
+    if (score > 0) {
+        direction = currentDigit <= 4 ? 'over' : 'under';
+    }
+    return { score, echoDigit: currentDigit, reason: `D${currentDigit} in ${echoCount}/${totalChecks} markets`, direction };
 }
 
 export const DigitHunter: React.FC = () => {
@@ -229,18 +275,30 @@ export const DigitHunter: React.FC = () => {
             // Weighted total
             const totalScore = (freq.score * 0.30) + (streak.score * 0.25) + (pair.score * 0.25) + (echo.score * 0.20);
 
+            // ── Layer 6: Direction Confirmation ──
+            // Count how many layers agree on OVER vs UNDER
+            const overVotes = [freq.direction, streak.direction, pair.direction, echo.direction].filter(d => d === 'over').length;
+            const underVotes = [freq.direction, streak.direction, pair.direction, echo.direction].filter(d => d === 'under').length;
+            const agreedDirection = overVotes >= underVotes ? 'over' : 'under';
+            const agreementCount = Math.max(overVotes, underVotes);
+
+            // Require at least 2 layers to agree on direction
+            if (agreementCount < 2) continue;
+
             // ── Contract selection: OVER/UNDER with specific barriers ──
-            // Primary: OVER 2, OVER 3, UNDER 7, UNDER 6
-            // Recovery: OVER 4, OVER 5, UNDER 5
-            const pcts = getDigitPcts(md.ticks, 200);
+            // Primary: OVER 1, OVER 2, UNDER 8, UNDER 7
+            // Recovery: OVER 3, OVER 4, UNDER 6, UNDER 5
+            const pcts = getWeightedPcts(md.ticks);
 
             // Analyze digit groups for barrier selection
-            const d012 = pcts[0] + pcts[1] + pcts[2];     // digits 0-2 (OVER 2 needs 2,3,4,5,6,7,8,9)
-            const d0123 = pcts[0] + pcts[1] + pcts[2] + pcts[3]; // digits 0-3 (OVER 3 needs 3,4,5,6,7,8,9)
-            const d789 = pcts[7] + pcts[8] + pcts[9];      // digits 7-9 (UNDER 7 needs 0,1,2,3,4,5,6)
-            const d6789 = pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 6-9 (UNDER 6 needs 0,1,2,3,4,5)
-            const d45 = pcts[4] + pcts[5];                  // digits 4-5 (recovery zone)
-            const d01234 = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // digits 0-4
+            const d01 = pcts[0] + pcts[1];                  // digits 0-1 (OVER 1 needs 2-9, 80% win)
+            const d012 = pcts[0] + pcts[1] + pcts[2];      // digits 0-2 (OVER 2 needs 3-9, 70% win)
+            const d0123 = pcts[0] + pcts[1] + pcts[2] + pcts[3]; // digits 0-3 (OVER 3 needs 4-9, 60% win)
+            const d01234 = pcts[0] + pcts[1] + pcts[2] + pcts[3] + pcts[4]; // digits 0-4 (OVER 4 needs 5-9, 50% win)
+            const d789 = pcts[7] + pcts[8] + pcts[9];      // digits 7-9 (UNDER 7 needs 0-6, 70% win)
+            const d89 = pcts[8] + pcts[9];                  // digits 8-9 (UNDER 8 needs 0-7, 80% win)
+            const d56789 = pcts[5] + pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 5-9 (UNDER 5 needs 0-4, 50% win)
+            const d6789 = pcts[6] + pcts[7] + pcts[8] + pcts[9]; // digits 6-9 (UNDER 6 needs 0-5, 60% win)
 
             // Expected: each 3-digit group ~30%, 4-digit ~40%, 5-digit ~50%
             let contractType: string;
@@ -250,84 +308,84 @@ export const DigitHunter: React.FC = () => {
             const isRecovery = recoveryPhaseRef.current === 'recovering';
 
             if (isRecovery) {
-                // ── RECOVERY MODE: high-paying barriers (40-50% win, 2-2.5x payout) ──
-                // OVER 4 wins if digit 4,5,6,7,8,9 (60%) — payout ~2x
-                // OVER 5 wins if digit 5,6,7,8,9 (50%) — payout ~2.5x
-                // UNDER 5 wins if digit 0,1,2,3,4 (50%) — payout ~2x
-                // UNDER 4 wins if digit 0,1,2,3 (40%) — payout ~2.5x
+                // ── RECOVERY MODE: medium-paying barriers (50-60% win, 1.6-2x payout) ──
+                // OVER 3 wins if digit > 3, i.e. 4-9 (60%) — payout ~1.6x
+                // OVER 4 wins if digit > 4, i.e. 5-9 (50%) — payout ~2x
+                // UNDER 6 wins if digit < 6, i.e. 0-5 (60%) — payout ~1.6x
+                // UNDER 5 wins if digit < 5, i.e. 0-4 (50%) — payout ~2x
 
-                // Strong low-digit (0-4) overrepresentation → high digits due → OVER 5
+                // Strong low-digit (0-4) overrepresentation → high digits due → OVER 4
                 if (d01234 > 52) {
                     if (d01234 > 55) {
                         contractType = 'DIGITOVER';
-                        barrier = 5;
-                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% (>55%) → OVER 5 (2.5x)`;
+                        barrier = 4;
+                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% (>55%) → OVER 4 (need 5-9, 2x)`;
                     } else {
                         contractType = 'DIGITOVER';
-                        barrier = 4;
-                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% → OVER 4 (2x)`;
+                        barrier = 3;
+                        reason = `🔄 RECOVERY: Low digits ${d01234.toFixed(0)}% → OVER 3 (need 4-9, 1.6x)`;
                     }
                 }
-                // Strong high-digit (6-9) overrepresentation → low digits due → UNDER 4
-                else if (d6789 > 52) {
-                    if (d6789 > 55) {
-                        contractType = 'DIGITUNDER';
-                        barrier = 4;
-                        reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% (>55%) → UNDER 4 (2.5x)`;
-                    } else {
+                // Strong high-digit (5-9) overrepresentation → low digits due → UNDER 5
+                else if (d56789 > 52) {
+                    if (d56789 > 55) {
                         contractType = 'DIGITUNDER';
                         barrier = 5;
-                        reason = `🔄 RECOVERY: High digits ${d6789.toFixed(0)}% → UNDER 5 (2x)`;
+                        reason = `🔄 RECOVERY: High digits ${d56789.toFixed(0)}% (>55%) → UNDER 5 (need 0-4, 2x)`;
+                    } else {
+                        contractType = 'DIGITUNDER';
+                        barrier = 6;
+                        reason = `🔄 RECOVERY: High digits ${d56789.toFixed(0)}% → UNDER 6 (need 0-5, 1.6x)`;
                     }
                 } else {
-                    // Balanced → default recovery OVER 5 (50/50)
-                    contractType = 'DIGITOVER';
-                    barrier = 5;
-                    reason = `🔄 RECOVERY: Balanced → OVER 5 (default)`;
+                    // Balanced → default recovery UNDER 6 (60% win rate)
+                    contractType = 'DIGITUNDER';
+                    barrier = 6;
+                    reason = `🔄 RECOVERY: Balanced → UNDER 6 (need 0-5, default)`;
                 }
             } else {
-                // ── PRIMARY MODE: use wider barriers for better payout ──
-                // OVER 2 wins if digit 2,3,4,5,6,7,8,9 (80%)
-                // OVER 3 wins if digit 3,4,5,6,7,8,9 (70%)
-                // UNDER 7 wins if digit 0,1,2,3,4,5,6 (70%)
-                // UNDER 6 wins if digit 0,1,2,3,4,5 (60%)
+                // ── PRIMARY MODE: wider barriers for higher win rate ──
+                // OVER 1 wins if digit > 1, i.e. 2-9 (80% win rate)
+                // OVER 2 wins if digit > 2, i.e. 3-9 (70% win rate)
+                // UNDER 8 wins if digit < 8, i.e. 0-7 (80% win rate)
+                // UNDER 7 wins if digit < 7, i.e. 0-6 (70% win rate)
 
-                if (d012 > 35) {
-                    // Digits 0,1,2 overrepresented (35%+ vs expected 30%) → OVER 2
+                if (d01 > 22) {
+                    // Digits 0,1 overrepresented (22%+ vs expected 20%) → OVER 1
+                    contractType = 'DIGITOVER';
+                    barrier = 1;
+                    reason = `D0-1 at ${d01.toFixed(0)}% (>22%) → OVER 1 (need 2-9, 80%)`;
+                } else if (d89 > 22) {
+                    // Digits 8,9 overrepresented → UNDER 8
+                    contractType = 'DIGITUNDER';
+                    barrier = 8;
+                    reason = `D8-9 at ${d89.toFixed(0)}% (>22%) → UNDER 8 (need 0-7, 80%)`;
+                } else if (d012 > 32) {
+                    // Digits 0,1,2 overrepresented (32%+ vs expected 30%) → OVER 2
                     contractType = 'DIGITOVER';
                     barrier = 2;
-                    reason = `D0-2 at ${d012.toFixed(0)}% (>35%) → OVER 2 (need 2-9)`;
-                } else if (d789 > 35) {
+                    reason = `D0-2 at ${d012.toFixed(0)}% (>32%) → OVER 2 (need 3-9, 70%)`;
+                } else if (d789 > 32) {
                     // Digits 7,8,9 overrepresented → UNDER 7
                     contractType = 'DIGITUNDER';
                     barrier = 7;
-                    reason = `D7-9 at ${d789.toFixed(0)}% (>35%) → UNDER 7 (need 0-6)`;
-                } else if (d0123 > 42) {
-                    // Digits 0,1,2,3 overrepresented → OVER 3
-                    contractType = 'DIGITOVER';
-                    barrier = 3;
-                    reason = `D0-3 at ${d0123.toFixed(0)}% (>42%) → OVER 3 (need 3-9)`;
-                } else if (d6789 > 42) {
-                    // Digits 6,7,8,9 overrepresented → UNDER 6
-                    contractType = 'DIGITUNDER';
-                    barrier = 6;
-                    reason = `D6-9 at ${d6789.toFixed(0)}% (>42%) → UNDER 6 (need 0-5)`;
+                    reason = `D7-9 at ${d789.toFixed(0)}% (>32%) → UNDER 7 (need 0-6, 70%)`;
                 } else if (streak.streakCount >= 2) {
                     // Use streak direction with appropriate barrier
                     if (streak.digit <= 3) {
                         contractType = 'DIGITOVER';
-                        barrier = 3;
-                        reason = `D${streak.digit} streak ${streak.streakCount}x → OVER 3`;
+                        barrier = 2;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → OVER 2 (need 3-9)`;
                     } else {
                         contractType = 'DIGITUNDER';
-                        barrier = 6;
-                        reason = `D${streak.digit} streak ${streak.streakCount}x → UNDER 6`;
+                        barrier = 7;
+                        reason = `D${streak.digit} streak ${streak.streakCount}x → UNDER 7 (need 0-6)`;
                     }
                 } else {
-                    // Default: OVER 2 (80% win rate, safest)
+                    // Default: OVER 1 (80% win rate, safest)
                     contractType = 'DIGITOVER';
-                    barrier = 2;
-                    reason = `No clear bias → OVER 2 (default, 80% win rate)`;
+                    barrier = 1;
+                    reason = `No clear bias → OVER 1 (default, 80% win rate)`;
                 }
             }
 
@@ -335,6 +393,7 @@ export const DigitHunter: React.FC = () => {
                 symbol: sym, freqScore: freq.score, streakScore: streak.score,
                 pairScore: pair.score, echoScore: echo.score, totalScore,
                 contractType, barrier, digit: barrier, reason,
+                agreedDirection, agreementCount,
             };
 
             if (!best || totalScore > best.totalScore) best = scored;
@@ -368,7 +427,7 @@ export const DigitHunter: React.FC = () => {
                     symbol: market.symbol, stake: stakeAmt, contractType: market.contractType,
                 });
                 lastTradeTime.current = Date.now();
-                addLog(`${prefix} [${market.totalScore.toFixed(0)}%] ${SYMBOL_LABELS[market.symbol]}: ${label} @ $${stakeAmt.toFixed(2)} — ${market.reason}`, 'trade');
+                addLog(`${prefix} [${market.totalScore.toFixed(0)}%|${market.agreementCount}/4] ${SYMBOL_LABELS[market.symbol]}: ${label} @ $${stakeAmt.toFixed(2)} — ${market.reason}`, 'trade');
                 try {
                     transactions.onBotContractEvent({
                         contract_id: contractId,
@@ -463,7 +522,7 @@ export const DigitHunter: React.FC = () => {
                 md.prices.push(price);
             }
             if (md.ticks.length > MAX_TICKS) { md.ticks = md.ticks.slice(-MAX_TICKS); md.prices = md.prices.slice(-MAX_TICKS); }
-            md.digitPcts = getDigitPcts(md.ticks, 200);
+            md.digitPcts = getWeightedPcts(md.ticks);
             md.lastDigit = md.ticks[md.ticks.length - 1];
             addLog(`📥 ${SYMBOL_LABELS[sym]} history loaded (${md.ticks.length} ticks)`);
             return;
@@ -486,7 +545,7 @@ export const DigitHunter: React.FC = () => {
             md.prices.push(price);
             md.lastDigit = lastDigit;
             if (md.ticks.length > MAX_TICKS) { md.ticks.shift(); md.prices.shift(); }
-            md.digitPcts = getDigitPcts(md.ticks, 200);
+            md.digitPcts = getWeightedPcts(md.ticks);
 
             // Run scoring and trading
             if (!runRef.current || pausedRef.current || globalLock.current) return;
@@ -502,8 +561,14 @@ export const DigitHunter: React.FC = () => {
             setBestScore(best.totalScore);
 
             const threshold = cfgRef.current.threshold;
+            const bestMd = allMarketDataRef.current[best.symbol];
+            if (!bestMd || bestMd.ticks.length === 0) return;
+            const entryDigit = bestMd.ticks[bestMd.ticks.length - 1];
 
             if (best.totalScore >= threshold) {
+                // Layer 5: Entry Digit Filter — only enter when current digit is in favorable zone
+                if (!isEntryFavorable(entryDigit, best.contractType, best.barrier)) return;
+
                 const stakeAmt = recoveryPhaseRef.current === 'recovering' ? currentStakeRef.current : cfgRef.current.stake;
                 executeTrade(best, stakeAmt, recoveryPhaseRef.current === 'recovering');
             }
