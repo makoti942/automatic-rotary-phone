@@ -763,7 +763,9 @@ export const Scanner: React.FC = () => {
                         </div>
                         <div className='mw-field' style={{ flex: 1 }}>
                             <label className='mw-label'>Barrier Digit</label>
-                            <input className='mw-input' type='number' min={0} max={9} value={entryBarrier}
+                            <input className='mw-input' type='number' min={0} max={9}
+                                defaultValue={entryBarrier}
+                                key={entryBarrier}
                                 onChange={e => {
                                     const v = parseInt(e.target.value);
                                     if (!isNaN(v) && v >= 0 && v <= 9) setEntryBarrier(v);
