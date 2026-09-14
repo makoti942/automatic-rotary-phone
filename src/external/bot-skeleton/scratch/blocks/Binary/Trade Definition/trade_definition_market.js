@@ -81,6 +81,21 @@ window.Blockly.Blocks.trade_definition_market = {
 
         if (event.type === window.Blockly.Events.BLOCK_CREATE && event.ids.includes(this.id)) {
             populateMarketDropdown();
+            // If loading from XML, values are already set — populate submarket and symbol too
+            if (market && submarket) {
+                submarket_dropdown.updateOptions(active_symbols.getSubmarketDropdownOptions(market), {
+                    default_value: submarket,
+                    should_pretend_empty: true,
+                    event_group: event.group,
+                });
+            }
+            if (submarket && symbol) {
+                symbol_dropdown.updateOptions(active_symbols.getSymbolDropdownOptions(submarket), {
+                    default_value: symbol,
+                    should_pretend_empty: true,
+                    event_group: event.group,
+                });
+            }
         } else if (event.type === window.Blockly.Events.BLOCK_CHANGE && event.blockId === this.id) {
             if (event.name === 'MARKET_LIST') {
                 submarket_dropdown.updateOptions(active_symbols.getSubmarketDropdownOptions(market), {
@@ -105,6 +120,20 @@ window.Blockly.Blocks.trade_definition_market = {
         ) {
             if (market_dropdown.isEmpty() || submarket_dropdown.isEmpty() || symbol_dropdown.isEmpty()) {
                 populateMarketDropdown();
+                if (market && submarket) {
+                    submarket_dropdown.updateOptions(active_symbols.getSubmarketDropdownOptions(market), {
+                        default_value: submarket,
+                        should_pretend_empty: true,
+                        event_group: event.group,
+                    });
+                }
+                if (submarket && symbol) {
+                    symbol_dropdown.updateOptions(active_symbols.getSymbolDropdownOptions(submarket), {
+                        default_value: symbol,
+                        should_pretend_empty: true,
+                        event_group: event.group,
+                    });
+                }
             }
         }
     },
