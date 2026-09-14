@@ -763,13 +763,13 @@ export const Scanner: React.FC = () => {
                         </div>
                         <div className='mw-field' style={{ flex: 1 }}>
                             <label className='mw-label'>Barrier Digit</label>
-                            <MwSelect value={String(entryBarrier)} options={[
-                                { value: '0', label: '0' }, { value: '1', label: '1' }, { value: '2', label: '2' },
-                                { value: '3', label: '3' }, { value: '4', label: '4' }, { value: '5', label: '5' },
-                                { value: '6', label: '6' }, { value: '7', label: '7' }, { value: '8', label: '8' },
-                                { value: '9', label: '9' },
-                            ]}
-                                onChange={v => setEntryBarrier(parseInt(v))} disabled={scanning} />
+                            <input className='mw-input' type='number' min={0} max={9} value={entryBarrier}
+                                onChange={e => {
+                                    const v = parseInt(e.target.value);
+                                    if (!isNaN(v) && v >= 0 && v <= 9) setEntryBarrier(v);
+                                }}
+                                disabled={scanning}
+                                style={{ width: 60, textAlign: 'center' }} />
                         </div>
                     </div>
                 )}
