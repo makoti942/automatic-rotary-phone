@@ -749,7 +749,6 @@ export const Scanner: React.FC = () => {
                         </div>
                     </div>
                 )}
-                </div>
                 {bot === 'rf_v4' && (
                     <label className='mw-switch-row'>
                         <span className='mw-switch-label'>Auto Switcher</span>
