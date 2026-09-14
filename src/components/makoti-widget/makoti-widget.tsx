@@ -319,9 +319,9 @@ export const MakotiWidget: React.FC = () => {
     return (
         <>
             {/* ── Floating button ── */}
-            <button
+            {!open && <button
                 ref={btnRef}
-                className={`mw-fab${open ? ' mw-fab--open' : ''}`}
+                className='mw-fab'
                 style={{ position: 'fixed', left: btnPosRef.current.x, top: btnPosRef.current.y, zIndex: 100001 }}
                 onPointerDown={onBtnPointerDown}
                 onClick={onBtnClick}
@@ -330,7 +330,7 @@ export const MakotiWidget: React.FC = () => {
                 <span className='mw-fab__pulse' />
                 <span className='mw-fab__icon'>⚔</span>
                 <span className='mw-fab__label'>MAKOTI</span>
-            </button>
+            </button>}
 
             {/* ── Floating window & tab content (always mounted so active killer survives close) ── */}
             <div
