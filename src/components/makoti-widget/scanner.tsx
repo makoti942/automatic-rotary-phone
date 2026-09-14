@@ -824,97 +824,80 @@ export const Scanner: React.FC = () => {
                                         </div>
 
                                         {/* Top triggers with full percentage comparison */}
-                                        {r.triggers.slice(0, 3).map((t, ti) => (
+                                        {r.triggers.slice(0, 3).map((t, ti) => {
+                                            const trendColor = t.patternTrend.trend === 'strengthening' ? '#4caf50'
+                                                : t.patternTrend.trend === 'weakening' ? '#f44336'
+                                                : t.patternTrend.trend === 'new' ? '#2196f3'
+                                                : t.patternTrend.trend === 'dying' ? '#ff9800' : '#888';
+                                            const trendLabel = t.patternTrend.trend === 'strengthening' ? '↑ STRENGTHENING'
+                                                : t.patternTrend.trend === 'weakening' ? '↓ WEAKENING'
+                                                : t.patternTrend.trend === 'new' ? '★ NEW'
+                                                : t.patternTrend.trend === 'dying' ? '✕ DYING' : '→ STABLE';
+                                            return (
                                             <div key={t.digit} style={{
-                                                background: ti === 0 ? '#1a2d1a' : '#1a1a2e',
-                                                border: `1px solid ${ti === 0 ? '#4caf50' : '#333'}`,
-                                                borderRadius: 4, padding: 6, marginBottom: 6,
+                                                background: ti === 0 ? '#0f1f0f' : '#111',
+                                                border: `2px solid ${ti === 0 ? '#4caf50' : '#333'}`,
+                                                borderRadius: 6, padding: 10, marginBottom: 8,
                                             }}>
-                                                {/* Header */}
-                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                                                    <div>
-                                                        <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: 11 }}>
-                                                            TRIGGER: D{t.digit}
-                                                        </span>
-                                                        <span style={{ color: '#888', fontSize: 9, marginLeft: 6 }}>
-                                                            ({t.occurrences}x in 100 ticks)
-                                                        </span>
+                                                {/* Big trigger digit + boost */}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+                                                    <div style={{
+                                                        width: 52, height: 52, borderRadius: 8,
+                                                        background: '#ffd700', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                        flexDirection: 'column', flexShrink: 0,
+                                                    }}>
+                                                        <div style={{ fontSize: 8, color: '#000', fontWeight: 'bold' }}>TRIGGER</div>
+                                                        <div style={{ fontSize: 22, color: '#000', fontWeight: 'bold', lineHeight: 1 }}>D{t.digit}</div>
                                                     </div>
-                                                    <div style={{ textAlign: 'right' }}>
-                                                        <span style={{ color: t.boost > 10 ? '#4caf50' : '#ff9800', fontWeight: 'bold', fontSize: 11 }}>
-                                                            Win: {r.baselineWinPct.toFixed(0)}% → {t.avgWinPctAfter.toFixed(0)}%
-                                                        </span>
-                                                        <span style={{ color: t.boost > 10 ? '#4caf50' : '#ff9800', fontSize: 9, marginLeft: 4 }}>
-                                                            (+{t.boost.toFixed(1)}%)
-                                                        </span>
+                                                    <div style={{ flex: 1 }}>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 4 }}>
+                                                            <span style={{ color: '#fff', fontSize: 13, fontWeight: 'bold' }}>
+                                                                {r.baselineWinPct.toFixed(0)}% → {t.avgWinPctAfter.toFixed(0)}% win rate
+                                                            </span>
+                                                            <span style={{ color: t.boost > 10 ? '#4caf50' : '#ff9800', fontSize: 14, fontWeight: 'bold' }}>
+                                                                +{t.boost.toFixed(1)}%
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ display: 'flex', gap: 12, fontSize: 9, color: '#888' }}>
+                                                            <span>{t.occurrences}x appeared</span>
+                                                            <span>{t.consistency.toFixed(0)}% consistent</span>
+                                                            <span style={{ color: trendColor, fontWeight: 'bold' }}>{trendLabel}</span>
+                                                        </div>
                                                     </div>
                                                 </div>
 
-                                                {/* Full digit comparison: Baseline vs After D5 appears */}
-                                                <div style={{ fontSize: 8, color: '#aaa', marginBottom: 3 }}>
-                                                    When D{t.digit} appears, all digits shift:
+                                                {/* Digit shift bars - visual comparison */}
+                                                <div style={{ fontSize: 9, color: '#aaa', marginBottom: 6 }}>
+                                                    After D{t.digit}, digit distribution shifts:
                                                 </div>
-                                                <div style={{
-                                                    display: 'grid',
-                                                    gridTemplateColumns: 'repeat(10, 1fr)',
-                                                    gap: 2,
-                                                    marginBottom: 4,
-                                                }}>
-                                                    {t.digitShifts.map(s => {
+                                                <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                                    {t.digitShifts.filter(s => Math.abs(s.shift) > 1).sort((a, b) => Math.abs(b.shift) - Math.abs(a.shift)).map(s => {
                                                         const isWin = entryContractType === 'DIGITOVER' ? s.digit > entryBarrier : s.digit < entryBarrier;
                                                         const isPositive = isWin ? s.shift > 0 : s.shift < 0;
                                                         return (
                                                             <div key={s.digit} style={{
-                                                                background: isPositive ? '#0d290d' : '#290d0d',
-                                                                border: `1px solid ${s.shift > 0 ? '#2e7d32' : s.shift < 0 ? '#7d2d2d' : '#333'}`,
-                                                                borderRadius: 2, padding: '2px 1px', fontSize: 7, textAlign: 'center',
+                                                                background: '#0d0d1a', border: '1px solid #333',
+                                                                borderRadius: 4, padding: '4px 8px', textAlign: 'center', minWidth: 55,
                                                             }}>
-                                                                <div style={{ color: isWin ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>D{s.digit}</div>
-                                                                <div style={{ color: '#888' }}>{s.before.toFixed(0)}%</div>
-                                                                <div style={{ color: isPositive ? '#4caf50' : '#f44336' }}>→{s.after.toFixed(0)}%</div>
-                                                                <div style={{ color: isPositive ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>
-                                                                    {s.shift > 0 ? '+' : ''}{s.shift.toFixed(1)}
+                                                                <div style={{ fontSize: 10, fontWeight: 'bold', color: isWin ? '#4caf50' : '#f44336' }}>D{s.digit}</div>
+                                                                <div style={{ fontSize: 8, color: '#666' }}>{s.before.toFixed(0)}% → {s.after.toFixed(0)}%</div>
+                                                                <div style={{ fontSize: 11, fontWeight: 'bold', color: isPositive ? '#4caf50' : '#f44336' }}>
+                                                                    {s.shift > 0 ? '+' : ''}{s.shift.toFixed(1)}%
                                                                 </div>
                                                             </div>
                                                         );
                                                     })}
                                                 </div>
 
-                                                {/* Window breakdown */}
-                                                <div style={{ fontSize: 7, color: '#555', marginBottom: 4 }}>
-                                                    {t.windowSizes.map(w => `W${w.window}ticks: ${w.winPct.toFixed(0)}% win (${w.boost > 0 ? '+' : ''}${w.boost.toFixed(1)}%)`).join(' | ')}
-                                                </div>
-
-                                                {/* Pattern Strength Over Time */}
-                                                <div style={{
-                                                    display: 'flex', gap: 6, alignItems: 'center',
-                                                    background: '#0d0d1a', borderRadius: 3, padding: '3px 6px',
-                                                }}>
-                                                    <div style={{ fontSize: 8, color: '#888' }}>Trend:</div>
-                                                    <div style={{
-                                                        fontSize: 9, fontWeight: 'bold',
-                                                        color: t.patternTrend.trend === 'strengthening' ? '#4caf50'
-                                                            : t.patternTrend.trend === 'weakening' ? '#f44336'
-                                                            : t.patternTrend.trend === 'new' ? '#2196f3'
-                                                            : t.patternTrend.trend === 'dying' ? '#ff9800'
-                                                            : '#888',
-                                                    }}>
-                                                        {t.patternTrend.trend === 'strengthening' && '↑ STRENGTHENING'}
-                                                        {t.patternTrend.trend === 'weakening' && '↓ WEAKENING'}
-                                                        {t.patternTrend.trend === 'stable' && '→ STABLE'}
-                                                        {t.patternTrend.trend === 'new' && '★ NEW PATTERN'}
-                                                        {t.patternTrend.trend === 'dying' && '✕ DYING'}
-                                                    </div>
-                                                    <div style={{ fontSize: 7, color: '#666' }}>
-                                                        (first50: {t.patternTrend.olderBoost > 0 ? '+' : ''}{t.patternTrend.olderBoost.toFixed(1)}% {t.patternTrend.olderOccurrences}x
-                                                        {' | '}
-                                                        last50: {t.patternTrend.recentBoost > 0 ? '+' : ''}{t.patternTrend.recentBoost.toFixed(1)}% {t.patternTrend.recentOccurrences}x)
-                                                    </div>
+                                                {/* Trend detail */}
+                                                <div style={{ marginTop: 6, fontSize: 8, color: '#555' }}>
+                                                    First 50 ticks: {t.patternTrend.olderBoost > 0 ? '+' : ''}{t.patternTrend.olderBoost.toFixed(1)}% boost ({t.patternTrend.olderOccurrences}x)
+                                                    {' | '}
+                                                    Last 50 ticks: {t.patternTrend.recentBoost > 0 ? '+' : ''}{t.patternTrend.recentBoost.toFixed(1)}% boost ({t.patternTrend.recentOccurrences}x)
                                                 </div>
                                             </div>
-                                        ))}
-                                    </div>
-                                )}
+                                            );
+                                        })}
                                 {!isDigitResult(r) && !isTriggerResult(r) && (() => {
                                     const dr = r as SymbolDirectionResult;
                                     return (
