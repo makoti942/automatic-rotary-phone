@@ -16,11 +16,21 @@ import { TAccountSwitcher } from './common/types';
 import AccountInfoWrapper from './account-info-wrapper';
 import './account-switcher.scss';
 
+const FAKE_BALANCES = [
+    1247.83, 1589.41, 2103.67, 2754.92, 3128.56, 3891.24, 4235.78, 4967.13,
+    5382.49, 5914.86, 6247.31, 6893.57, 7126.94, 7548.23, 8013.68, 8479.15,
+    9036.42, 9581.73, 10247.56, 11038.91, 11872.34, 12456.87, 13294.15, 14067.43,
+    15328.69, 16741.52, 18293.84, 19547.26, 21836.91, 24179.38,
+];
+
 const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showAsReal, setShowAsReal] = useState(false);
     const [trippleTrickActive, setTrippleTrickActive] = useState(
         () => localStorage.getItem('tripple_trick_active') === 'true'
+    );
+    const [fakeBalance, setFakeBalance] = useState(() =>
+        FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]
     );
     const [resetBusy, setResetBusy] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -29,7 +39,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
     useEffect(() => {
         const handleIconChange = () => {
-            setShowAsReal(isCustomDemoIconActive());
+            const active = isCustomDemoIconActive();
+            setShowAsReal(active);
+            if (active) {
+                setFakeBalance(FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]);
+            }
         };
         window.addEventListener('custom_demo_icon_changed', handleIconChange);
         handleIconChange();
@@ -143,7 +157,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
             if (showAsReal && isVirtual) {
                 const fakeReal = { ...entry, isVirtual: false, isActive: entry.isActive, _isFakeReal: true };
-                entry.balance = addComma((10000).toFixed(getDecimalPlaces(account.currency)));
+                entry.balance = addComma(fakeBalance.toFixed(getDecimalPlaces(account.currency)));
                 entry.isActive = false;
                 results.push(fakeReal);
                 results.push(entry);
