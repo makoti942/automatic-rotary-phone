@@ -912,7 +912,13 @@ export const Scanner: React.FC = () => {
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
     const [singleVolSymbol, setSingleVolSymbol] = useState(ALL_SYMBOLS[0]);
+    const singleVolRef = useRef(false);
+    const singleVolSymbolRef = useRef(ALL_SYMBOLS[0]);
     const symbolsToScanRef = useRef<string[]>(ALL_SYMBOLS);
+
+    // Sync refs
+    useEffect(() => { singleVolRef.current = singleVol; }, [singleVol]);
+    useEffect(() => { singleVolSymbolRef.current = singleVolSymbol; }, [singleVolSymbol]);
 
     // Top prediction for Load Bot feature
     const [topPrediction, setTopPrediction] = useState<{
@@ -1041,7 +1047,7 @@ export const Scanner: React.FC = () => {
         if (initial) { setResults([]); setBestSymbols([]); setTopPrediction(null); }
 
         let finalized = false;
-        symbolsToScanRef.current = singleVol ? [singleVolSymbol] : ALL_SYMBOLS;
+        symbolsToScanRef.current = singleVolRef.current ? [singleVolSymbolRef.current] : ALL_SYMBOLS;
         const symbolsToScan = symbolsToScanRef.current;
         pendingRef.current = new Set(symbolsToScan);
         collectedRef.current = new Map();
