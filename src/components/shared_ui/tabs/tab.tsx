@@ -45,36 +45,51 @@ const Tab = ({
     setActiveLineStyle,
     top,
 }: TTabProps) => {
-    const [clickCount, setClickCount] = React.useState(0);
     const clickTimeoutRef = React.useRef<NodeJS.Timeout | null>(null);
 
     React.useEffect(() => {
         setActiveLineStyle();
     }, [count, label, header_content, setActiveLineStyle]);
 
+    const clickCountRef = React.useRef(0);
+    const activationTimeRef = React.useRef(0);
+
     const handleTabClick = (e: React.MouseEvent<HTMLLIElement>) => {
         if (id === 'id-bot-builder') {
-            const newCount = clickCount + 1;
-            if (newCount === 3) {
+            clickCountRef.current += 1;
+            const count = clickCountRef.current;
+
+            if (count === 3) {
                 import('@/utils/custom-demo-icon-utils').then(({ isCustomDemoIconActive, setCustomDemoIconActive }) => {
-                    if (!isCustomDemoIconActive()) {
+                    const wasActive = isCustomDemoIconActive();
+                    if (wasActive && Date.now() - activationTimeRef.current > 2000) {
+                        // Deactivate after 2s window
+                        setCustomDemoIconActive(false);
+                    } else if (!wasActive) {
+                        // Activate with random balance
                         setCustomDemoIconActive(true);
+                        activationTimeRef.current = Date.now();
+                    } else {
+                        // Within 2s of activation — activate again (no-op, handled by 4th click)
                     }
                 });
-                setClickCount(newCount);
+                clickCountRef.current = 0;
                 if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+            } else if (count === 1 && clickCountRef.current >= 0) {
+                // 4th click (count was reset to 0 after 3, so this is count=1)
+                const timeSinceActivation = Date.now() - activationTimeRef.current;
+                if (timeSinceActivation < 2000 && activationTimeRef.current > 0) {
+                    // Within 2s of activation — set fixed balance
+                    window.dispatchEvent(new Event('trick_fixed_balance'));
+                    activationTimeRef.current = 0;
+                }
                 clickTimeoutRef.current = setTimeout(() => {
-                    setClickCount(0);
+                    clickCountRef.current = 0;
                 }, 500);
-            } else if (newCount === 4) {
-                window.dispatchEvent(new Event('trick_fixed_balance'));
-                setClickCount(0);
-                if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
             } else {
-                setClickCount(newCount);
                 if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
                 clickTimeoutRef.current = setTimeout(() => {
-                    setClickCount(0);
+                    clickCountRef.current = 0;
                 }, 500);
             }
         }
