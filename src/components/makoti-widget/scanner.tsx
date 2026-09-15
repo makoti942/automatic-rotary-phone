@@ -44,17 +44,32 @@ interface TriggerInfo {
     boost: number;
     consistency: number;
     windowSizes: { window: number; winPct: number; boost: number }[];
-    // How each digit's % shifts after this trigger appears
     digitShifts: { digit: number; before: number; after: number; shift: number }[];
-    // Pattern strength over time
     patternTrend: {
-        olderBoost: number;    // boost in first 50 ticks
-        recentBoost: number;   // boost in last 50 ticks
+        olderBoost: number;
+        recentBoost: number;
         olderOccurrences: number;
         recentOccurrences: number;
         trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
-        trendPercent: number;  // how much stronger/weaker (positive = strengthening)
+        trendPercent: number;
     };
+    // Rolling momentum: how digit frequencies change across windows
+    momentum: {
+        winMomentum100: number;
+        winMomentum50: number;
+        winMomentum20: number;
+        overallMomentum: number;
+    };
+    // Decay curve: win% at each tick position after trigger (ticks 1-25)
+    decayCurve: number[];
+    // Best entry window: the tick range where win% peaks
+    bestEntryWindow: { start: number; end: number; peakWinPct: number };
+    // Inter-digit correlation: which specific digits surge after this trigger
+    digitSurges: { digit: number; surgePct: number; count: number }[];
+    // Composite confidence score (0-100)
+    confidence: number;
+    // Digit power: how strong each digit is in the recent window
+    digitPower: number[];
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -74,9 +89,8 @@ function calcDigitPcts(digits: number[]): number[] {
     return counts.map(c => (c / total) * 100);
 }
 
-// ── Entry Digit Trigger Analysis ──
-// Deep analysis: how each digit's appearance affects ALL other digits
-// Shows percentage shifts, pattern strength, and winning digit surge
+// ── Entry Digit Trigger Analysis v2 ──
+// Deep analysis: rolling momentum, decay curves, inter-digit correlation, power scoring
 function analyzeTriggerDigits(
     digits: number[],
     contractType: 'DIGITOVER' | 'DIGITUNDER',
@@ -85,20 +99,29 @@ function analyzeTriggerDigits(
     const len = digits.length;
     if (len < 30) return { baselinePcts: Array(10).fill(0), baselineWinPct: 0, triggers: [] };
 
-    // Baseline: full digit distribution from all 100 ticks
-    const baselinePcts = calcDigitPcts(digits);
-
-    // Calculate baseline winning digit percentage
     const isWin = (d: number) => contractType === 'DIGITOVER' ? d > barrier : d < barrier;
-    const winCount = digits.filter(d => isWin(d)).length;
-    const baselineWinPct = (winCount / len) * 100;
 
-    // Analysis window: 20 ticks (~1 minute of trading)
-    const windowSize = 20;
+    // ── Rolling baseline percentages across 3 windows ──
+    const win100 = calcDigitPcts(digits.slice(-100));
+    const win50 = calcDigitPcts(digits.slice(-50));
+    const win20 = calcDigitPcts(digits.slice(-20));
+
+    // Baseline win% from full dataset
+    const baselineWinPct = (digits.filter(d => isWin(d)).length / len) * 100;
+    const baselinePcts = win100;
+
+    // ── Digit Power Score: which digits are gaining/losing strength ──
+    // Power = weighted combination of frequency + momentum
+    const digitPower = Array(10).fill(0).map((_, d) => {
+        const freq = win20[d]; // current frequency
+        const momentum = win20[d] - win100[d]; // acceleration
+        const consistency = win50[d] - win100[d]; // medium-term trend
+        // Power: current freq weighted by momentum
+        return freq + (momentum * 2) + (consistency * 0.5);
+    });
 
     const triggers: TriggerInfo[] = [];
 
-    // For each possible trigger digit (0-9)
     for (let triggerDigit = 0; triggerDigit <= 9; triggerDigit++) {
         // Find all positions where this trigger digit appears
         const positions: number[] = [];
@@ -106,12 +129,13 @@ function analyzeTriggerDigits(
             if (digits[i] === triggerDigit) positions.push(i);
         }
 
-        if (positions.length < 3) continue; // Need minimum occurrences
+        if (positions.length < 3) continue;
 
-        // Collect ALL digits that appear after each trigger occurrence
+        // ── Collect ALL digits that appear after each trigger occurrence ──
+        const decayWindowSize = 25; // analyze up to 25 ticks after trigger
         const afterDigits: number[] = [];
         for (const pos of positions) {
-            const end = Math.min(pos + windowSize, len);
+            const end = Math.min(pos + decayWindowSize, len);
             for (let j = pos + 1; j < end; j++) {
                 afterDigits.push(digits[j]);
             }
@@ -119,10 +143,35 @@ function analyzeTriggerDigits(
 
         if (afterDigits.length === 0) continue;
 
-        // Calculate digit distribution AFTER trigger
-        const afterPcts = calcDigitPcts(afterDigits);
+        // ── Decay Curve: win% at each tick position after trigger ──
+        // For each tick offset (1, 2, 3... 25), compute the win% across all trigger occurrences
+        const decayCurve: number[] = [];
+        for (let offset = 1; offset <= decayWindowSize; offset++) {
+            let winCount = 0;
+            let totalCount = 0;
+            for (const pos of positions) {
+                const tickIdx = pos + offset;
+                if (tickIdx < len) {
+                    totalCount++;
+                    if (isWin(digits[tickIdx])) winCount++;
+                }
+            }
+            decayCurve.push(totalCount > 0 ? (winCount / totalCount) * 100 : baselineWinPct);
+        }
 
-        // Calculate shift for each digit (after - before)
+        // Find the best entry window (3-tick sliding window with highest avg win%)
+        let bestStart = 0, bestEnd = 3, bestPeak = 0;
+        for (let start = 0; start < decayCurve.length - 2; start++) {
+            const avg = (decayCurve[start] + decayCurve[start + 1] + decayCurve[start + 2]) / 3;
+            if (avg > bestPeak) {
+                bestPeak = avg;
+                bestStart = start;
+                bestEnd = start + 3;
+            }
+        }
+
+        // ── Calculate digit distribution AFTER trigger ──
+        const afterPcts = calcDigitPcts(afterDigits);
         const digitShifts = baselinePcts.map((before, d) => ({
             digit: d,
             before,
@@ -130,16 +179,37 @@ function analyzeTriggerDigits(
             shift: afterPcts[d] - before,
         }));
 
-        // Calculate winning digit % after trigger
+        // ── Winning digit % after trigger ──
         const afterWinCount = afterDigits.filter(d => isWin(d)).length;
         const avgWinPctAfter = (afterWinCount / afterDigits.length) * 100;
         const boost = avgWinPctAfter - baselineWinPct;
 
-        // Consistency: check across multiple sub-windows
+        // ── Rolling Momentum: how win% changes across windows after trigger ──
+        // For each trigger occurrence, compute win% in the first 100, 50, 20 ticks after
+        let winM100 = 0, winM50 = 0, winM20 = 0, totalM100 = 0, totalM50 = 0, totalM20 = 0;
+        for (const pos of positions) {
+            for (let j = pos + 1; j < Math.min(pos + 101, len); j++) {
+                totalM100++;
+                if (isWin(digits[j])) winM100++;
+            }
+            for (let j = pos + 1; j < Math.min(pos + 51, len); j++) {
+                totalM50++;
+                if (isWin(digits[j])) winM50++;
+            }
+            for (let j = pos + 1; j < Math.min(pos + 21, len); j++) {
+                totalM20++;
+                if (isWin(digits[j])) winM20++;
+            }
+        }
+        const pctM100 = totalM100 > 0 ? (winM100 / totalM100) * 100 : baselineWinPct;
+        const pctM50 = totalM50 > 0 ? (winM50 / totalM50) * 100 : baselineWinPct;
+        const pctM20 = totalM20 > 0 ? (winM20 / totalM20) * 100 : baselineWinPct;
+        const overallMomentum = pctM20 - pctM100; // positive = win rate improving recently
+
+        // ── Consistency: check across sub-windows ──
         const subWindows = [5, 10, 15, 20];
         let windowsWithBoost = 0;
         const windowResults: { window: number; winPct: number; boost: number }[] = [];
-
         for (const sw of subWindows) {
             let swWin = 0, swTotal = 0;
             for (const pos of positions) {
@@ -155,76 +225,68 @@ function analyzeTriggerDigits(
             windowResults.push({ window: sw, winPct: swWinPct, boost: swBoost });
             if (swBoost > 0) windowsWithBoost++;
         }
-
         const consistency = windowResults.length > 0
             ? (windowsWithBoost / windowResults.length) * 100
             : 0;
 
-        // ── Pattern Strength Over Time ──
-        // Split into older (first 50 ticks) and recent (last 50 ticks)
-        const halfLen = Math.floor(len / 2);
-        const olderDigits = digits.slice(0, halfLen);
-        const recentDigits = digits.slice(halfLen);
+        // ── Inter-Digit Correlation: which specific digits surge after this trigger ──
+        const digitSurges = Array(10).fill(0).map((_, d) => ({
+            digit: d,
+            surgePct: afterPcts[d] - baselinePcts[d],
+            count: afterDigits.filter(x => x === d).length,
+        })).filter(s => s.surgePct > 1) // only digits that actually surge
+          .sort((a, b) => b.surgePct - a.surgePct);
 
-        // Find trigger occurrences in each half
+        // ── Pattern Strength Over Time ──
+        const halfLen = Math.floor(len / 2);
         const olderPositions = positions.filter(p => p < halfLen);
         const recentPositions = positions.filter(p => p >= halfLen);
 
-        // Calculate boost in older half
         let olderBoost = 0;
         let olderOccurrences = olderPositions.length;
         if (olderOccurrences >= 2) {
             const olderAfter: number[] = [];
             for (const pos of olderPositions) {
-                const end = Math.min(pos + windowSize, halfLen);
-                for (let j = pos + 1; j < end; j++) {
-                    olderAfter.push(digits[j]);
-                }
+                const end = Math.min(pos + 20, halfLen);
+                for (let j = pos + 1; j < end; j++) olderAfter.push(digits[j]);
             }
             if (olderAfter.length > 0) {
-                const olderWinCount = olderAfter.filter(d => isWin(d)).length;
-                const olderWinPct = (olderWinCount / olderAfter.length) * 100;
-                olderBoost = olderWinPct - baselineWinPct;
+                olderBoost = ((olderAfter.filter(d => isWin(d)).length / olderAfter.length) * 100) - baselineWinPct;
             }
         }
 
-        // Calculate boost in recent half
         let recentBoost = 0;
         let recentOccurrences = recentPositions.length;
         if (recentOccurrences >= 2) {
             const recentAfter: number[] = [];
             for (const pos of recentPositions) {
-                const end = Math.min(pos + windowSize, len);
-                for (let j = pos + 1; j < end; j++) {
-                    recentAfter.push(digits[j]);
-                }
+                const end = Math.min(pos + 20, len);
+                for (let j = pos + 1; j < end; j++) recentAfter.push(digits[j]);
             }
             if (recentAfter.length > 0) {
-                const recentWinCount = recentAfter.filter(d => isWin(d)).length;
-                const recentWinPct = (recentWinCount / recentAfter.length) * 100;
-                recentBoost = recentWinPct - baselineWinPct;
+                recentBoost = ((recentAfter.filter(d => isWin(d)).length / recentAfter.length) * 100) - baselineWinPct;
             }
         }
 
-        // Determine trend
         let trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
         let trendPercent = 0;
-
-        if (olderOccurrences < 2 && recentOccurrences >= 2) {
-            trend = 'new';
-            trendPercent = recentBoost;
-        } else if (olderOccurrences >= 2 && recentOccurrences < 2) {
-            trend = 'dying';
-            trendPercent = -olderBoost;
-        } else if (olderOccurrences >= 2 && recentOccurrences >= 2) {
+        if (olderOccurrences < 2 && recentOccurrences >= 2) { trend = 'new'; trendPercent = recentBoost; }
+        else if (olderOccurrences >= 2 && recentOccurrences < 2) { trend = 'dying'; trendPercent = -olderBoost; }
+        else if (olderOccurrences >= 2 && recentOccurrences >= 2) {
             trendPercent = recentBoost - olderBoost;
             if (trendPercent > 5) trend = 'strengthening';
             else if (trendPercent < -5) trend = 'weakening';
             else trend = 'stable';
-        } else {
-            trend = 'stable';
-            trendPercent = 0;
-        }
+        } else { trend = 'stable'; trendPercent = 0; }
+
+        // ── Composite Confidence Score (0-100) ──
+        // Weights: boost (30%), consistency (20%), momentum (20%), decay peak (15%), occurrences (15%)
+        const boostScore = Math.min(30, Math.max(0, boost * 2)); // 0-30
+        const consistencyScore = (consistency / 100) * 20; // 0-20
+        const momentumScore = Math.min(20, Math.max(0, overallMomentum * 1.5)); // 0-20
+        const decayScore = Math.min(15, Math.max(0, (bestPeak - baselineWinPct) * 1.5)); // 0-15
+        const occScore = Math.min(15, (positions.length / 15) * 15); // 0-15 (max at 15 occurrences)
+        const confidence = Math.min(100, boostScore + consistencyScore + momentumScore + decayScore + occScore);
 
         triggers.push({
             digit: triggerDigit,
@@ -235,19 +297,26 @@ function analyzeTriggerDigits(
             windowSizes: windowResults,
             digitShifts,
             patternTrend: {
-                olderBoost,
-                recentBoost,
-                olderOccurrences,
-                recentOccurrences,
-                trend,
-                trendPercent,
+                olderBoost, recentBoost, olderOccurrences, recentOccurrences,
+                trend, trendPercent,
             },
+            momentum: {
+                winMomentum100: pctM100,
+                winMomentum50: pctM50,
+                winMomentum20: pctM20,
+                overallMomentum,
+            },
+            decayCurve,
+            bestEntryWindow: { start: bestStart + 1, end: bestEnd + 1, peakWinPct: bestPeak },
+            digitSurges,
+            confidence,
+            digitPower,
         });
     }
 
-    // Sort by boost (highest first), then consistency
+    // Sort by confidence (highest first), then boost
     triggers.sort((a, b) => {
-        if (Math.abs(a.boost - b.boost) < 1) return b.consistency - a.consistency;
+        if (Math.abs(a.confidence - b.confidence) > 5) return b.confidence - a.confidence;
         return b.boost - a.boost;
     });
 
@@ -444,7 +513,7 @@ export const Scanner: React.FC = () => {
         const sendTicksRequest = () => {
             if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) return;
             const bot = botRef.current;
-            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 100 : 60;
+                            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 500 : 60;
             setProgress(`Fetching ${count} ticks from all 10 volatilities…`);
             ALL_SYMBOLS.forEach(sym => {
                 window._newSystemWS.send(JSON.stringify({ ticks_history: sym, count, end: 'latest', style: 'ticks' }));
@@ -473,7 +542,7 @@ export const Scanner: React.FC = () => {
         let finalized = false;
         pendingRef.current = new Set(ALL_SYMBOLS);
         collectedRef.current = new Map();
-        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 15000 : 10000;
+        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 25000 : 10000;
         const scanTimeout = setTimeout(() => {
             if (!finalized) finalize();
         }, timeoutMs);
@@ -549,10 +618,10 @@ export const Scanner: React.FC = () => {
                         scanResults.sort((a, b) => {
                             if (a.qualifies && !b.qualifies) return -1;
                             if (!a.qualifies && b.qualifies) return 1;
-                            return (b.triggers[0]?.boost ?? 0) - (a.triggers[0]?.boost ?? 0);
+                            return (b.triggers[0]?.confidence ?? 0) - (a.triggers[0]?.confidence ?? 0);
                         });
                         best = scanResults.map(r => r.symbol);
-                        bestScore = Math.round(scanResults[0]?.triggers[0]?.boost ?? 0);
+                        bestScore = Math.round(scanResults[0]?.triggers[0]?.confidence ?? 0);
                         setResults(scanResults);
                         setBestSymbols(best.slice(0, 3));
                         setScanning(false);
@@ -563,7 +632,9 @@ export const Scanner: React.FC = () => {
                         const topTrigger = topResult?.triggers[0];
                         if (topTrigger) {
                             const winDigits = entryType === 'DIGITOVER' ? `${entryBar + 1}-9` : `0-${entryBar - 1}`;
-                            setProgress(`PREDICTION → Volatility: ${topResult.label} | Entry Digit: D${topTrigger.digit} | Win: ${topResult.baselineWinPct.toFixed(0)}% → ${topTrigger.avgWinPctAfter.toFixed(0)}% (+${topTrigger.boost.toFixed(1)}%) on ${winDigits}`);
+                            const decayInfo = `Peak: tick ${topTrigger.bestEntryWindow.start}-${topTrigger.bestEntryWindow.end} @ ${topTrigger.bestEntryWindow.peakWinPct.toFixed(0)}%`;
+                            const momentumInfo = `Momentum: ${topTrigger.momentum.overallMomentum > 0 ? '+' : ''}${topTrigger.momentum.overallMomentum.toFixed(1)}%`;
+                            setProgress(`PREDICTION → ${topResult.label} | Entry: D${topTrigger.digit} | Win: ${topResult.baselineWinPct.toFixed(0)}% → ${topTrigger.avgWinPctAfter.toFixed(0)}% (+${topTrigger.boost.toFixed(1)}%) | Score: ${topTrigger.confidence.toFixed(0)}/100 | ${decayInfo} | ${momentumInfo}`);
                         } else {
                             setProgress('No strong trigger pattern found');
                         }
@@ -577,9 +648,9 @@ export const Scanner: React.FC = () => {
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar);
 
                     const bestTrigger = analysis.triggers[0];
-                    const qualifies = bestTrigger !== undefined && bestTrigger.boost > 5 && bestTrigger.consistency >= 50;
+                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40;
                     const detail = bestTrigger
-                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) → +${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent`
+                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent | Score: ${bestTrigger.confidence.toFixed(0)}/100`
                         : 'No strong trigger found';
 
                     scanResults.push({
@@ -805,7 +876,7 @@ export const Scanner: React.FC = () => {
                         {bot === 'pvty_kill'
                             ? 'Digit 7 / 8 / 9 Distribution (1 000 ticks)'
                             : bot === 'entry_digit'
-                            ? `Entry Digit Trigger Analysis (100 ticks) — ${entryContractType === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${entryBarrier}`
+                            ? `Entry Digit Trigger Analysis (500 ticks) — ${entryContractType === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${entryBarrier}`
                             : `Micro-Choppiness (current candle, 60 ticks) ${autoSwitcherActive ? '— Auto-switching ON' : ''}`}
                     </div>
                     {bestSymbols.length > 0 && (
@@ -837,7 +908,7 @@ export const Scanner: React.FC = () => {
                                     <div style={{ padding: '4px 0' }}>
                                         {/* Baseline digit distribution */}
                                         <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
-                                            Baseline (100 ticks) — Win rate: <span style={{ color: '#ffd700' }}>{r.baselineWinPct.toFixed(1)}%</span>
+                                            Baseline (500 ticks) — Win rate: <span style={{ color: '#ffd700' }}>{r.baselineWinPct.toFixed(1)}%</span>
                                         </div>
                                         <div style={{ display: 'flex', gap: 3, marginBottom: 8, flexWrap: 'wrap' }}>
                                             {r.baselinePcts.map((p, i) => {
@@ -922,8 +993,49 @@ export const Scanner: React.FC = () => {
                                                     })}
                                                 </div>
 
+                                                {/* Confidence + Momentum + Decay peak */}
+                                                <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                                    <div style={{
+                                                        background: t.confidence >= 60 ? '#1a3d1a' : t.confidence >= 40 ? '#3d3a1a' : '#3d1a1a',
+                                                        border: `1px solid ${t.confidence >= 60 ? '#4caf50' : t.confidence >= 40 ? '#ffc107' : '#f44336'}`,
+                                                        borderRadius: 4, padding: '3px 8px', fontSize: 10, fontWeight: 'bold',
+                                                        color: t.confidence >= 60 ? '#4caf50' : t.confidence >= 40 ? '#ffc107' : '#f44336',
+                                                    }}>
+                                                        Score: {t.confidence.toFixed(0)}/100
+                                                    </div>
+                                                    <div style={{
+                                                        background: t.momentum.overallMomentum > 0 ? '#1a3d1a' : '#3d1a1a',
+                                                        border: `1px solid ${t.momentum.overallMomentum > 0 ? '#4caf50' : '#f44336'}`,
+                                                        borderRadius: 4, padding: '3px 8px', fontSize: 10,
+                                                        color: t.momentum.overallMomentum > 0 ? '#4caf50' : '#f44336',
+                                                    }}>
+                                                        Momentum: {t.momentum.overallMomentum > 0 ? '+' : ''}{t.momentum.overallMomentum.toFixed(1)}%
+                                                    </div>
+                                                    <div style={{
+                                                        background: '#1a1a3d', border: '1px solid #666',
+                                                        borderRadius: 4, padding: '3px 8px', fontSize: 10, color: '#aaa',
+                                                    }}>
+                                                        Peak: tick {t.bestEntryWindow.start}-{t.bestEntryWindow.end} @ {t.bestEntryWindow.peakWinPct.toFixed(0)}%
+                                                    </div>
+                                                </div>
+
+                                                {/* Digit surge info: which specific digits are boosted */}
+                                                {t.digitSurges.length > 0 && (
+                                                    <div style={{ marginTop: 6, fontSize: 9, color: '#888' }}>
+                                                        Digits that surge after D{t.digit}:{' '}
+                                                        {t.digitSurges.slice(0, 5).map((s, si) => (
+                                                            <span key={s.digit} style={{
+                                                                color: (entryContractType === 'DIGITOVER' ? s.digit > entryBarrier : s.digit < entryBarrier) ? '#4caf50' : '#888',
+                                                                fontWeight: si === 0 ? 'bold' : 'normal',
+                                                            }}>
+                                                                D{s.digit}+{s.surgePct.toFixed(1)}%{si < Math.min(t.digitSurges.length, 5) - 1 ? ', ' : ''}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )}
+
                                                 {/* Trend detail */}
-                                                <div style={{ marginTop: 6, fontSize: 8, color: '#555' }}>
+                                                <div style={{ marginTop: 4, fontSize: 8, color: '#555' }}>
                                                     First 50 ticks: {t.patternTrend.olderBoost > 0 ? '+' : ''}{t.patternTrend.olderBoost.toFixed(1)}% boost ({t.patternTrend.olderOccurrences}x)
                                                     {' | '}
                                                     Last 50 ticks: {t.patternTrend.recentBoost > 0 ? '+' : ''}{t.patternTrend.recentBoost.toFixed(1)}% boost ({t.patternTrend.recentOccurrences}x)
