@@ -912,6 +912,7 @@ export const Scanner: React.FC = () => {
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
     const [singleVolSymbol, setSingleVolSymbol] = useState(ALL_SYMBOLS[0]);
+    const symbolsToScanRef = useRef<string[]>(ALL_SYMBOLS);
 
     // Top prediction for Load Bot feature
     const [topPrediction, setTopPrediction] = useState<{
@@ -1012,9 +1013,10 @@ export const Scanner: React.FC = () => {
         const sendTicksRequest = () => {
             if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) return;
             const bot = botRef.current;
-                            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 500 : 60;
-            setProgress(`Fetching ${count} ticks from all 10 volatilities…`);
-            ALL_SYMBOLS.forEach(sym => {
+            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 500 : 60;
+            const syms = symbolsToScanRef.current;
+            setProgress(`Fetching ${count} ticks from ${syms.length === 1 ? SYMBOL_LABELS[syms[0]] : `${syms.length} volatilities`}…`);
+            syms.forEach(sym => {
                 window._newSystemWS.send(JSON.stringify({ ticks_history: sym, count, end: 'latest', style: 'ticks' }));
             });
         };
@@ -1039,7 +1041,8 @@ export const Scanner: React.FC = () => {
         if (initial) { setResults([]); setBestSymbols([]); setTopPrediction(null); }
 
         let finalized = false;
-        const symbolsToScan = singleVol ? [singleVolSymbol] : ALL_SYMBOLS;
+        symbolsToScanRef.current = singleVol ? [singleVolSymbol] : ALL_SYMBOLS;
+        const symbolsToScan = symbolsToScanRef.current;
         pendingRef.current = new Set(symbolsToScan);
         collectedRef.current = new Map();
         const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 25000 : 10000;
@@ -1248,14 +1251,14 @@ export const Scanner: React.FC = () => {
         const mws = ensureWs();
         if (mws.isOpen()) {
             if (currentBot === 'pvty_kill') {
-                setProgress('Fetching 1000 ticks from all 10 volatilities…');
-                ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' }));
+                setProgress(`Fetching 1000 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
+                symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' }));
             } else if (currentBot === 'entry_digit') {
-                setProgress('Fetching 100 ticks from all 10 volatilities…');
-                ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
+                setProgress(`Fetching 500 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
+                symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 500, end: 'latest', style: 'ticks' }));
             } else {
-                setProgress('Fetching 60 ticks from all 10 volatilities…');
-                ALL_SYMBOLS.forEach(sym => mws.send({ ticks_history: sym, count: 60, end: 'latest', style: 'ticks' }));
+                setProgress(`Fetching 60 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
+                symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 60, end: 'latest', style: 'ticks' }));
             }
         }
         // If not open yet, ensureWs will trigger onReady → which fires the requests
