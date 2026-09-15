@@ -906,8 +906,8 @@ export const Scanner: React.FC = () => {
     const [notification, setNotification] = useState<{ msg: string; type: 'info' | 'success' | 'warn' } | null>(null);
 
     // Entry Digit config
-    const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITOVER');
-    const [entryBarrier, setEntryBarrier] = useState(3);
+    const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
+    const [entryBarrier, setEntryBarrier] = useState(7);
 
     // Top prediction for Load Bot feature
     const [topPrediction, setTopPrediction] = useState<{
@@ -927,8 +927,8 @@ export const Scanner: React.FC = () => {
     const pendingSymbolRef = useRef<string>('');
     const msgHandlerRef = useRef<(data: any) => void>(() => {});
     const cancelScanRef = useRef<(() => void) | null>(null);
-    const entryContractTypeRef = useRef<'DIGITOVER' | 'DIGITUNDER'>('DIGITOVER');
-    const entryBarrierRef = useRef(3);
+    const entryContractTypeRef = useRef<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
+    const entryBarrierRef = useRef(7);
 
     // Sync Entry Digit refs
     useEffect(() => { entryContractTypeRef.current = entryContractType; }, [entryContractType]);
