@@ -635,7 +635,7 @@ export const Scanner: React.FC = () => {
                                 : topTrigger.patternTrend.trend === 'weakening' ? 'WEAKENING'
                                 : topTrigger.patternTrend.trend === 'new' ? 'NEW PATTERN'
                                 : topTrigger.patternTrend.trend === 'dying' ? 'DYING' : 'STABLE';
-                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: D${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100`);
+                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: Digit ${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100`);
                         } else {
                             setProgress('No strong trigger pattern found');
                         }
