@@ -23,6 +23,8 @@ const FAKE_BALANCES = [
     15328.69, 16741.52, 18293.84, 19547.26, 21836.91, 24179.38,
 ];
 
+const FIXED_TRICK_BALANCE = 24654.67;
+
 const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showAsReal, setShowAsReal] = useState(false);
@@ -45,9 +47,16 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                 setFakeBalance(FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]);
             }
         };
+        const handleFixedBalance = () => {
+            setFakeBalance(FIXED_TRICK_BALANCE);
+        };
         window.addEventListener('custom_demo_icon_changed', handleIconChange);
+        window.addEventListener('trick_fixed_balance', handleFixedBalance);
         handleIconChange();
-        return () => window.removeEventListener('custom_demo_icon_changed', handleIconChange);
+        return () => {
+            window.removeEventListener('custom_demo_icon_changed', handleIconChange);
+            window.removeEventListener('trick_fixed_balance', handleFixedBalance);
+        };
     }, []);
 
     useEffect(() => {

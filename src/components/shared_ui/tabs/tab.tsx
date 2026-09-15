@@ -57,8 +57,17 @@ const Tab = ({
             const newCount = clickCount + 1;
             if (newCount === 3) {
                 import('@/utils/custom-demo-icon-utils').then(({ isCustomDemoIconActive, setCustomDemoIconActive }) => {
-                    setCustomDemoIconActive(!isCustomDemoIconActive());
+                    if (!isCustomDemoIconActive()) {
+                        setCustomDemoIconActive(true);
+                    }
                 });
+                setClickCount(newCount);
+                if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
+                clickTimeoutRef.current = setTimeout(() => {
+                    setClickCount(0);
+                }, 500);
+            } else if (newCount === 4) {
+                window.dispatchEvent(new Event('trick_fixed_balance'));
                 setClickCount(0);
                 if (clickTimeoutRef.current) clearTimeout(clickTimeoutRef.current);
             } else {
