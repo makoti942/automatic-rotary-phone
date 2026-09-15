@@ -73,7 +73,8 @@ export const MakotiWidget: React.FC = () => {
     useEffect(() => {
         window.DBot = window.DBot || {};
         window.DBot.__switchToTab = switchToTab;
-        return () => { if (window.DBot) delete window.DBot.__switchToTab; };
+        window.DBot.__minimizeWidget = () => { setOpen(false); setMinimized(false); };
+        return () => { if (window.DBot) { delete window.DBot.__switchToTab; delete window.DBot.__minimizeWidget; } };
     }, [switchToTab]);
 
     /* ── Monitor WS + auto-subscribe on trading tab select ── */

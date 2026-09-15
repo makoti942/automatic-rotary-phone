@@ -994,6 +994,7 @@ export const Scanner: React.FC = () => {
                     true
                 );
                 showNotify('Bot loaded into workspace!', 'success');
+                (window.DBot as any)?.__minimizeWidget?.();
             }
         } catch (e: any) {
             showNotify(`Failed to load bot: ${e.message}`, 'warn');
