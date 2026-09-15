@@ -867,7 +867,14 @@ export const Scanner: React.FC = () => {
                         background: '#1a3d1a', border: '1px solid #4caf50', borderRadius: 4,
                         padding: 8, marginTop: 6, fontSize: 12, color: '#fff', fontWeight: 'bold',
                     } : {}}>
-                        {progress}
+                        {progress.startsWith('PREDICTION') ? (() => {
+                            const parts = progress.replace('PREDICTION → ', '').split(' | ');
+                            return (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                                    {parts.map((p, i) => <span key={i}>{p}</span>)}
+                                </div>
+                            );
+                        })() : progress}
                     </div>
                 )}
             </div>
