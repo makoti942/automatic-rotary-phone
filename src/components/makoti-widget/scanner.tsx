@@ -909,6 +909,10 @@ export const Scanner: React.FC = () => {
     const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
     const [entryBarrier, setEntryBarrier] = useState(7);
 
+    // Single vs all volatilities
+    const [singleVol, setSingleVol] = useState(false);
+    const [singleVolSymbol, setSingleVolSymbol] = useState(ALL_SYMBOLS[0]);
+
     // Top prediction for Load Bot feature
     const [topPrediction, setTopPrediction] = useState<{
         symbol: string; label: string; entryDigit: number;
@@ -1035,7 +1039,8 @@ export const Scanner: React.FC = () => {
         if (initial) { setResults([]); setBestSymbols([]); setTopPrediction(null); }
 
         let finalized = false;
-        pendingRef.current = new Set(ALL_SYMBOLS);
+        const symbolsToScan = singleVol ? [singleVolSymbol] : ALL_SYMBOLS;
+        pendingRef.current = new Set(symbolsToScan);
         collectedRef.current = new Map();
         const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 25000 : 10000;
         const scanTimeout = setTimeout(() => {
@@ -1046,21 +1051,21 @@ export const Scanner: React.FC = () => {
             if (data.error) {
                 if (data.msg_type === 'history') {
                     const sym: string = data.echo_req?.ticks_history;
-                    if (sym && pendingRef.current.has(sym)) {
-                        pendingRef.current.delete(sym);
-                        setProgress(`Fetched ${ALL_SYMBOLS.length - pendingRef.current.size} / ${ALL_SYMBOLS.length}…`);
-                        if (pendingRef.current.size === 0 && !finalized) { clearTimeout(scanTimeout); finalize(); }
-                    }
+                if (sym && pendingRef.current.has(sym)) {
+                    pendingRef.current.delete(sym);
+                    setProgress(`Fetched ${symbolsToScan.length - pendingRef.current.size} / ${symbolsToScan.length}…`);
+                    if (pendingRef.current.size === 0 && !finalized) { clearTimeout(scanTimeout); finalize(); }
                 }
-                return;
             }
-            if (data.msg_type === 'history' && data.history?.prices) {
-                const sym: string = data.echo_req?.ticks_history;
-                if (!sym || !pendingRef.current.has(sym)) return;
-                pendingRef.current.delete(sym);
-                collectedRef.current.set(sym, data.history.prices.map(Number));
-                setProgress(`Fetched ${ALL_SYMBOLS.length - pendingRef.current.size} / ${ALL_SYMBOLS.length}…`);
-                if (pendingRef.current.size === 0 && !finalized) { clearTimeout(scanTimeout); finalize(); }
+            return;
+        }
+        if (data.msg_type === 'history' && data.history?.prices) {
+            const sym: string = data.echo_req?.ticks_history;
+            if (!sym || !pendingRef.current.has(sym)) return;
+            pendingRef.current.delete(sym);
+            collectedRef.current.set(sym, data.history.prices.map(Number));
+            setProgress(`Fetched ${symbolsToScan.length - pendingRef.current.size} / ${symbolsToScan.length}…`);
+            if (pendingRef.current.size === 0 && !finalized) { clearTimeout(scanTimeout); finalize(); }
             }
         };
 
@@ -1360,6 +1365,22 @@ export const Scanner: React.FC = () => {
                         {autoSwitcherActive && <span className='mw-switch-active'>ACTIVE</span>}
                         {pendingSymbol && <span className='mw-switch-pending'>⏳ WIN REQUIRED</span>}
                     </label>
+                )}
+                <label className='mw-switch-row'>
+                    <span className='mw-switch-label'>Single Volatility</span>
+                    <div className='mw-toggle' onClick={() => { if (!scanning) setSingleVol(v => !v); }}>
+                        <div className={`mw-toggle__track${singleVol ? ' mw-toggle__track--on' : ''}`}>
+                            <div className={`mw-toggle__thumb${singleVol ? ' mw-toggle__thumb--on' : ''}`} />
+                        </div>
+                    </div>
+                </label>
+                {singleVol && (
+                    <div className='mw-field' style={{ marginBottom: 6 }}>
+                        <label className='mw-label'>Volatility</label>
+                        <MwSelect value={singleVolSymbol}
+                            options={ALL_SYMBOLS.map(s => ({ value: s, label: SYMBOL_LABELS[s] }))}
+                            onChange={v => setSingleVolSymbol(v)} disabled={scanning} />
+                    </div>
                 )}
                 <button className={`mw-btn mw-btn--scan${scanning ? ' mw-btn--busy' : ''}`} onClick={analyze} disabled={scanning}>
                     {scanning ? <><span className='mw-spin' /> Analyzing…</> : 'Analyze'}
