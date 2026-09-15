@@ -882,11 +882,16 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
         const mws = openMakotiWS(
             handleMsg,
             () => {
-                addLog('Live tick stream active — trading immediately', 'info');
+                addLog('Live tick stream active — fetching historical ticks…', 'info');
                 if (!window._newSystemWS) {
                     mws.send({ proposal_open_contract: 1, subscribe: 1 });
                 }
-                // Skip ticks_history — live ticks already flowing from auto-subscription
+                // Pre-fill tick buffers with historical data so trading starts immediately
+                if (window._newSystemWS?.readyState === WebSocket.OPEN) {
+                    ALL_SYMBOLS.forEach(sym => {
+                        window._newSystemWS.send(JSON.stringify({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
+                    });
+                }
             },
             () => {
                 if (runningRef.current) {
