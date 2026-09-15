@@ -631,10 +631,11 @@ export const Scanner: React.FC = () => {
                         const topResult = scanResults[0];
                         const topTrigger = topResult?.triggers[0];
                         if (topTrigger) {
-                            const winDigits = entryType === 'DIGITOVER' ? `${entryBar + 1}-9` : `0-${entryBar - 1}`;
-                            const decayInfo = `Peak: tick ${topTrigger.bestEntryWindow.start}-${topTrigger.bestEntryWindow.end} @ ${topTrigger.bestEntryWindow.peakWinPct.toFixed(0)}%`;
-                            const momentumInfo = `Momentum: ${topTrigger.momentum.overallMomentum > 0 ? '+' : ''}${topTrigger.momentum.overallMomentum.toFixed(1)}%`;
-                            setProgress(`PREDICTION → ${topResult.label} | Entry: D${topTrigger.digit} | Win: ${topResult.baselineWinPct.toFixed(0)}% → ${topTrigger.avgWinPctAfter.toFixed(0)}% (+${topTrigger.boost.toFixed(1)}%) | Score: ${topTrigger.confidence.toFixed(0)}/100 | ${decayInfo} | ${momentumInfo}`);
+                            const trendLabel = topTrigger.patternTrend.trend === 'strengthening' ? 'STRENGTHENING'
+                                : topTrigger.patternTrend.trend === 'weakening' ? 'WEAKENING'
+                                : topTrigger.patternTrend.trend === 'new' ? 'NEW PATTERN'
+                                : topTrigger.patternTrend.trend === 'dying' ? 'DYING' : 'STABLE';
+                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: D${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100`);
                         } else {
                             setProgress('No strong trigger pattern found');
                         }
