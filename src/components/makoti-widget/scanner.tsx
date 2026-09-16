@@ -520,23 +520,22 @@ interface TriggerInfo {
         trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
         trendPercent: number;
     };
-    // Rolling momentum: how digit frequencies change across windows
     momentum: {
         winMomentum100: number;
         winMomentum50: number;
         winMomentum20: number;
         overallMomentum: number;
     };
-    // Decay curve: win% at each tick position after trigger (ticks 1-25)
     decayCurve: number[];
-    // Best entry window: the tick range where win% peaks
     bestEntryWindow: { start: number; end: number; peakWinPct: number };
-    // Inter-digit correlation: which specific digits surge after this trigger
     digitSurges: { digit: number; surgePct: number; count: number }[];
-    // Composite confidence score (0-100)
     confidence: number;
-    // Digit power: how strong each digit is in the recent window
     digitPower: number[];
+    // Tier 1 improvements
+    zScore: number;         // statistical significance of boost
+    pValue: number;         // probability boost is noise
+    significance: 'high' | 'medium' | 'low' | 'none';
+    triggerPower: number;   // how strong the trigger digit is in current market
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -747,13 +746,51 @@ function analyzeTriggerDigits(
         } else { trend = 'stable'; trendPercent = 0; }
 
         // ── Composite Confidence Score (0-100) ──
-        // Weights: boost (30%), consistency (20%), momentum (20%), decay peak (15%), occurrences (15%)
+        // Tier 1 improvements: z-score significance, digitPower integration, sample-size weighting
+
+        // B: Z-Score — statistical significance of boost vs noise
+        // H0: trigger has no effect, win% = baselineWinPct
+        // SE = sqrt(p*(1-p)/n) where p = baseline win proportion, n = post-trigger sample size
+        const n = afterDigits.length;
+        const p = baselineWinPct / 100;
+        const se = Math.sqrt(p * (1 - p) / Math.max(n, 1));
+        const observedP = avgWinPctAfter / 100;
+        const zScore = se > 0 ? (observedP - p) / se : 0;
+
+        // Approximate p-value from z-score (two-tailed)
+        // Using approximation: p ≈ 2 * (1 - Φ(|z|)) where Φ is standard normal CDF
+        const absZ = Math.abs(zScore);
+        const pValue = absZ < 0.5 ? 0.62 : absZ < 1 ? 0.32 : absZ < 1.5 ? 0.13 : absZ < 2 ? 0.046 : absZ < 2.5 ? 0.012 : absZ < 3 ? 0.0027 : 0.0003;
+
+        // Significance tier
+        let significance: 'high' | 'medium' | 'low' | 'none';
+        if (pValue < 0.01 && positions.length >= 10) significance = 'high';
+        else if (pValue < 0.05 && positions.length >= 6) significance = 'medium';
+        else if (pValue < 0.15 && positions.length >= 4) significance = 'low';
+        else significance = 'none';
+
+        // C: Trigger Power — how strong the trigger digit itself is in current market
+        const triggerPower = digitPower[triggerDigit];
+
+        // D: Sample-size weight — downweight triggers with few occurrences
+        // Full weight at 20+ occurrences, linear scale down to 0 at 0 occurrences
+        const sampleWeight = Math.min(1, positions.length / 20);
+
+        // Weighted components (0-100 scale)
         const boostScore = Math.min(30, Math.max(0, boost * 2)); // 0-30
         const consistencyScore = (consistency / 100) * 20; // 0-20
         const momentumScore = Math.min(20, Math.max(0, overallMomentum * 1.5)); // 0-20
         const decayScore = Math.min(15, Math.max(0, (bestPeak - baselineWinPct) * 1.5)); // 0-15
-        const occScore = Math.min(15, (positions.length / 15) * 15); // 0-15 (max at 15 occurrences)
-        const confidence = Math.min(100, boostScore + consistencyScore + momentumScore + decayScore + occScore);
+        const occScore = Math.min(15, (positions.length / 15) * 15); // 0-15
+
+        // C: DigitPower bonus — boost confidence if trigger digit is gaining strength (0-10)
+        const powerBonus = Math.min(10, Math.max(0, triggerPower * 0.8));
+
+        // Raw score
+        const rawScore = boostScore + consistencyScore + momentumScore + decayScore + occScore + powerBonus;
+
+        // D: Apply sample-size penalty — low-occurrence triggers get heavily penalized
+        const confidence = Math.min(100, rawScore * sampleWeight);
 
         triggers.push({
             digit: triggerDigit,
@@ -778,6 +815,10 @@ function analyzeTriggerDigits(
             digitSurges,
             confidence,
             digitPower,
+            zScore,
+            pValue,
+            significance,
+            triggerPower,
         });
     }
 
@@ -1021,7 +1062,7 @@ export const Scanner: React.FC = () => {
         const sendTicksRequest = () => {
             if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) return;
             const bot = botRef.current;
-            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 500 : 60;
+            const count = bot === 'pvty_kill' ? 1000 : bot === 'entry_digit' ? 1500 : 60;
             const syms = symbolsToScanRef.current;
             setProgress(`Fetching ${count} ticks from ${syms.length === 1 ? SYMBOL_LABELS[syms[0]] : `${syms.length} volatilities`}…`);
             syms.forEach(sym => {
@@ -1053,7 +1094,7 @@ export const Scanner: React.FC = () => {
         const symbolsToScan = symbolsToScanRef.current;
         pendingRef.current = new Set(symbolsToScan);
         collectedRef.current = new Map();
-        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 25000 : 10000;
+        const timeoutMs = currentBot === 'pvty_kill' ? 20000 : currentBot === 'entry_digit' ? 45000 : 10000;
         const scanTimeout = setTimeout(() => {
             if (!finalized) finalize();
         }, timeoutMs);
@@ -1146,7 +1187,7 @@ export const Scanner: React.FC = () => {
                                 : topTrigger.patternTrend.trend === 'weakening' ? 'WEAKENING'
                                 : topTrigger.patternTrend.trend === 'new' ? 'NEW PATTERN'
                                 : topTrigger.patternTrend.trend === 'dying' ? 'DYING' : 'STABLE';
-                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: Digit ${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100`);
+                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: Digit ${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100 | ${topTrigger.significance === 'high' ? '★ SIGNIFICANT' : topTrigger.significance === 'medium' ? '◆ MODERATE' : topTrigger.significance === 'low' ? '○ MARGINAL' : '× NOISE'}`);
                             setTopPrediction({
                                 symbol: topResult.symbol, label: topResult.label,
                                 entryDigit: topTrigger.digit,
@@ -1167,7 +1208,7 @@ export const Scanner: React.FC = () => {
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar);
 
                     const bestTrigger = analysis.triggers[0];
-                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40;
+                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none';
                     const detail = bestTrigger
                         ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent | Score: ${bestTrigger.confidence.toFixed(0)}/100`
                         : 'No strong trigger found';
@@ -1262,8 +1303,8 @@ export const Scanner: React.FC = () => {
                 setProgress(`Fetching 1000 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
                 symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 1000, end: 'latest', style: 'ticks' }));
             } else if (currentBot === 'entry_digit') {
-                setProgress(`Fetching 500 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
-                symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 500, end: 'latest', style: 'ticks' }));
+                setProgress(`Fetching 1500 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
+                symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 1500, end: 'latest', style: 'ticks' }));
             } else {
                 setProgress(`Fetching 60 ticks from ${symbolsToScan.length === 1 ? SYMBOL_LABELS[symbolsToScan[0]] : `${symbolsToScan.length} volatilities`}…`);
                 symbolsToScan.forEach(sym => mws.send({ ticks_history: sym, count: 60, end: 'latest', style: 'ticks' }));
@@ -1431,7 +1472,7 @@ export const Scanner: React.FC = () => {
                         {bot === 'pvty_kill'
                             ? 'Digit 7 / 8 / 9 Distribution (1 000 ticks)'
                             : bot === 'entry_digit'
-                            ? `Entry Digit Trigger Analysis (500 ticks) — ${entryContractType === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${entryBarrier}`
+                            ? `Entry Digit Trigger Analysis (1500 ticks) — ${entryContractType === 'DIGITOVER' ? 'OVER' : 'UNDER'} ${entryBarrier}`
                             : `Micro-Choppiness (current candle, 60 ticks) ${autoSwitcherActive ? '— Auto-switching ON' : ''}`}
                     </div>
                     {bestSymbols.length > 0 && (
@@ -1463,7 +1504,7 @@ export const Scanner: React.FC = () => {
                                     <div style={{ padding: '4px 0' }}>
                                         {/* Baseline digit distribution */}
                                         <div style={{ fontSize: 9, color: '#888', marginBottom: 4 }}>
-                                            Baseline (500 ticks) — Win rate: <span style={{ color: '#ffd700' }}>{r.baselineWinPct.toFixed(1)}%</span>
+                                            Baseline (1500 ticks) — Win rate: <span style={{ color: '#ffd700' }}>{r.baselineWinPct.toFixed(1)}%</span>
                                         </div>
                                         <div style={{ display: 'flex', gap: 3, marginBottom: 8, flexWrap: 'wrap' }}>
                                             {r.baselinePcts.map((p, i) => {
@@ -1548,7 +1589,7 @@ export const Scanner: React.FC = () => {
                                                     })}
                                                 </div>
 
-                                                {/* Confidence + Momentum + Decay peak */}
+                                                {/* Confidence + Momentum + Decay peak + Significance */}
                                                 <div style={{ marginTop: 6, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                                                     <div style={{
                                                         background: t.confidence >= 60 ? '#1a3d1a' : t.confidence >= 40 ? '#3d3a1a' : '#3d1a1a',
@@ -1557,6 +1598,15 @@ export const Scanner: React.FC = () => {
                                                         color: t.confidence >= 60 ? '#4caf50' : t.confidence >= 40 ? '#ffc107' : '#f44336',
                                                     }}>
                                                         Score: {t.confidence.toFixed(0)}/100
+                                                    </div>
+                                                    <div style={{
+                                                        background: t.significance === 'high' ? '#1a3d1a' : t.significance === 'medium' ? '#3d3a1a' : t.significance === 'low' ? '#3d2a1a' : '#3d1a1a',
+                                                        border: `1px solid ${t.significance === 'high' ? '#4caf50' : t.significance === 'medium' ? '#ffc107' : t.significance === 'low' ? '#ff9800' : '#f44336'}`,
+                                                        borderRadius: 4, padding: '3px 8px', fontSize: 10, fontWeight: 'bold',
+                                                        color: t.significance === 'high' ? '#4caf50' : t.significance === 'medium' ? '#ffc107' : t.significance === 'low' ? '#ff9800' : '#f44336',
+                                                    }}>
+                                                        {t.significance === 'high' ? '★ SIGNIFICANT' : t.significance === 'medium' ? '◆ MODERATE' : t.significance === 'low' ? '○ MARGINAL' : '× NOISE'}
+                                                        {t.pValue < 1 && <span style={{ opacity: 0.7 }}> (p={t.pValue.toFixed(3)})</span>}
                                                     </div>
                                                     <div style={{
                                                         background: t.momentum.overallMomentum > 0 ? '#1a3d1a' : '#3d1a1a',
