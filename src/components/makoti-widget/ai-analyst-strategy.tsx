@@ -28,7 +28,7 @@ const {
 const running = phase === 'running';
 
     return (
-        <div className='mw-killer'>
+        <div className='mw-killer ai-analyst-theme'>
             <div className='mw-killer__fields'>
                 <div className='mw-field'>
                     <label className='mw-label'>Focus</label>

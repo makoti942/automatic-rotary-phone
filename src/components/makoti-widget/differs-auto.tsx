@@ -575,7 +575,7 @@ export const DiffersAuto: React.FC = () => {
     useEffect(() => { return () => { runRef.current = false; unsubscribeAll(); if (cooldownTimerRef.current) { clearTimeout(cooldownTimerRef.current); } if (wsRef.current) { wsRef.current.close(); wsRef.current = null; } }; }, [unsubscribeAll]);
 
     return (
-        <div className='mw-da'>
+        <div className='mw-da differs-theme'>
             <div className='mw-da__controls'>
                 <div className='mw-field'>
                     <label className='mw-label'>Stake ($)</label>

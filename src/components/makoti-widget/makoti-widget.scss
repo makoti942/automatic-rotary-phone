@@ -2214,3 +2214,223 @@ $mw-radius:   10px;
     color: $mw-text;
     word-break: break-word;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// UNIQUE STRATEGY THEMES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── 1. SCANNER — Tech/Cyan Matrix ─────────────────────────────────────────
+.scanner-theme {
+    --th-accent: #00e5ff;
+    --th-accent2: #00b8d4;
+    --th-bg: #0a0e1a;
+    --th-bg2: #0d1225;
+    --th-bg3: #111830;
+    --th-border: rgba(0,229,255,0.15);
+    --th-glow: rgba(0,229,255,0.3);
+    --th-text: #e0f7fa;
+    --th-muted: #4dd0e1;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #0a0e1a 0%, #0d1a2d 100%) !important;
+        border-bottom: 1px solid rgba(0,229,255,0.3) !important;
+    }
+    .mw-win-title { color: #00e5ff !important; text-shadow: 0 0 20px rgba(0,229,255,0.5); }
+    .mw-win-body { background: #0a0e1a !important; }
+    .mw-btn--scan { background: linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%) !important; }
+    .mw-scanner__progress { border-color: rgba(0,229,255,0.3) !important; }
+    .mw-scanner__row--match { border-left: 3px solid #00e5ff !important; }
+    .mw-scanner__badge { background: rgba(0,229,255,0.15) !important; color: #00e5ff !important; border: 1px solid rgba(0,229,255,0.3) !important; }
+    .mw-tab-dropdown__item--active { color: #00e5ff !important; }
+}
+
+// ─── 2. MARKET KILLER — Military/Tactical ──────────────────────────────────
+.market-killer-theme {
+    --th-accent: #8bc34a;
+    --th-accent2: #689f38;
+    --th-bg: #0d1208;
+    --th-bg2: #141c0e;
+    --th-bg3: #1a2412;
+    --th-border: rgba(139,195,74,0.2);
+    --th-glow: rgba(139,195,74,0.3);
+    --th-text: #e8f5e9;
+    --th-muted: #81c784;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #0d1208 0%, #1a2412 100%) !important;
+        border-bottom: 1px solid rgba(139,195,74,0.3) !important;
+    }
+    .mw-win-title { color: #8bc34a !important; text-shadow: 0 0 20px rgba(139,195,74,0.5); }
+    .mw-win-body { background: #0d1208 !important; }
+    .mw-btn--kill { background: linear-gradient(135deg, #8bc34a 0%, #689f38 100%) !important; color: #0d1208 !important; }
+    .mw-killer { background: #141c0e !important; border-color: rgba(139,195,74,0.2) !important; }
+    .mw-killer__sym-row { border-bottom-color: rgba(139,195,74,0.1) !important; }
+    .mw-tab-dropdown__item--active { color: #8bc34a !important; }
+}
+
+// ─── 3. O/U KILLER — Cyberpunk Neon Pink ───────────────────────────────────
+.over-under-theme {
+    --th-accent: #ff0080;
+    --th-accent2: #d500f9;
+    --th-bg: #120518;
+    --th-bg2: #1a0825;
+    --th-bg3: #220b30;
+    --th-border: rgba(255,0,128,0.2);
+    --th-glow: rgba(255,0,128,0.4);
+    --th-text: #fce4ec;
+    --th-muted: #f48fb1;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #120518 0%, #1a0825 100%) !important;
+        border-bottom: 1px solid rgba(255,0,128,0.3) !important;
+    }
+    .mw-win-title { color: #ff0080 !important; text-shadow: 0 0 20px rgba(255,0,128,0.5); }
+    .mw-win-body { background: #120518 !important; }
+    .mw-btn--kill { background: linear-gradient(135deg, #ff0080 0%, #d500f9 100%) !important; }
+    .mw-killer { background: #1a0825 !important; border-color: rgba(255,0,128,0.2) !important; }
+    .mw-killer__signal { border-color: rgba(255,0,128,0.3) !important; }
+    .mw-tab-dropdown__item--active { color: #ff0080 !important; }
+}
+
+// ─── 4. HIGH/LOW — Luxury Gold/Amber ──────────────────────────────────────
+.high-low-theme {
+    --th-accent: #ffd700;
+    --th-accent2: #ffab00;
+    --th-bg: #121008;
+    --th-bg2: #1a150c;
+    --th-bg3: #221d10;
+    --th-border: rgba(255,215,0,0.2);
+    --th-glow: rgba(255,215,0,0.3);
+    --th-text: #fff8e1;
+    --th-muted: #ffd54f;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #121008 0%, #1a150c 100%) !important;
+        border-bottom: 1px solid rgba(255,215,0,0.3) !important;
+    }
+    .mw-win-title { color: #ffd700 !important; text-shadow: 0 0 20px rgba(255,215,0,0.5); }
+    .mw-win-body { background: #121008 !important; }
+    .mw-btn--kill { background: linear-gradient(135deg, #ffd700 0%, #ffab00 100%) !important; color: #121008 !important; }
+    .mw-killer { background: #1a150c !important; border-color: rgba(255,215,0,0.2) !important; }
+    .mw-killer__signal { border-color: rgba(255,215,0,0.3) !important; }
+    .mw-tab-dropdown__item--active { color: #ffd700 !important; }
+}
+
+// ─── 5. UNDER 7,6,5 KILLER — Deep Ocean Blue ──────────────────────────────
+.under-kill-theme {
+    --th-accent: #0277bd;
+    --th-accent2: #01579b;
+    --th-bg: #040d14;
+    --th-bg2: #061520;
+    --th-bg3: #081d2c;
+    --th-border: rgba(2,119,189,0.2);
+    --th-glow: rgba(2,119,189,0.3);
+    --th-text: #e1f5fe;
+    --th-muted: #4fc3f7;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #040d14 0%, #061520 100%) !important;
+        border-bottom: 1px solid rgba(2,119,189,0.3) !important;
+    }
+    .mw-win-title { color: #0277bd !important; text-shadow: 0 0 20px rgba(2,119,189,0.5); }
+    .mw-win-body { background: #040d14 !important; }
+    .mw-btn--kill { background: linear-gradient(135deg, #0277bd 0%, #01579b 100%) !important; }
+    .mw-killer { background: #061520 !important; border-color: rgba(2,119,189,0.2) !important; }
+    .mw-uum { background: #061520 !important; }
+    .mw-tab-dropdown__item--active { color: #0277bd !important; }
+}
+
+// ─── 6. DIFFERS AUTO — Industrial Steel/Copper ─────────────────────────────
+.differs-theme {
+    --th-accent: #e67e22;
+    --th-accent2: #d35400;
+    --th-bg: #111318;
+    --th-bg2: #181b22;
+    --th-bg3: #1e2129;
+    --th-border: rgba(230,126,34,0.2);
+    --th-glow: rgba(230,126,34,0.3);
+    --th-text: #fef3e2;
+    --th-muted: #e0a060;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #111318 0%, #181b22 100%) !important;
+        border-bottom: 1px solid rgba(230,126,34,0.3) !important;
+    }
+    .mw-win-title { color: #e67e22 !important; text-shadow: 0 0 20px rgba(230,126,34,0.5); }
+    .mw-win-body { background: #111318 !important; }
+    .mw-btn--kill { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important; }
+    .mw-da { background: #181b22 !important; }
+    .mw-da__row { border-bottom-color: rgba(230,126,34,0.1) !important; }
+    .mw-tab-dropdown__item--active { color: #e67e22 !important; }
+}
+
+// ─── 7. AI ANALYST — Sci-Fi Holographic ────────────────────────────────────
+.ai-analyst-theme {
+    --th-accent: #7c4dff;
+    --th-accent2: #651fff;
+    --th-bg: #0a0818;
+    --th-bg2: #100d22;
+    --th-bg3: #16102c;
+    --th-border: rgba(124,77,255,0.2);
+    --th-glow: rgba(124,77,255,0.4);
+    --th-text: #ede7f6;
+    --th-muted: #b388ff;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #0a0818 0%, #100d22 100%) !important;
+        border-bottom: 1px solid rgba(124,77,255,0.3) !important;
+    }
+    .mw-win-title { color: #7c4dff !important; text-shadow: 0 0 20px rgba(124,77,255,0.5); }
+    .mw-win-body { background: #0a0818 !important; }
+    .mw-btn--analyze { background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%) !important; }
+    .mw-btn--run { background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%) !important; }
+    .mw-killer { background: #100d22 !important; border-color: rgba(124,77,255,0.2) !important; }
+    .mw-killer__conf { border-color: rgba(124,77,255,0.3) !important; }
+    .mw-tab-dropdown__item--active { color: #7c4dff !important; }
+}
+
+// ─── 8. MULTI-KILLER — Neon Red Predator ───────────────────────────────────
+.multi-killer-theme {
+    --th-accent: #ff1744;
+    --th-accent2: #d50000;
+    --th-bg: #140808;
+    --th-bg2: #1c0a0a;
+    --th-bg3: #240e0e;
+    --th-border: rgba(255,23,68,0.2);
+    --th-glow: rgba(255,23,68,0.4);
+    --th-text: #ffebee;
+    --th-muted: #ff8a80;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #140808 0%, #1c0a0a 100%) !important;
+        border-bottom: 1px solid rgba(255,23,68,0.3) !important;
+    }
+    .mw-win-title { color: #ff1744 !important; text-shadow: 0 0 20px rgba(255,23,68,0.5); }
+    .mw-win-body { background: #140808 !important; }
+    .mw-btn--run { background: linear-gradient(135deg, #ff1744 0%, #d50000 100%) !important; }
+    .mw-btn--analyze { background: linear-gradient(135deg, #ff1744 0%, #d50000 100%) !important; }
+    .mw-killer { background: #1c0a0a !important; border-color: rgba(255,23,68,0.2) !important; }
+    .mw-type-chip--active { background: rgba(255,23,68,0.2) !important; color: #ff1744 !important; border-color: rgba(255,23,68,0.4) !important; }
+    .mw-tab-dropdown__item--active { color: #ff1744 !important; }
+}
+
+// ─── 9. DIGIT HUNTER — Enhanced Terminal ───────────────────────────────────
+.digit-hunter-theme {
+    --th-accent: #00ff41;
+    --th-accent2: #00cc33;
+    --th-bg: #0a0a0a;
+    --th-bg2: #111111;
+    --th-bg3: #1a1a1a;
+    --th-border: rgba(0,255,65,0.15);
+    --th-glow: rgba(0,255,65,0.3);
+    --th-text: #00ff41;
+    --th-muted: #00aa28;
+
+    .mw-win-header {
+        background: linear-gradient(135deg, #0a0a0a 0%, #111111 100%) !important;
+        border-bottom: 1px solid rgba(0,255,65,0.3) !important;
+    }
+    .mw-win-title { color: #00ff41 !important; text-shadow: 0 0 20px rgba(0,255,65,0.5); font-family: 'Courier New', monospace !important; }
+    .mw-win-body { background: #0a0a0a !important; font-family: 'Courier New', monospace !important; }
+    .mw-tab-dropdown__item--active { color: #00ff41 !important; }
+}

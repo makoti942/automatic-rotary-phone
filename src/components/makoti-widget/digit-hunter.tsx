@@ -643,7 +643,7 @@ export const DigitHunter: React.FC = () => {
     const logColor = (t: LogEntry['type']) => t === 'win' ? '#4caf50' : t === 'loss' ? '#f44336' : t === 'trade' ? '#2196f3' : t === 'recovery' ? '#ff9800' : t === 'trigger' ? '#9c27b0' : '#aaa';
 
     return (
-        <div style={{ padding: 8, fontSize: 11, color: '#ccc', fontFamily: 'monospace' }}>
+        <div className='digit-hunter-theme' style={{ padding: 8, fontSize: 11, color: '#00ff41', fontFamily: 'Courier New, monospace' }}>
             {/* Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <span style={{ color: '#ffd700', fontWeight: 'bold', fontSize: 13 }}>🎯 DIGIT HUNTER</span>

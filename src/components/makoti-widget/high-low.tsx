@@ -396,7 +396,7 @@ export const HighLow: React.FC = () => {
     const phaseColor = !running ? '#6b7280' : signal ? '#ef4444' : active?.awaiting ? '#f59e0b' : active?.side ? '#f97316' : '#6b7280';
 
     return (
-        <div className='mw-killer'>
+        <div className='mw-killer high-low-theme'>
             <button className={`mw-btn${running ? ' mw-btn--stop' : ' mw-btn--kill'}`}
                 onClick={running ? stopEngine : startEngine}>
                 {running ? <><span className='mw-pulse' /> STOP</> : 'RUN'}

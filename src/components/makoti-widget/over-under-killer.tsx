@@ -942,7 +942,7 @@ if (manualRecoveryRef.current && consecutiveLossesRef.current >= manualRecoveryL
 
     /* ── Render ──────────────────────────────────────────────────────────── */
     return (
-        <div className='mw-killer'>
+        <div className='mw-killer over-under-theme'>
             <div className='mw-killer__fields'>
                 <div className='mw-field'>
                     <label className='mw-label'>Stake ($)</label>

@@ -1057,7 +1057,7 @@ export const MultiKiller: React.FC = () => {
     };
 
     return (
-        <div className='mw-killer'>
+        <div className='mw-killer multi-killer-theme'>
             <div className='mw-field'>
                 <label className='mw-label'>Market</label>
                 <div className='mw-select-wrap'>

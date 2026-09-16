@@ -1318,7 +1318,7 @@ export const Scanner: React.FC = () => {
     }, []);
 
     return (
-        <div className='mw-scanner'>
+        <div className='mw-scanner scanner-theme'>
             {notification && (
                 <div className={`mw-scanner__notif mw-scanner__notif--${notification.type}`}>{notification.msg}</div>
             )}

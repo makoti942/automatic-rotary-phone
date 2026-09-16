@@ -244,7 +244,7 @@ export const UnderUnderMarket: React.FC = () => {
     useEffect(() => { return () => { runRef.current = false; unsubscribeAll(); if (wsRef.current) { wsRef.current.close(); wsRef.current = null; } }; }, [unsubscribeAll]);
 
     return (
-        <div className='mw-uum'>
+        <div className='mw-uum under-kill-theme'>
             <div className='mw-uum__controls'>
                 <div className='mw-field'>
                     <label className='mw-label'>Stake ($)</label>

@@ -38,7 +38,7 @@ export const MarketKiller: React.FC = () => {
     const currentStake = getCurrentStake();
 
     return (
-        <div className='mw-killer'>
+        <div className='mw-killer market-killer-theme'>
             <div className='mw-killer__fields'>
                 <div className='mw-field'>
                     <label className='mw-label'>Stake ($)</label>
