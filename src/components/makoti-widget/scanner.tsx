@@ -1340,8 +1340,8 @@ export const Scanner: React.FC = () => {
                         : 'Analyses 60 recent ticks per volatility (current candle). Finds choppy micro-markets — auto-switches every 3s.'}
                 </div>
                 {bot === 'entry_digit' && (
-                    <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
-                        <div className='mw-field' style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+                        <div className='mw-field'>
                             <label className='mw-label'>Contract Type</label>
                             <MwSelect value={entryContractType} options={[
                                 { value: 'DIGITOVER', label: 'OVER' },
@@ -1349,7 +1349,7 @@ export const Scanner: React.FC = () => {
                             ]}
                                 onChange={v => setEntryContractType(v as 'DIGITOVER' | 'DIGITUNDER')} disabled={scanning} />
                         </div>
-                        <div className='mw-field' style={{ flex: 1 }}>
+                        <div className='mw-field'>
                             <label className='mw-label'>Barrier Digit</label>
                             <input className='mw-input' type='number' min={0} max={9}
                                 defaultValue={entryBarrier}

@@ -854,7 +854,8 @@ $mw-radius:   10px;
 
 .mw-killer__fields {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 4px;
     margin-top: 4px;
 }
 
