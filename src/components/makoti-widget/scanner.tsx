@@ -615,8 +615,9 @@ function analyzeTriggerDigits(
     // ══════════════════════════════════════════════════════════════
 
     // ── Layer 1: Digit Percentage Trajectory (DPT) ──
-    // Split 1500 ticks into 15 windows of 100 ticks each
-    // Track how each digit's percentage evolves over time
+    // Smoothed trajectory: weighted average of 3 window sizes (50, 100, 200)
+    // This produces meaningful decimal values (e.g., 10.3% instead of 10.0%)
+    // because different window sizes yield different percentage values
     const WINDOW_COUNT = 15;
     const WINDOW_SIZE = Math.floor(len / WINDOW_COUNT);
     const digitTrajectoryWindows: number[][] = Array.from({ length: 10 }, () => []);
@@ -624,9 +625,14 @@ function analyzeTriggerDigits(
     for (let w = 0; w < WINDOW_COUNT; w++) {
         const start = w * WINDOW_SIZE;
         const end = Math.min(start + WINDOW_SIZE, len);
-        const windowPcts = calcDigitPcts(digits.slice(start, end));
+        // Weighted average of 3 different window sizes for smooth decimals
+        const pcts50 = calcDigitPcts(digits.slice(start, Math.min(start + 50, end)));
+        const pcts100 = calcDigitPcts(digits.slice(start, end));
+        const pcts200 = calcDigitPcts(digits.slice(Math.max(0, start - 50), Math.min(end + 50, len)));
         for (let d = 0; d < 10; d++) {
-            digitTrajectoryWindows[d].push(windowPcts[d]);
+            // Weight: 50-tick (40%) + 100-tick (35%) + 200-tick (25%) = smooth decimals
+            const smoothed = pcts50[d] * 0.40 + pcts100[d] * 0.35 + pcts200[d] * 0.25;
+            digitTrajectoryWindows[d].push(Math.round(smoothed * 10) / 10); // 1 decimal
         }
     }
 
@@ -673,17 +679,26 @@ function analyzeTriggerDigits(
         trajectoryAcceleration[d] = calcSlope(secondHalf) - calcSlope(firstHalf);
 
         // Stability: inverse of variance (low variance = high stability)
+        // Thresholds lowered for decimal precision (variance measured in %²)
         const mean = meanY;
         let variance = 0;
         for (let i = 0; i < n; i++) variance += (vals[i] - mean) ** 2;
         variance /= n;
-        trajectoryStability[d] = variance < 1 ? 10 : variance < 4 ? 7 : variance < 9 ? 4 : 1;
+        trajectoryStability[d] = variance < 0.5 ? 10 : variance < 2 ? 7 : variance < 5 ? 4 : 1;
     }
 
     // ── Layer 2: Cross-Digit Influence Matrix (CDI) ──
     // For each digit X, measure how it affects every other digit Y in the next 20 ticks
     const crossDigitMatrix: number[][] = Array.from({ length: 10 }, () => Array(10).fill(0));
     const crossDigitWindow = 20;
+
+    // Smoothed baseline: weighted average of 100, 200, 500-tick windows for decimal precision
+    const baselineSmoothed = Array(10).fill(0).map((_, d) => {
+        const p100 = calcDigitPcts(digits.slice(-100));
+        const p200 = calcDigitPcts(digits.slice(-200));
+        const p500 = calcDigitPcts(digits.slice(-500));
+        return Math.round((p100[d] * 0.3 + p200[d] * 0.4 + p500[d] * 0.3) * 10) / 10;
+    });
 
     for (let src = 0; src < 10; src++) {
         const srcPositions: number[] = [];
@@ -699,17 +714,41 @@ function analyzeTriggerDigits(
                 afterSrc.push(digits[j]);
             }
         }
-        const afterSrcPcts = calcDigitPcts(afterSrc);
+        // Smoothed post-trigger: weighted average of immediate (20-tick) and extended (40-tick) windows
+        const afterPcts20 = calcDigitPcts(afterSrc);
+        const afterSrcExtended: number[] = [];
+        for (const pos of srcPositions) {
+            for (let j = pos + 1; j < Math.min(pos + 40, len); j++) {
+                afterSrcExtended.push(digits[j]);
+            }
+        }
+        const afterPcts40 = calcDigitPcts(afterSrcExtended);
+        const afterSrcPcts = Array(10).fill(0).map((_, d) =>
+            Math.round((afterPcts20[d] * 0.6 + afterPcts40[d] * 0.4) * 10) / 10
+        );
 
         for (let tgt = 0; tgt < 10; tgt++) {
-            crossDigitMatrix[src][tgt] = afterSrcPcts[tgt] - baselinePcts[tgt];
+            crossDigitMatrix[src][tgt] = Math.round((afterSrcPcts[tgt] - baselineSmoothed[tgt]) * 10) / 10;
         }
     }
 
     // ── Layer 3: Digit Dominance Index (DDI) ──
-    // Which digits are currently dominating/suppressed
-    const recentPcts = calcDigitPcts(digits.slice(-200));
-    const oldPcts = calcDigitPcts(digits.slice(0, Math.floor(len / 2)));
+    // Which digits are currently dominating/suppressed — smoothed for decimal precision
+    const recentSmoothed = Array(10).fill(0).map((_, d) => {
+        const p100 = calcDigitPcts(digits.slice(-100));
+        const p200 = calcDigitPcts(digits.slice(-200));
+        const p50 = calcDigitPcts(digits.slice(-50));
+        return Math.round((p50[d] * 0.4 + p100[d] * 0.35 + p200[d] * 0.25) * 10) / 10;
+    });
+    const oldSmoothed = Array(10).fill(0).map((_, d) => {
+        const half = Math.floor(len / 2);
+        const p100 = calcDigitPcts(digits.slice(0, half));
+        const p200 = calcDigitPcts(digits.slice(0, Math.min(half, 200)));
+        const p500 = calcDigitPcts(digits.slice(0, Math.min(half, 500)));
+        return Math.round((p100[d] * 0.4 + p200[d] * 0.3 + p500[d] * 0.3) * 10) / 10;
+    });
+    const recentPcts = recentSmoothed;
+    const oldPcts = oldSmoothed;
 
     // Rank digits by current percentage
     const digitRanks = recentPcts
@@ -782,19 +821,29 @@ function analyzeTriggerDigits(
             }
         }
 
-        // ── Calculate digit distribution AFTER trigger ──
-        const afterPcts = calcDigitPcts(afterDigits);
-        const digitShifts = baselinePcts.map((before, d) => ({
+        // ── Calculate digit distribution AFTER trigger (smoothed) ──
+        const afterPctsRaw = calcDigitPcts(afterDigits);
+        // Smooth after-trigger percentages with extended window
+        const afterDigitsExtended: number[] = [];
+        for (const pos of positions) {
+            const end = Math.min(pos + 40, len);
+            for (let j = pos + 1; j < end; j++) afterDigitsExtended.push(digits[j]);
+        }
+        const afterPctsExt = calcDigitPcts(afterDigitsExtended);
+        const afterPcts = Array(10).fill(0).map((_, d) =>
+            Math.round((afterPctsRaw[d] * 0.6 + afterPctsExt[d] * 0.4) * 10) / 10
+        );
+        const digitShifts = baselineSmoothed.map((before, d) => ({
             digit: d,
             before,
             after: afterPcts[d],
             shift: afterPcts[d] - before,
         }));
 
-        // ── Winning digit % after trigger ──
+        // ── Winning digit % after trigger (rounded to 1 decimal) ──
         const afterWinCount = afterDigits.filter(d => isWin(d)).length;
-        const avgWinPctAfter = (afterWinCount / afterDigits.length) * 100;
-        const boost = avgWinPctAfter - baselineWinPct;
+        const avgWinPctAfter = Math.round(((afterWinCount / afterDigits.length) * 100) * 10) / 10;
+        const boost = Math.round((avgWinPctAfter - baselineWinPct) * 10) / 10;
 
         // ── Rolling Momentum: how win% changes across windows after trigger ──
         // For each trigger occurrence, compute win% in the first 100, 50, 20 ticks after
@@ -813,10 +862,10 @@ function analyzeTriggerDigits(
                 if (isWin(digits[j])) winM20++;
             }
         }
-        const pctM100 = totalM100 > 0 ? (winM100 / totalM100) * 100 : baselineWinPct;
-        const pctM50 = totalM50 > 0 ? (winM50 / totalM50) * 100 : baselineWinPct;
-        const pctM20 = totalM20 > 0 ? (winM20 / totalM20) * 100 : baselineWinPct;
-        const overallMomentum = pctM20 - pctM100; // positive = win rate improving recently
+        const pctM100 = totalM100 > 0 ? Math.round(((winM100 / totalM100) * 100) * 10) / 10 : baselineWinPct;
+        const pctM50 = totalM50 > 0 ? Math.round(((winM50 / totalM50) * 100) * 10) / 10 : baselineWinPct;
+        const pctM20 = totalM20 > 0 ? Math.round(((winM20 / totalM20) * 100) * 10) / 10 : baselineWinPct;
+        const overallMomentum = Math.round((pctM20 - pctM100) * 10) / 10; // positive = win rate improving recently
 
         // ── Consistency: check across sub-windows ──
         const subWindows = [5, 10, 15, 20];
@@ -832,8 +881,8 @@ function analyzeTriggerDigits(
                 }
             }
             if (swTotal === 0) continue;
-            const swWinPct = (swWin / swTotal) * 100;
-            const swBoost = swWinPct - baselineWinPct;
+            const swWinPct = Math.round(((swWin / swTotal) * 100) * 10) / 10;
+            const swBoost = Math.round((swWinPct - baselineWinPct) * 10) / 10;
             windowResults.push({ window: sw, winPct: swWinPct, boost: swBoost });
             if (swBoost > 0) windowsWithBoost++;
         }
@@ -863,7 +912,7 @@ function analyzeTriggerDigits(
                 for (let j = pos + 1; j < end; j++) olderAfter.push(digits[j]);
             }
             if (olderAfter.length > 0) {
-                olderBoost = ((olderAfter.filter(d => isWin(d)).length / olderAfter.length) * 100) - baselineWinPct;
+                olderBoost = Math.round((((olderAfter.filter(d => isWin(d)).length / olderAfter.length) * 100) - baselineWinPct) * 10) / 10;
             }
         }
 
@@ -876,16 +925,16 @@ function analyzeTriggerDigits(
                 for (let j = pos + 1; j < end; j++) recentAfter.push(digits[j]);
             }
             if (recentAfter.length > 0) {
-                recentBoost = ((recentAfter.filter(d => isWin(d)).length / recentAfter.length) * 100) - baselineWinPct;
+                recentBoost = Math.round((((recentAfter.filter(d => isWin(d)).length / recentAfter.length) * 100) - baselineWinPct) * 10) / 10;
             }
         }
 
         let trend: 'strengthening' | 'weakening' | 'stable' | 'new' | 'dying';
         let trendPercent = 0;
         if (olderOccurrences < 2 && recentOccurrences >= 2) { trend = 'new'; trendPercent = recentBoost; }
-        else if (olderOccurrences >= 2 && recentOccurrences < 2) { trend = 'dying'; trendPercent = -olderBoost; }
+        else if (olderOccurrences >= 2 && recentOccurrences < 2) { trend = 'dying'; trendPercent = Math.round(-olderBoost * 10) / 10; }
         else if (olderOccurrences >= 2 && recentOccurrences >= 2) {
-            trendPercent = recentBoost - olderBoost;
+            trendPercent = Math.round((recentBoost - olderBoost) * 10) / 10;
             if (trendPercent > 5) trend = 'strengthening';
             else if (trendPercent < -5) trend = 'weakening';
             else trend = 'stable';
@@ -923,17 +972,17 @@ function analyzeTriggerDigits(
         // ══════════════════════════════════════════════════════════════
 
         // Layer 4: Predictive Signal Strength (PSS)
-        // Build predicted digit distribution for next 20 ticks
+        // Build predicted digit distribution for next 20 ticks using smoothed percentages
         const predictedDist = Array(10).fill(0).map((_, d) => {
-            let predicted = baselinePcts[d];
+            let predicted = baselineSmoothed[d];
             // Trajectory projection: slope * 2 (project 20 ticks ahead)
             predicted += trajectorySlopes[d] * 2;
             // Cross-digit effect: how trigger digit affects this digit
             predicted += crossDigitMatrix[triggerDigit][d];
             // Dominance relief: suppressed digits tend to bounce back
-            if (d === currentSuppressed) predicted += 2;
-            if (d === currentDominant) predicted -= 0.5;
-            return Math.max(0, predicted);
+            if (d === currentSuppressed) predicted += 1.5;
+            if (d === currentDominant) predicted -= 0.3;
+            return Math.max(0, Math.round(predicted * 10) / 10);
         });
 
         // Normalize predicted distribution to 100%
