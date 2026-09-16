@@ -2240,6 +2240,7 @@ $mw-radius:   10px;
         border-bottom: 1px solid rgba(0,229,255,0.3) !important;
         position: relative;
         overflow: hidden;
+        padding: 8px 14px !important;
         &::after {
             content: '';
             position: absolute;
@@ -2252,7 +2253,6 @@ $mw-radius:   10px;
         }
     }
 
-    // Title: monospace, tracked, with glow
     .mw-win-title {
         color: #00e5ff !important;
         text-shadow: 0 0 20px rgba(0,229,255,0.5);
@@ -2264,7 +2264,33 @@ $mw-radius:   10px;
 
     .mw-win-body { background: #0a0e1a !important; }
 
-    // Buttons: pill shape with pulse glow
+    // Fields: inline layout with monospace
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 0 !important;
+        border-bottom: 1px solid rgba(0,229,255,0.08) !important;
+    }
+    .mw-label {
+        color: #4dd0e1 !important;
+        font-family: 'Courier New', monospace !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 1px !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(0,229,255,0.05) !important;
+        border: 1px solid rgba(0,229,255,0.2) !important;
+        border-radius: 3px !important;
+        font-family: 'Courier New', monospace !important;
+        color: #e0f7fa !important;
+    }
+
+    // Buttons: pill shape
     .mw-btn--scan {
         background: linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%) !important;
         color: #0a0e1a !important;
@@ -2278,11 +2304,12 @@ $mw-radius:   10px;
         &:hover { box-shadow: 0 0 30px rgba(0,229,255,0.6) !important; transform: translateY(-1px); }
     }
 
-    // Scanner results: circuit-like borders
+    // Results: circuit-like
     .mw-scanner__progress {
         border-color: rgba(0,229,255,0.3) !important;
         border-radius: 4px !important;
         font-family: 'Courier New', monospace !important;
+        background: rgba(0,229,255,0.03) !important;
     }
     .mw-scanner__row--match {
         border-left: 3px solid #00e5ff !important;
@@ -2298,11 +2325,6 @@ $mw-radius:   10px;
         letter-spacing: 1px !important;
     }
     .mw-tab-dropdown__item--active { color: #00e5ff !important; }
-
-    // Form elements
-    .mw-field { border-color: rgba(0,229,255,0.15) !important; }
-    .mw-label { color: #4dd0e1 !important; letter-spacing: 1.5px !important; }
-    .mw-input { border-color: rgba(0,229,255,0.2) !important; font-family: 'Courier New', monospace !important; }
 }
 
 // ─── 2. MARKET KILLER — Military/Tactical ──────────────────────────────────
@@ -2377,16 +2399,40 @@ $mw-radius:   10px;
     .mw-killer__sym-row {
         border-bottom: 1px solid rgba(139,195,74,0.1) !important;
         border-radius: 0 !important;
+        padding: 4px 8px !important;
     }
     .mw-killer__signal {
         border: 1px solid rgba(139,195,74,0.2) !important;
         border-radius: 2px !important;
     }
 
-    // Form elements: angular
-    .mw-field { border-color: rgba(139,195,74,0.15) !important; border-radius: 2px !important; }
-    .mw-label { color: #81c784 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
-    .mw-input { border-radius: 2px !important; border-color: rgba(139,195,74,0.2) !important; }
+    // Fields: inline, angular, military
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(139,195,74,0.1) !important;
+        background: rgba(139,195,74,0.02) !important;
+    }
+    .mw-label {
+        color: #81c784 !important;
+        font-family: 'Courier New', monospace !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(139,195,74,0.05) !important;
+        border: 1px solid rgba(139,195,74,0.2) !important;
+        border-radius: 2px !important;
+        font-family: 'Courier New', monospace !important;
+        color: #e8f5e9 !important;
+    }
     .mw-tab-dropdown__item--active { color: #8bc34a !important; }
 }
 
@@ -2461,10 +2507,30 @@ $mw-radius:   10px;
         box-shadow: 0 0 15px rgba(255,0,128,0.1) !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(255,0,128,0.15) !important; }
-    .mw-label { color: #f48fb1 !important; letter-spacing: 1px !important; }
-    .mw-input { border-color: rgba(255,0,128,0.2) !important; }
+    // Fields: inline, neon glow borders
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(255,0,128,0.1) !important;
+    }
+    .mw-label {
+        color: #f48fb1 !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 1px !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(255,0,128,0.05) !important;
+        border: 1px solid rgba(255,0,128,0.2) !important;
+        border-radius: 4px !important;
+        color: #fce4ec !important;
+        box-shadow: 0 0 8px rgba(255,0,128,0.1) !important;
+    }
     .mw-tab-dropdown__item--active { color: #ff0080 !important; text-shadow: 0 0 10px rgba(255,0,128,0.5); }
 }
 
@@ -2539,10 +2605,29 @@ $mw-radius:   10px;
         border-radius: 10px !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(255,215,0,0.12) !important; border-radius: 8px !important; }
-    .mw-label { color: #ffd54f !important; letter-spacing: 2px !important; }
-    .mw-input { border-color: rgba(255,215,0,0.15) !important; border-radius: 8px !important; }
+    // Fields: inline, luxury
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(255,215,0,0.08) !important;
+    }
+    .mw-label {
+        color: #ffd54f !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(255,215,0,0.03) !important;
+        border: 1px solid rgba(255,215,0,0.15) !important;
+        border-radius: 8px !important;
+        color: #fff8e1 !important;
+    }
     .mw-tab-dropdown__item--active { color: #ffd700 !important; }
 }
 
@@ -2614,10 +2699,29 @@ $mw-radius:   10px;
         border-radius: 8px !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(2,119,189,0.12) !important; border-radius: 8px !important; }
-    .mw-label { color: #4fc3f7 !important; letter-spacing: 1.5px !important; }
-    .mw-input { border-color: rgba(2,119,189,0.2) !important; border-radius: 8px !important; }
+    // Fields: inline, ocean feel
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(2,119,189,0.1) !important;
+    }
+    .mw-label {
+        color: #4fc3f7 !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 1.5px !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(2,119,189,0.05) !important;
+        border: 1px solid rgba(2,119,189,0.2) !important;
+        border-radius: 8px !important;
+        color: #e1f5fe !important;
+    }
     .mw-tab-dropdown__item--active { color: #0277bd !important; }
 }
 
@@ -2696,10 +2800,31 @@ $mw-radius:   10px;
         border-radius: 4px !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(230,126,34,0.12) !important; border-radius: 3px !important; }
-    .mw-label { color: #e0a060 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
-    .mw-input { border-color: rgba(230,126,34,0.2) !important; border-radius: 3px !important; }
+    // Fields: inline, industrial
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(230,126,34,0.1) !important;
+        background: rgba(230,126,34,0.02) !important;
+    }
+    .mw-label {
+        color: #e0a060 !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(230,126,34,0.05) !important;
+        border: 1px solid rgba(230,126,34,0.2) !important;
+        border-radius: 3px !important;
+        color: #fef3e2 !important;
+    }
     .mw-tab-dropdown__item--active { color: #e67e22 !important; }
 }
 
@@ -2778,10 +2903,29 @@ $mw-radius:   10px;
         box-shadow: 0 0 15px rgba(124,77,255,0.1) !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(124,77,255,0.15) !important; border-radius: 8px !important; }
-    .mw-label { color: #b388ff !important; letter-spacing: 2px !important; }
-    .mw-input { border-color: rgba(124,77,255,0.2) !important; border-radius: 6px !important; }
+    // Fields: inline, holographic
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(124,77,255,0.1) !important;
+    }
+    .mw-label {
+        color: #b388ff !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(124,77,255,0.05) !important;
+        border: 1px solid rgba(124,77,255,0.2) !important;
+        border-radius: 6px !important;
+        color: #ede7f6 !important;
+    }
     .mw-tab-dropdown__item--active { color: #7c4dff !important; text-shadow: 0 0 10px rgba(124,77,255,0.5); }
 }
 
@@ -2860,10 +3004,30 @@ $mw-radius:   10px;
         box-shadow: 0 0 10px rgba(255,23,68,0.2) !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(255,23,68,0.15) !important; border-radius: 4px !important; }
-    .mw-label { color: #ff8a80 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
-    .mw-input { border-color: rgba(255,23,68,0.2) !important; border-radius: 4px !important; }
+    // Fields: inline, aggressive
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 4px 8px !important;
+        border-bottom: 1px solid rgba(255,23,68,0.1) !important;
+    }
+    .mw-label {
+        color: #ff8a80 !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(255,23,68,0.05) !important;
+        border: 1px solid rgba(255,23,68,0.2) !important;
+        border-radius: 4px !important;
+        color: #ffebee !important;
+    }
     .mw-tab-dropdown__item--active { color: #ff1744 !important; text-shadow: 0 0 10px rgba(255,23,68,0.5); }
 }
 
@@ -2926,9 +3090,32 @@ $mw-radius:   10px;
         font-family: 'Courier New', monospace !important;
     }
 
-    // Form elements
-    .mw-field { border-color: rgba(0,255,65,0.1) !important; border-radius: 0 !important; }
-    .mw-label { color: #00aa28 !important; letter-spacing: 2px !important; text-transform: uppercase !important; font-family: 'Courier New', monospace !important; }
-    .mw-input { border-color: rgba(0,255,65,0.15) !important; border-radius: 0 !important; font-family: 'Courier New', monospace !important; color: #00ff41 !important; }
+    // Fields: inline, terminal style
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        padding: 2px 4px !important;
+        border-bottom: 1px solid rgba(0,255,65,0.08) !important;
+    }
+    .mw-label {
+        color: #00aa28 !important;
+        font-family: 'Courier New', monospace !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+        &::before { content: '> '; color: #00ff41; }
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: rgba(0,255,65,0.03) !important;
+        border: 1px solid rgba(0,255,65,0.15) !important;
+        border-radius: 0 !important;
+        font-family: 'Courier New', monospace !important;
+        color: #00ff41 !important;
+    }
     .mw-tab-dropdown__item--active { color: #00ff41 !important; text-shadow: 0 0 10px rgba(0,255,65,0.5); }
 }
