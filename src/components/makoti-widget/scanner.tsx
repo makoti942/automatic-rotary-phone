@@ -59,8 +59,8 @@ const ENTRY_BOT_TEMPLATE = `<xml xmlns="https://developers.google.com/blockly/xm
       <block type="variables_set" id="setInitialStakeValue">
         <field name="VAR" id="initStakeVar">Initial Stake</field>
         <value name="VALUE">
-          <block type="math_number" id="initialStakeValue">
-            <field name="NUM">1</field>
+                <block type="math_number" id="initialStakeValue">
+                    <field name="NUM">__STAKE__</field>
           </block>
         </value>
         <next>
@@ -908,6 +908,7 @@ export const Scanner: React.FC = () => {
     // Entry Digit config
     const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
     const [entryBarrier, setEntryBarrier] = useState(7);
+    const [entryStake, setEntryStake] = useState('1');
 
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
@@ -996,6 +997,7 @@ export const Scanner: React.FC = () => {
             .replace('__SYMBOL__', topPrediction.symbol)
             .replace('__NORMAL_PRED__', String(topPrediction.barrier))
             .replace('__ENTRY_DIGIT__', String(topPrediction.entryDigit))
+            .replace('__STAKE__', entryStake)
             .replace(/__CONTRACT_TYPE__/g, topPrediction.contractType);
         try {
             const store = DBotStore.instance;
@@ -1010,7 +1012,7 @@ export const Scanner: React.FC = () => {
         } catch (e: any) {
             showNotify(`Failed to load bot: ${e.message}`, 'warn');
         }
-    }, [topPrediction, showNotify]);
+    }, [topPrediction, entryStake, showNotify]);
 
     /* ── Create persistent WS (reused across auto-scan cycles) ──────────── */
     const ensureWs = useCallback(() => {
@@ -1341,6 +1343,13 @@ export const Scanner: React.FC = () => {
                 </div>
                 {bot === 'entry_digit' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+                        <div className='mw-field'>
+                            <label className='mw-label'>Stake ($)</label>
+                            <input className='mw-input' type='number' min='0.35' step='0.01'
+                                value={entryStake}
+                                onChange={e => setEntryStake(e.target.value)}
+                                disabled={scanning} />
+                        </div>
                         <div className='mw-field'>
                             <label className='mw-label'>Contract Type</label>
                             <MwSelect value={entryContractType} options={[
