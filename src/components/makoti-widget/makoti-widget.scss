@@ -2220,6 +2220,9 @@ $mw-radius:   10px;
 // ═══════════════════════════════════════════════════════════════════════════════
 
 // ─── 1. SCANNER — Tech/Cyan Matrix ─────────────────────────────────────────
+@keyframes th-scan-line { 0% { top: 0; } 100% { top: 100%; } }
+@keyframes th-circuit-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+
 .scanner-theme {
     --th-accent: #00e5ff;
     --th-accent2: #00b8d4;
@@ -2231,20 +2234,81 @@ $mw-radius:   10px;
     --th-text: #e0f7fa;
     --th-muted: #4dd0e1;
 
+    // Header: circuit board pattern with scanning line
     .mw-win-header {
         background: linear-gradient(135deg, #0a0e1a 0%, #0d1a2d 100%) !important;
         border-bottom: 1px solid rgba(0,229,255,0.3) !important;
+        position: relative;
+        overflow: hidden;
+        &::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent 0%, #00e5ff 50%, transparent 100%);
+            animation: th-scan-line 3s linear infinite;
+            opacity: 0.4;
+        }
     }
-    .mw-win-title { color: #00e5ff !important; text-shadow: 0 0 20px rgba(0,229,255,0.5); }
+
+    // Title: monospace, tracked, with glow
+    .mw-win-title {
+        color: #00e5ff !important;
+        text-shadow: 0 0 20px rgba(0,229,255,0.5);
+        font-family: 'Courier New', monospace !important;
+        letter-spacing: 3px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+    }
+
     .mw-win-body { background: #0a0e1a !important; }
-    .mw-btn--scan { background: linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%) !important; }
-    .mw-scanner__progress { border-color: rgba(0,229,255,0.3) !important; }
-    .mw-scanner__row--match { border-left: 3px solid #00e5ff !important; }
-    .mw-scanner__badge { background: rgba(0,229,255,0.15) !important; color: #00e5ff !important; border: 1px solid rgba(0,229,255,0.3) !important; }
+
+    // Buttons: pill shape with pulse glow
+    .mw-btn--scan {
+        background: linear-gradient(135deg, #00e5ff 0%, #00b8d4 100%) !important;
+        color: #0a0e1a !important;
+        border-radius: 20px !important;
+        font-weight: 700 !important;
+        letter-spacing: 1px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+        box-shadow: 0 0 20px rgba(0,229,255,0.3) !important;
+        transition: all 0.3s ease !important;
+        &:hover { box-shadow: 0 0 30px rgba(0,229,255,0.6) !important; transform: translateY(-1px); }
+    }
+
+    // Scanner results: circuit-like borders
+    .mw-scanner__progress {
+        border-color: rgba(0,229,255,0.3) !important;
+        border-radius: 4px !important;
+        font-family: 'Courier New', monospace !important;
+    }
+    .mw-scanner__row--match {
+        border-left: 3px solid #00e5ff !important;
+        background: rgba(0,229,255,0.05) !important;
+    }
+    .mw-scanner__badge {
+        background: rgba(0,229,255,0.15) !important;
+        color: #00e5ff !important;
+        border: 1px solid rgba(0,229,255,0.3) !important;
+        border-radius: 3px !important;
+        font-family: 'Courier New', monospace !important;
+        font-size: 9px !important;
+        letter-spacing: 1px !important;
+    }
     .mw-tab-dropdown__item--active { color: #00e5ff !important; }
+
+    // Form elements
+    .mw-field { border-color: rgba(0,229,255,0.15) !important; }
+    .mw-label { color: #4dd0e1 !important; letter-spacing: 1.5px !important; }
+    .mw-input { border-color: rgba(0,229,255,0.2) !important; font-family: 'Courier New', monospace !important; }
 }
 
 // ─── 2. MARKET KILLER — Military/Tactical ──────────────────────────────────
+@keyframes th-crosshair { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+@keyframes th-radar { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+
 .market-killer-theme {
     --th-accent: #8bc34a;
     --th-accent2: #689f38;
@@ -2256,19 +2320,80 @@ $mw-radius:   10px;
     --th-text: #e8f5e9;
     --th-muted: #81c784;
 
+    // Header: stencil military style with crosshair
     .mw-win-header {
         background: linear-gradient(135deg, #0d1208 0%, #1a2412 100%) !important;
-        border-bottom: 1px solid rgba(139,195,74,0.3) !important;
+        border-bottom: 2px solid rgba(139,195,74,0.4) !important;
+        position: relative;
+        &::before {
+            content: '⊕';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(139,195,74,0.4);
+            font-size: 18px;
+            animation: th-crosshair 2s ease-in-out infinite;
+        }
     }
-    .mw-win-title { color: #8bc34a !important; text-shadow: 0 0 20px rgba(139,195,74,0.5); }
+
+    // Title: stencil font, military feel
+    .mw-win-title {
+        color: #8bc34a !important;
+        text-shadow: 0 0 15px rgba(139,195,74,0.5);
+        font-family: 'Courier New', monospace !important;
+        letter-spacing: 4px !important;
+        text-transform: uppercase !important;
+        font-weight: 900 !important;
+        font-size: 11px !important;
+    }
+
     .mw-win-body { background: #0d1208 !important; }
-    .mw-btn--kill { background: linear-gradient(135deg, #8bc34a 0%, #689f38 100%) !important; color: #0d1208 !important; }
-    .mw-killer { background: #141c0e !important; border-color: rgba(139,195,74,0.2) !important; }
-    .mw-killer__sym-row { border-bottom-color: rgba(139,195,74,0.1) !important; }
+
+    // Buttons: angular, sharp, military
+    .mw-btn--kill {
+        background: linear-gradient(135deg, #8bc34a 0%, #689f38 100%) !important;
+        color: #0d1208 !important;
+        border-radius: 3px !important;
+        font-weight: 800 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+        border: none !important;
+        box-shadow: inset 0 1px 0 rgba(255,255,255,0.15) !important;
+        &:hover { filter: brightness(1.1); }
+    }
+    .mw-btn--stop {
+        background: linear-gradient(135deg, #555 0%, #333 100%) !important;
+        border-radius: 3px !important;
+    }
+
+    // Killer panels: steel texture, hard edges
+    .mw-killer {
+        background: #141c0e !important;
+        border: 1px solid rgba(139,195,74,0.2) !important;
+        border-radius: 2px !important;
+    }
+    .mw-killer__sym-row {
+        border-bottom: 1px solid rgba(139,195,74,0.1) !important;
+        border-radius: 0 !important;
+    }
+    .mw-killer__signal {
+        border: 1px solid rgba(139,195,74,0.2) !important;
+        border-radius: 2px !important;
+    }
+
+    // Form elements: angular
+    .mw-field { border-color: rgba(139,195,74,0.15) !important; border-radius: 2px !important; }
+    .mw-label { color: #81c784 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
+    .mw-input { border-radius: 2px !important; border-color: rgba(139,195,74,0.2) !important; }
     .mw-tab-dropdown__item--active { color: #8bc34a !important; }
 }
 
 // ─── 3. O/U KILLER — Cyberpunk Neon Pink ───────────────────────────────────
+@keyframes th-neon-flicker { 0%, 19%, 21%, 23%, 25%, 54%, 56%, 100% { opacity: 1; } 20%, 24%, 55% { opacity: 0.6; } }
+@keyframes th-glitch { 0% { transform: translate(0); } 20% { transform: translate(-2px, 2px); } 40% { transform: translate(2px, -1px); } 60% { transform: translate(-1px, -2px); } 80% { transform: translate(1px, 1px); } 100% { transform: translate(0); } }
+
 .over-under-theme {
     --th-accent: #ff0080;
     --th-accent2: #d500f9;
@@ -2280,19 +2405,72 @@ $mw-radius:   10px;
     --th-text: #fce4ec;
     --th-muted: #f48fb1;
 
+    // Header: neon tube with glitch
     .mw-win-header {
         background: linear-gradient(135deg, #120518 0%, #1a0825 100%) !important;
-        border-bottom: 1px solid rgba(255,0,128,0.3) !important;
+        border-bottom: 1px solid rgba(255,0,128,0.4) !important;
+        position: relative;
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #ff0080, #d500f9, #ff0080, transparent);
+            box-shadow: 0 0 10px rgba(255,0,128,0.5);
+        }
     }
-    .mw-win-title { color: #ff0080 !important; text-shadow: 0 0 20px rgba(255,0,128,0.5); }
+
+    // Title: neon glow, thin futuristic
+    .mw-win-title {
+        color: #ff0080 !important;
+        text-shadow: 0 0 20px rgba(255,0,128,0.7), 0 0 40px rgba(255,0,128,0.3);
+        animation: th-neon-flicker 4s ease-in-out infinite;
+        font-weight: 300 !important;
+        letter-spacing: 3px !important;
+        text-transform: uppercase !important;
+        font-size: 12px !important;
+    }
+
     .mw-win-body { background: #120518 !important; }
-    .mw-btn--kill { background: linear-gradient(135deg, #ff0080 0%, #d500f9 100%) !important; }
-    .mw-killer { background: #1a0825 !important; border-color: rgba(255,0,128,0.2) !important; }
-    .mw-killer__signal { border-color: rgba(255,0,128,0.3) !important; }
-    .mw-tab-dropdown__item--active { color: #ff0080 !important; }
+
+    // Buttons: neon glow, rounded
+    .mw-btn--kill {
+        background: linear-gradient(135deg, #ff0080 0%, #d500f9 100%) !important;
+        color: #fff !important;
+        border-radius: 6px !important;
+        font-weight: 600 !important;
+        letter-spacing: 1px !important;
+        text-transform: uppercase !important;
+        box-shadow: 0 0 20px rgba(255,0,128,0.4), inset 0 1px 0 rgba(255,255,255,0.1) !important;
+        transition: all 0.3s ease !important;
+        &:hover { box-shadow: 0 0 30px rgba(255,0,128,0.6), 0 0 60px rgba(255,0,128,0.2) !important; }
+    }
+
+    // Killer panels: glass morphism with pink tint
+    .mw-killer {
+        background: rgba(26,8,37,0.8) !important;
+        border: 1px solid rgba(255,0,128,0.2) !important;
+        border-radius: 8px !important;
+        backdrop-filter: blur(10px);
+    }
+    .mw-killer__signal {
+        border: 1px solid rgba(255,0,128,0.3) !important;
+        border-radius: 6px !important;
+        box-shadow: 0 0 15px rgba(255,0,128,0.1) !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(255,0,128,0.15) !important; }
+    .mw-label { color: #f48fb1 !important; letter-spacing: 1px !important; }
+    .mw-input { border-color: rgba(255,0,128,0.2) !important; }
+    .mw-tab-dropdown__item--active { color: #ff0080 !important; text-shadow: 0 0 10px rgba(255,0,128,0.5); }
 }
 
 // ─── 4. HIGH/LOW — Luxury Gold/Amber ──────────────────────────────────────
+@keyframes th-gold-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+
 .high-low-theme {
     --th-accent: #ffd700;
     --th-accent2: #ffab00;
@@ -2304,19 +2482,74 @@ $mw-radius:   10px;
     --th-text: #fff8e1;
     --th-muted: #ffd54f;
 
+    // Header: elegant with gold trim
     .mw-win-header {
-        background: linear-gradient(135deg, #121008 0%, #1a150c 100%) !important;
+        background: linear-gradient(135deg, #121008 0%, #1a150c 50%, #221d10 100%) !important;
         border-bottom: 1px solid rgba(255,215,0,0.3) !important;
+        position: relative;
+        &::before {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 10%;
+            width: 80%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, #ffd700, transparent);
+        }
     }
-    .mw-win-title { color: #ffd700 !important; text-shadow: 0 0 20px rgba(255,215,0,0.5); }
+
+    // Title: serif-like, gold foil effect
+    .mw-win-title {
+        color: #ffd700 !important;
+        background: linear-gradient(90deg, #ffd700, #ffab00, #ffd700, #ffab00, #ffd700);
+        background-size: 200% auto;
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        animation: th-gold-shimmer 3s linear infinite;
+        font-weight: 300 !important;
+        letter-spacing: 4px !important;
+        text-transform: uppercase !important;
+        font-size: 12px !important;
+    }
+
     .mw-win-body { background: #121008 !important; }
-    .mw-btn--kill { background: linear-gradient(135deg, #ffd700 0%, #ffab00 100%) !important; color: #121008 !important; }
-    .mw-killer { background: #1a150c !important; border-color: rgba(255,215,0,0.2) !important; }
-    .mw-killer__signal { border-color: rgba(255,215,0,0.3) !important; }
+
+    // Buttons: rounded, gold gradient, luxury feel
+    .mw-btn--kill {
+        background: linear-gradient(135deg, #ffd700 0%, #ffab00 100%) !important;
+        color: #121008 !important;
+        border-radius: 24px !important;
+        font-weight: 700 !important;
+        letter-spacing: 1.5px !important;
+        text-transform: uppercase !important;
+        box-shadow: 0 4px 15px rgba(255,215,0,0.3) !important;
+        transition: all 0.3s ease !important;
+        &:hover { box-shadow: 0 6px 25px rgba(255,215,0,0.5) !important; transform: translateY(-1px); }
+    }
+
+    // Killer panels: gold trim, marble feel
+    .mw-killer {
+        background: rgba(26,21,12,0.9) !important;
+        border: 1px solid rgba(255,215,0,0.15) !important;
+        border-radius: 12px !important;
+        box-shadow: 0 0 30px rgba(255,215,0,0.05) !important;
+    }
+    .mw-killer__signal {
+        border: 1px solid rgba(255,215,0,0.2) !important;
+        border-radius: 10px !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(255,215,0,0.12) !important; border-radius: 8px !important; }
+    .mw-label { color: #ffd54f !important; letter-spacing: 2px !important; }
+    .mw-input { border-color: rgba(255,215,0,0.15) !important; border-radius: 8px !important; }
     .mw-tab-dropdown__item--active { color: #ffd700 !important; }
 }
 
 // ─── 5. UNDER 7,6,5 KILLER — Deep Ocean Blue ──────────────────────────────
+@keyframes th-wave { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
+@keyframes th-bubble { 0% { transform: translateY(0) scale(1); opacity: 0.4; } 100% { transform: translateY(-20px) scale(0.5); opacity: 0; } }
+
 .under-kill-theme {
     --th-accent: #0277bd;
     --th-accent2: #01579b;
@@ -2328,19 +2561,70 @@ $mw-radius:   10px;
     --th-text: #e1f5fe;
     --th-muted: #4fc3f7;
 
+    // Header: wave pattern
     .mw-win-header {
         background: linear-gradient(135deg, #040d14 0%, #061520 100%) !important;
         border-bottom: 1px solid rgba(2,119,189,0.3) !important;
+        position: relative;
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: -1px;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: repeating-linear-gradient(90deg, transparent, transparent 4px, rgba(2,119,189,0.3) 4px, rgba(2,119,189,0.3) 8px);
+            animation: th-wave 2s ease-in-out infinite;
+        }
     }
-    .mw-win-title { color: #0277bd !important; text-shadow: 0 0 20px rgba(2,119,189,0.5); }
+
+    // Title: clean, light, oceanic
+    .mw-win-title {
+        color: #0277bd !important;
+        text-shadow: 0 0 15px rgba(2,119,189,0.5);
+        font-weight: 300 !important;
+        letter-spacing: 3px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+    }
+
     .mw-win-body { background: #040d14 !important; }
-    .mw-btn--kill { background: linear-gradient(135deg, #0277bd 0%, #01579b 100%) !important; }
-    .mw-killer { background: #061520 !important; border-color: rgba(2,119,189,0.2) !important; }
-    .mw-uum { background: #061520 !important; }
+
+    // Buttons: rounded, water ripple
+    .mw-btn--kill {
+        background: linear-gradient(135deg, #0277bd 0%, #01579b 100%) !important;
+        color: #e1f5fe !important;
+        border-radius: 20px !important;
+        font-weight: 600 !important;
+        letter-spacing: 1px !important;
+        box-shadow: 0 0 20px rgba(2,119,189,0.3) !important;
+        transition: all 0.3s ease !important;
+        &:hover { box-shadow: 0 0 30px rgba(2,119,189,0.5), 0 4px 15px rgba(2,119,189,0.2) !important; }
+    }
+
+    // Killer panels: translucent, wave-like
+    .mw-killer {
+        background: rgba(6,21,32,0.8) !important;
+        border: 1px solid rgba(2,119,189,0.15) !important;
+        border-radius: 12px !important;
+    }
+    .mw-uum {
+        background: rgba(6,21,32,0.8) !important;
+        border: 1px solid rgba(2,119,189,0.15) !important;
+        border-radius: 8px !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(2,119,189,0.12) !important; border-radius: 8px !important; }
+    .mw-label { color: #4fc3f7 !important; letter-spacing: 1.5px !important; }
+    .mw-input { border-color: rgba(2,119,189,0.2) !important; border-radius: 8px !important; }
     .mw-tab-dropdown__item--active { color: #0277bd !important; }
 }
 
 // ─── 6. DIFFERS AUTO — Industrial Steel/Copper ─────────────────────────────
+@keyframes th-gear-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+@keyframes th-stamp { 0% { transform: scale(1); } 50% { transform: scale(0.97); } 100% { transform: scale(1); } }
+
 .differs-theme {
     --th-accent: #e67e22;
     --th-accent2: #d35400;
@@ -2352,19 +2636,77 @@ $mw-radius:   10px;
     --th-text: #fef3e2;
     --th-muted: #e0a060;
 
+    // Header: industrial, gear-like
     .mw-win-header {
         background: linear-gradient(135deg, #111318 0%, #181b22 100%) !important;
-        border-bottom: 1px solid rgba(230,126,34,0.3) !important;
+        border-bottom: 2px solid rgba(230,126,34,0.3) !important;
+        position: relative;
+        &::before {
+            content: '⚙';
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: rgba(230,126,34,0.3);
+            font-size: 16px;
+            animation: th-gear-spin 4s linear infinite;
+        }
     }
-    .mw-win-title { color: #e67e22 !important; text-shadow: 0 0 20px rgba(230,126,34,0.5); }
+
+    // Title: bold industrial
+    .mw-win-title {
+        color: #e67e22 !important;
+        text-shadow: 0 0 15px rgba(230,126,34,0.5);
+        font-weight: 900 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+    }
+
     .mw-win-body { background: #111318 !important; }
-    .mw-btn--kill { background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important; }
-    .mw-da { background: #181b22 !important; }
-    .mw-da__row { border-bottom-color: rgba(230,126,34,0.1) !important; }
+
+    // Buttons: angular, riveted feel
+    .mw-btn--kill {
+        background: linear-gradient(135deg, #e67e22 0%, #d35400 100%) !important;
+        color: #111318 !important;
+        border-radius: 4px !important;
+        font-weight: 800 !important;
+        letter-spacing: 1.5px !important;
+        text-transform: uppercase !important;
+        border: none !important;
+        box-shadow: inset 0 2px 0 rgba(255,255,255,0.1), 0 2px 8px rgba(230,126,34,0.3) !important;
+        transition: all 0.15s ease !important;
+        &:active { animation: th-stamp 0.15s ease; }
+    }
+
+    // Differs auto: metal plate
+    .mw-da {
+        background: #181b22 !important;
+        border-radius: 4px !important;
+    }
+    .mw-da__row {
+        border-bottom: 1px solid rgba(230,126,34,0.1) !important;
+        border-radius: 0 !important;
+    }
+
+    // Killer panels: industrial
+    .mw-killer {
+        background: #181b22 !important;
+        border: 1px solid rgba(230,126,34,0.15) !important;
+        border-radius: 4px !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(230,126,34,0.12) !important; border-radius: 3px !important; }
+    .mw-label { color: #e0a060 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
+    .mw-input { border-color: rgba(230,126,34,0.2) !important; border-radius: 3px !important; }
     .mw-tab-dropdown__item--active { color: #e67e22 !important; }
 }
 
 // ─── 7. AI ANALYST — Sci-Fi Holographic ────────────────────────────────────
+@keyframes th-holo-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.85; } }
+@keyframes th-data-stream { 0% { background-position: 0% 0%; } 100% { background-position: 0% 100%; } }
+
 .ai-analyst-theme {
     --th-accent: #7c4dff;
     --th-accent2: #651fff;
@@ -2376,20 +2718,77 @@ $mw-radius:   10px;
     --th-text: #ede7f6;
     --th-muted: #b388ff;
 
+    // Header: holographic shimmer
     .mw-win-header {
-        background: linear-gradient(135deg, #0a0818 0%, #100d22 100%) !important;
+        background: linear-gradient(135deg, #0a0818 0%, #100d22 50%, #16102c 100%) !important;
         border-bottom: 1px solid rgba(124,77,255,0.3) !important;
+        position: relative;
+        overflow: hidden;
+        &::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(124,77,255,0.1), transparent);
+            animation: th-holo-flicker 3s ease-in-out infinite;
+        }
     }
-    .mw-win-title { color: #7c4dff !important; text-shadow: 0 0 20px rgba(124,77,255,0.5); }
+
+    // Title: futuristic, thin
+    .mw-win-title {
+        color: #7c4dff !important;
+        text-shadow: 0 0 20px rgba(124,77,255,0.7), 0 0 40px rgba(124,77,255,0.3);
+        font-weight: 200 !important;
+        letter-spacing: 4px !important;
+        text-transform: uppercase !important;
+        font-size: 12px !important;
+    }
+
     .mw-win-body { background: #0a0818 !important; }
-    .mw-btn--analyze { background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%) !important; }
-    .mw-btn--run { background: linear-gradient(135deg, #7c4dff 0%, #651fff 100%) !important; }
-    .mw-killer { background: #100d22 !important; border-color: rgba(124,77,255,0.2) !important; }
-    .mw-killer__conf { border-color: rgba(124,77,255,0.3) !important; }
-    .mw-tab-dropdown__item--active { color: #7c4dff !important; }
+
+    // Buttons: holographic gradient
+    .mw-btn--analyze, .mw-btn--run {
+        background: linear-gradient(135deg, #7c4dff 0%, #651fff 50%, #7c4dff 100%) !important;
+        background-size: 200% auto !important;
+        color: #fff !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        letter-spacing: 1.5px !important;
+        text-transform: uppercase !important;
+        box-shadow: 0 0 20px rgba(124,77,255,0.4) !important;
+        transition: all 0.3s ease !important;
+        &:hover {
+            background-position: right center !important;
+            box-shadow: 0 0 30px rgba(124,77,255,0.6) !important;
+        }
+    }
+
+    // Killer panels: holographic glass
+    .mw-killer {
+        background: rgba(16,13,34,0.85) !important;
+        border: 1px solid rgba(124,77,255,0.2) !important;
+        border-radius: 10px !important;
+        backdrop-filter: blur(8px);
+    }
+    .mw-killer__conf {
+        border: 1px solid rgba(124,77,255,0.3) !important;
+        border-radius: 8px !important;
+        box-shadow: 0 0 15px rgba(124,77,255,0.1) !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(124,77,255,0.15) !important; border-radius: 8px !important; }
+    .mw-label { color: #b388ff !important; letter-spacing: 2px !important; }
+    .mw-input { border-color: rgba(124,77,255,0.2) !important; border-radius: 6px !important; }
+    .mw-tab-dropdown__item--active { color: #7c4dff !important; text-shadow: 0 0 10px rgba(124,77,255,0.5); }
 }
 
 // ─── 8. MULTI-KILLER — Neon Red Predator ───────────────────────────────────
+@keyframes th-predator-pulse { 0%, 100% { box-shadow: 0 0 20px rgba(255,23,68,0.3); } 50% { box-shadow: 0 0 40px rgba(255,23,68,0.6); } }
+@keyframes th-claw-swipe { 0% { width: 0; } 100% { width: 100%; } }
+
 .multi-killer-theme {
     --th-accent: #ff1744;
     --th-accent2: #d50000;
@@ -2401,20 +2800,77 @@ $mw-radius:   10px;
     --th-text: #ffebee;
     --th-muted: #ff8a80;
 
+    // Header: aggressive, predator feel
     .mw-win-header {
         background: linear-gradient(135deg, #140808 0%, #1c0a0a 100%) !important;
-        border-bottom: 1px solid rgba(255,23,68,0.3) !important;
+        border-bottom: 2px solid rgba(255,23,68,0.4) !important;
+        position: relative;
+        &::after {
+            content: '';
+            position: absolute;
+            bottom: -2px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #ff1744, transparent);
+            animation: th-claw-swipe 2s ease-in-out infinite alternate;
+        }
     }
-    .mw-win-title { color: #ff1744 !important; text-shadow: 0 0 20px rgba(255,23,68,0.5); }
+
+    // Title: bold, aggressive, condensed
+    .mw-win-title {
+        color: #ff1744 !important;
+        text-shadow: 0 0 20px rgba(255,23,68,0.7), 0 0 40px rgba(255,23,68,0.3);
+        font-weight: 900 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        font-size: 12px !important;
+    }
+
     .mw-win-body { background: #140808 !important; }
-    .mw-btn--run { background: linear-gradient(135deg, #ff1744 0%, #d50000 100%) !important; }
-    .mw-btn--analyze { background: linear-gradient(135deg, #ff1744 0%, #d50000 100%) !important; }
-    .mw-killer { background: #1c0a0a !important; border-color: rgba(255,23,68,0.2) !important; }
-    .mw-type-chip--active { background: rgba(255,23,68,0.2) !important; color: #ff1744 !important; border-color: rgba(255,23,68,0.4) !important; }
-    .mw-tab-dropdown__item--active { color: #ff1744 !important; }
+
+    // Buttons: aggressive, angular, glowing
+    .mw-btn--run, .mw-btn--analyze {
+        background: linear-gradient(135deg, #ff1744 0%, #d50000 100%) !important;
+        color: #fff !important;
+        border-radius: 4px !important;
+        font-weight: 800 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        animation: th-predator-pulse 2s ease-in-out infinite;
+        transition: all 0.2s ease !important;
+        &:hover { transform: scale(1.02); }
+    }
+    .mw-btn--stop {
+        background: linear-gradient(135deg, #444 0%, #222 100%) !important;
+        border-radius: 4px !important;
+    }
+
+    // Killer panels: red glow edges
+    .mw-killer {
+        background: #1c0a0a !important;
+        border: 1px solid rgba(255,23,68,0.2) !important;
+        border-radius: 6px !important;
+        box-shadow: 0 0 20px rgba(255,23,68,0.05) !important;
+    }
+    .mw-type-chip--active {
+        background: rgba(255,23,68,0.2) !important;
+        color: #ff1744 !important;
+        border-color: rgba(255,23,68,0.4) !important;
+        box-shadow: 0 0 10px rgba(255,23,68,0.2) !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(255,23,68,0.15) !important; border-radius: 4px !important; }
+    .mw-label { color: #ff8a80 !important; letter-spacing: 2px !important; text-transform: uppercase !important; }
+    .mw-input { border-color: rgba(255,23,68,0.2) !important; border-radius: 4px !important; }
+    .mw-tab-dropdown__item--active { color: #ff1744 !important; text-shadow: 0 0 10px rgba(255,23,68,0.5); }
 }
 
 // ─── 9. DIGIT HUNTER — Enhanced Terminal ───────────────────────────────────
+@keyframes th-cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
+@keyframes th-typing { from { width: 0; } to { width: 100%; } }
+
 .digit-hunter-theme {
     --th-accent: #00ff41;
     --th-accent2: #00cc33;
@@ -2426,11 +2882,53 @@ $mw-radius:   10px;
     --th-text: #00ff41;
     --th-muted: #00aa28;
 
+    // Header: terminal window style
     .mw-win-header {
-        background: linear-gradient(135deg, #0a0a0a 0%, #111111 100%) !important;
+        background: #1a1a1a !important;
         border-bottom: 1px solid rgba(0,255,65,0.3) !important;
+        position: relative;
+        &::before {
+            content: '█';
+            animation: th-cursor-blink 1s step-end infinite;
+            color: #00ff41;
+            margin-right: 6px;
+            font-size: 12px;
+        }
     }
-    .mw-win-title { color: #00ff41 !important; text-shadow: 0 0 20px rgba(0,255,65,0.5); font-family: 'Courier New', monospace !important; }
-    .mw-win-body { background: #0a0a0a !important; font-family: 'Courier New', monospace !important; }
-    .mw-tab-dropdown__item--active { color: #00ff41 !important; }
+
+    // Title: monospace terminal
+    .mw-win-title {
+        color: #00ff41 !important;
+        text-shadow: 0 0 15px rgba(0,255,65,0.5);
+        font-family: 'Courier New', monospace !important;
+        font-weight: 700 !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        font-size: 11px !important;
+    }
+
+    .mw-win-body {
+        background: #0a0a0a !important;
+        font-family: 'Courier New', monospace !important;
+    }
+
+    // Buttons: terminal style with > prefix
+    .mw-btn {
+        font-family: 'Courier New', monospace !important;
+        letter-spacing: 1px !important;
+    }
+
+    // Killer panels: console window
+    .mw-killer {
+        background: #111111 !important;
+        border: 1px solid rgba(0,255,65,0.15) !important;
+        border-radius: 2px !important;
+        font-family: 'Courier New', monospace !important;
+    }
+
+    // Form elements
+    .mw-field { border-color: rgba(0,255,65,0.1) !important; border-radius: 0 !important; }
+    .mw-label { color: #00aa28 !important; letter-spacing: 2px !important; text-transform: uppercase !important; font-family: 'Courier New', monospace !important; }
+    .mw-input { border-color: rgba(0,255,65,0.15) !important; border-radius: 0 !important; font-family: 'Courier New', monospace !important; color: #00ff41 !important; }
+    .mw-tab-dropdown__item--active { color: #00ff41 !important; text-shadow: 0 0 10px rgba(0,255,65,0.5); }
 }
