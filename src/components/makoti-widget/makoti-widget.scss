@@ -1366,9 +1366,9 @@ $mw-radius:   10px;
 }
 
 .mw-uum__controls {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .mw-uum__section {
@@ -1485,12 +1485,11 @@ $mw-radius:   10px;
 
 .mw-da__controls {
     display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
+    flex-direction: column;
+    gap: 4px;
 
     .mw-field {
-        flex: 1;
-        min-width: 60px;
+        width: 100%;
     }
 }
 
@@ -1646,12 +1645,12 @@ $mw-radius:   10px;
 
 .mw-da__recovery-fields {
     display: flex;
-    gap: 8px;
+    flex-direction: column;
+    gap: 4px;
     animation: mw-drop-in 0.15s ease-out;
 
     .mw-field {
-        flex: 1;
-        min-width: 60px;
+        width: 100%;
     }
 }
 

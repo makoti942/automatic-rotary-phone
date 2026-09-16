@@ -651,7 +651,7 @@ export const DigitHunter: React.FC = () => {
             </div>
 
             {/* Config */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4, marginBottom: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 4, marginBottom: 6 }}>
                 <label style={{ fontSize: 10, color: '#888' }}>Stake ($)
                     <input type="number" value={stake} onChange={e => setStake(e.target.value)}
                         style={{ width: '100%', background: '#1a1a2e', border: '1px solid #333', color: '#fff', padding: 2, fontSize: 10, borderRadius: 3 }}
