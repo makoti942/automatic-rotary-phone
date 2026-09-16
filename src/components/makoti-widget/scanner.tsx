@@ -536,6 +536,30 @@ interface TriggerInfo {
     pValue: number;         // probability boost is noise
     significance: 'high' | 'medium' | 'low' | 'none';
     triggerPower: number;   // how strong the trigger digit is in current market
+    // Tier 2: Deep Digit Ecosystem Analysis
+    trajectory: {
+        slopes: number[];              // per-digit slope: positive=rising, negative=falling
+        acceleration: number[];        // per-digit: is the slope itself changing?
+        windows: number[][];           // [digit][window] = percentage in that 100-tick window
+        stability: number[];           // per-digit: variance of trajectory (low=stable)
+    };
+    crossDigit: {
+        matrix: number[][];            // [trigger][target] = influence score (-10 to +10)
+        dominantEffects: number;       // count of digits significantly affected
+        netEffect: number;             // net direction: positive = trigger promotes wins
+    };
+    dominance: {
+        currentDominant: number;       // which digit is currently strongest (0-9)
+        currentSuppressed: number;     // which digit is currently weakest (0-9)
+        triggerRank: number;           // where trigger digit ranks (1=strongest)
+        dominanceShift: number;        // positive = dominance shifting toward trigger
+        suppressionRelief: number;     // how much suppressed digits rebound after trigger
+    };
+    predictive: {
+        predictedBoost: number;        // what model predicts boost should be
+        predictionAccuracy: number;    // how close prediction matches reality (0-100)
+        forecastConfidence: number;    // how reliable the forecast is (0-100)
+    };
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -585,6 +609,128 @@ function analyzeTriggerDigits(
         // Power: current freq weighted by momentum
         return freq + (momentum * 2) + (consistency * 0.5);
     });
+
+    // ══════════════════════════════════════════════════════════════
+    // TIER 2: DEEP DIGIT ECOSYSTEM ANALYSIS
+    // ══════════════════════════════════════════════════════════════
+
+    // ── Layer 1: Digit Percentage Trajectory (DPT) ──
+    // Split 1500 ticks into 15 windows of 100 ticks each
+    // Track how each digit's percentage evolves over time
+    const WINDOW_COUNT = 15;
+    const WINDOW_SIZE = Math.floor(len / WINDOW_COUNT);
+    const digitTrajectoryWindows: number[][] = Array.from({ length: 10 }, () => []);
+
+    for (let w = 0; w < WINDOW_COUNT; w++) {
+        const start = w * WINDOW_SIZE;
+        const end = Math.min(start + WINDOW_SIZE, len);
+        const windowPcts = calcDigitPcts(digits.slice(start, end));
+        for (let d = 0; d < 10; d++) {
+            digitTrajectoryWindows[d].push(windowPcts[d]);
+        }
+    }
+
+    // Linear regression slope for each digit's trajectory
+    const trajectorySlopes = Array(10).fill(0);
+    const trajectoryAcceleration = Array(10).fill(0);
+    const trajectoryStability = Array(10).fill(0);
+
+    for (let d = 0; d < 10; d++) {
+        const vals = digitTrajectoryWindows[d];
+        const n = vals.length;
+        if (n < 3) continue;
+
+        // Slope via least-squares regression
+        let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
+        for (let i = 0; i < n; i++) {
+            sumX += i;
+            sumY += vals[i];
+            sumXY += i * vals[i];
+            sumX2 += i * i;
+        }
+        const meanX = sumX / n;
+        const meanY = sumY / n;
+        const denom = sumX2 - n * meanX * meanX;
+        const slope = denom !== 0 ? (sumXY - n * meanX * meanY) / denom : 0;
+        trajectorySlopes[d] = slope;
+
+        // Acceleration: slope of second half minus slope of first half
+        const halfN = Math.floor(n / 2);
+        const firstHalf = vals.slice(0, halfN);
+        const secondHalf = vals.slice(halfN);
+
+        const calcSlope = (arr: number[]) => {
+            if (arr.length < 2) return 0;
+            let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+            for (let i = 0; i < arr.length; i++) {
+                sx += i; sy += arr[i]; sxy += i * arr[i]; sx2 += i * i;
+            }
+            const mx = sx / arr.length, my = sy / arr.length;
+            const dn = sx2 - arr.length * mx * mx;
+            return dn !== 0 ? (sxy - arr.length * mx * my) / dn : 0;
+        };
+
+        trajectoryAcceleration[d] = calcSlope(secondHalf) - calcSlope(firstHalf);
+
+        // Stability: inverse of variance (low variance = high stability)
+        const mean = meanY;
+        let variance = 0;
+        for (let i = 0; i < n; i++) variance += (vals[i] - mean) ** 2;
+        variance /= n;
+        trajectoryStability[d] = variance < 1 ? 10 : variance < 4 ? 7 : variance < 9 ? 4 : 1;
+    }
+
+    // ── Layer 2: Cross-Digit Influence Matrix (CDI) ──
+    // For each digit X, measure how it affects every other digit Y in the next 20 ticks
+    const crossDigitMatrix: number[][] = Array.from({ length: 10 }, () => Array(10).fill(0));
+    const crossDigitWindow = 20;
+
+    for (let src = 0; src < 10; src++) {
+        const srcPositions: number[] = [];
+        for (let i = 0; i < len - crossDigitWindow; i++) {
+            if (digits[i] === src) srcPositions.push(i);
+        }
+        if (srcPositions.length < 3) continue;
+
+        // Collect digits in the next 20 ticks after each src appearance
+        const afterSrc: number[] = [];
+        for (const pos of srcPositions) {
+            for (let j = pos + 1; j < Math.min(pos + crossDigitWindow, len); j++) {
+                afterSrc.push(digits[j]);
+            }
+        }
+        const afterSrcPcts = calcDigitPcts(afterSrc);
+
+        for (let tgt = 0; tgt < 10; tgt++) {
+            crossDigitMatrix[src][tgt] = afterSrcPcts[tgt] - baselinePcts[tgt];
+        }
+    }
+
+    // ── Layer 3: Digit Dominance Index (DDI) ──
+    // Which digits are currently dominating/suppressed
+    const recentPcts = calcDigitPcts(digits.slice(-200));
+    const oldPcts = calcDigitPcts(digits.slice(0, Math.floor(len / 2)));
+
+    // Rank digits by current percentage
+    const digitRanks = recentPcts
+        .map((pct, d) => ({ digit: d, pct }))
+        .sort((a, b) => b.pct - a.pct);
+
+    const currentDominant = digitRanks[0].digit;
+    const currentSuppressed = digitRanks[9].digit;
+
+    // Dominance shift: compare first half vs second half rankings
+    const oldRanks = oldPcts
+        .map((pct, d) => ({ digit: d, pct }))
+        .sort((a, b) => b.pct - a.pct);
+    const oldDominant = oldRanks[0].digit;
+
+    // Cross-digit effect on suppressed digits after trigger
+    const suppressionReliefMap = Array(10).fill(0);
+    for (let triggerD = 0; triggerD < 10; triggerD++) {
+        const suppressedPctsAfterTrigger = crossDigitMatrix[triggerD][currentSuppressed];
+        suppressionReliefMap[triggerD] = suppressedPctsAfterTrigger;
+    }
 
     const triggers: TriggerInfo[] = [];
 
@@ -772,24 +918,98 @@ function analyzeTriggerDigits(
         // C: Trigger Power — how strong the trigger digit itself is in current market
         const triggerPower = digitPower[triggerDigit];
 
-        // D: Sample-size weight — downweight triggers with few occurrences
-        // Full weight at 20+ occurrences, linear scale down to 0 at 0 occurrences
+        // ══════════════════════════════════════════════════════════════
+        // TIER 2: Deep Digit Ecosystem — Per-Trigger Calculations
+        // ══════════════════════════════════════════════════════════════
+
+        // Layer 4: Predictive Signal Strength (PSS)
+        // Build predicted digit distribution for next 20 ticks
+        const predictedDist = Array(10).fill(0).map((_, d) => {
+            let predicted = baselinePcts[d];
+            // Trajectory projection: slope * 2 (project 20 ticks ahead)
+            predicted += trajectorySlopes[d] * 2;
+            // Cross-digit effect: how trigger digit affects this digit
+            predicted += crossDigitMatrix[triggerDigit][d];
+            // Dominance relief: suppressed digits tend to bounce back
+            if (d === currentSuppressed) predicted += 2;
+            if (d === currentDominant) predicted -= 0.5;
+            return Math.max(0, predicted);
+        });
+
+        // Normalize predicted distribution to 100%
+        const predictedTotal = predictedDist.reduce((s, v) => s + v, 0);
+        const normalizedPredicted = predictedDist.map(v => predictedTotal > 0 ? (v / predictedTotal) * 100 : 10);
+
+        // Predicted win% from predicted distribution
+        const predictedWinPct = normalizedPredicted.reduce((sum, pct, d) =>
+            sum + (isWin(d) ? pct : 0), 0);
+
+        // Prediction accuracy: how close predicted boost matches actual boost
+        const predictedBoost = predictedWinPct - baselineWinPct;
+        const predictionAccuracy = Math.max(0, 100 - Math.abs(predictedBoost - boost) * 2);
+
+        // Forecast confidence: based on trajectory stability + cross-digit consistency
+        const triggerTrajectoryStability = trajectoryStability[triggerDigit];
+        const triggerCrossDigitEffects = crossDigitMatrix[triggerDigit].filter(v => Math.abs(v) > 1).length;
+        const forecastConfidence = Math.min(100,
+            triggerTrajectoryStability * 5 + triggerCrossDigitEffects * 8 + predictionAccuracy * 0.3
+        );
+
+        // Dominance rank of trigger digit
+        const triggerRank = digitRanks.findIndex(r => r.digit === triggerDigit) + 1;
+        const dominanceShift = oldRanks.findIndex(r => r.digit === triggerDigit) - triggerRank;
+        const suppressionRelief = suppressionReliefMap[triggerDigit];
+
+        // Cross-digit dominant effects count and net effect
+        const crossDigitEffects = crossDigitMatrix[triggerDigit].filter(v => Math.abs(v) > 1).length;
+        const crossDigitNetEffect = crossDigitMatrix[triggerDigit].reduce((sum, v, d) =>
+            sum + (isWin(d) ? v : -v), 0);
+
+        // ══════════════════════════════════════════════════════════════
+        // CONFIDENCE SCORE (Tier 1 + Tier 2)
+        // ══════════════════════════════════════════════════════════════
+
         const sampleWeight = Math.min(1, positions.length / 20);
 
-        // Weighted components (0-100 scale)
-        const boostScore = Math.min(30, Math.max(0, boost * 2)); // 0-30
-        const consistencyScore = (consistency / 100) * 20; // 0-20
-        const momentumScore = Math.min(20, Math.max(0, overallMomentum * 1.5)); // 0-20
-        const decayScore = Math.min(15, Math.max(0, (bestPeak - baselineWinPct) * 1.5)); // 0-15
-        const occScore = Math.min(15, (positions.length / 15) * 15); // 0-15
+        // Tier 1 components (rebalanced)
+        const boostScore = Math.min(20, Math.max(0, boost * 1.5)); // 0-20
+        const consistencyScore = (consistency / 100) * 10; // 0-10
+        const momentumScore = Math.min(10, Math.max(0, overallMomentum * 1.2)); // 0-10
+        const decayScore = Math.min(10, Math.max(0, (bestPeak - baselineWinPct) * 1.2)); // 0-10
+        const occScore = Math.min(5, (positions.length / 15) * 5); // 0-5
+        const powerBonus = Math.min(5, Math.max(0, triggerPower * 0.5)); // 0-5
 
-        // C: DigitPower bonus — boost confidence if trigger digit is gaining strength (0-10)
-        const powerBonus = Math.min(10, Math.max(0, triggerPower * 0.8));
+        // Tier 2 components (new)
+        // Trajectory Score: slope alignment + acceleration + stability
+        const trajectoryScore = Math.min(15, Math.max(0,
+            Math.abs(trajectorySlopes[triggerDigit]) * 3 +
+            Math.abs(trajectoryAcceleration[triggerDigit]) * 2 +
+            triggerTrajectoryStability * 0.8
+        )); // 0-15
+
+        // Cross-Digit Score: how many digits it affects + net direction
+        const crossDigitScore = Math.min(10, Math.max(0,
+            crossDigitEffects * 1.5 + Math.abs(crossDigitNetEffect) * 1.5
+        )); // 0-10
+
+        // Dominance Score: trigger rank + shift + suppression relief
+        const dominanceScoreVal = Math.min(10, Math.max(0,
+            (10 - triggerRank) * 1 +
+            Math.abs(dominanceShift) * 1.5 +
+            suppressionRelief * 1
+        )); // 0-10
+
+        // Predictive Score: how accurate the model prediction is
+        const predictiveScoreVal = Math.min(5, Math.max(0,
+            predictionAccuracy * 0.05
+        )); // 0-5
 
         // Raw score
-        const rawScore = boostScore + consistencyScore + momentumScore + decayScore + occScore + powerBonus;
+        const rawScore = boostScore + consistencyScore + momentumScore + decayScore
+            + occScore + powerBonus + trajectoryScore + crossDigitScore
+            + dominanceScoreVal + predictiveScoreVal;
 
-        // D: Apply sample-size penalty — low-occurrence triggers get heavily penalized
+        // Apply sample-size penalty
         const confidence = Math.min(100, rawScore * sampleWeight);
 
         triggers.push({
@@ -819,6 +1039,30 @@ function analyzeTriggerDigits(
             pValue,
             significance,
             triggerPower,
+            // Tier 2 fields
+            trajectory: {
+                slopes: trajectorySlopes,
+                acceleration: trajectoryAcceleration,
+                windows: digitTrajectoryWindows,
+                stability: trajectoryStability,
+            },
+            crossDigit: {
+                matrix: crossDigitMatrix,
+                dominantEffects: crossDigitEffects,
+                netEffect: crossDigitNetEffect,
+            },
+            dominance: {
+                currentDominant,
+                currentSuppressed,
+                triggerRank,
+                dominanceShift,
+                suppressionRelief,
+            },
+            predictive: {
+                predictedBoost,
+                predictionAccuracy,
+                forecastConfidence,
+            },
         });
     }
 
@@ -1644,6 +1888,109 @@ export const Scanner: React.FC = () => {
                                                     First 50 ticks: {t.patternTrend.olderBoost > 0 ? '+' : ''}{t.patternTrend.olderBoost.toFixed(1)}% boost ({t.patternTrend.olderOccurrences}x)
                                                     {' | '}
                                                     Last 50 ticks: {t.patternTrend.recentBoost > 0 ? '+' : ''}{t.patternTrend.recentBoost.toFixed(1)}% boost ({t.patternTrend.recentOccurrences}x)
+                                                </div>
+
+                                                {/* ── TIER 2: Trajectory Visualization ── */}
+                                                <div style={{ marginTop: 8, background: '#0a0a1a', border: '1px solid #333', borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, color: '#ffd700', fontWeight: 'bold', marginBottom: 4 }}>
+                                                        DIGIT TRAJECTORIES (15 windows × 100 ticks)
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                                        {t.trajectory.slopes.map((slope, d) => {
+                                                            const accel = t.trajectory.acceleration[d];
+                                                            const stab = t.trajectory.stability[d];
+                                                            const arrow = slope > 0.3 ? '▲' : slope < -0.3 ? '▼' : '─';
+                                                            const accelArrow = accel > 0.2 ? '↗' : accel < -0.2 ? '↘' : '';
+                                                            const color = slope > 0.3 ? '#4caf50' : slope < -0.3 ? '#f44336' : '#888';
+                                                            const isTriggerD = d === t.digit;
+                                                            return (
+                                                                <div key={d} style={{
+                                                                    background: isTriggerD ? '#1a1a0d' : '#0d0d1a',
+                                                                    border: `1px solid ${isTriggerD ? '#ffd700' : '#333'}`,
+                                                                    borderRadius: 3, padding: '3px 6px', textAlign: 'center', minWidth: 42,
+                                                                }}>
+                                                                    <div style={{ fontSize: 8, color: isTriggerD ? '#ffd700' : '#666', fontWeight: 'bold' }}>D{d}</div>
+                                                                    <div style={{ fontSize: 14, color, lineHeight: 1 }}>{arrow}</div>
+                                                                    <div style={{ fontSize: 7, color: '#666' }}>
+                                                                        {slope > 0 ? '+' : ''}{slope.toFixed(2)}%{accelArrow}
+                                                                    </div>
+                                                                    <div style={{ fontSize: 6, color: '#555' }}>stab:{stab}</div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 2: Cross-Digit Influence Matrix ── */}
+                                                <div style={{ marginTop: 6, background: '#0a0a1a', border: '1px solid #333', borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, color: '#2196f3', fontWeight: 'bold', marginBottom: 4 }}>
+                                                        CROSS-DIGIT INFLUENCE (D{t.digit} → others)
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                                                        {t.crossDigit.matrix[t.digit].map((influence, tgt) => {
+                                                            const isWin = entryContractType === 'DIGITOVER' ? tgt > entryBarrier : tgt < entryBarrier;
+                                                            const absInf = Math.abs(influence);
+                                                            const bgColor = absInf > 3 ? (influence > 0 ? '#0d2d0d' : '#2d0d0d') : '#0d0d1a';
+                                                            const borderColor = absInf > 3 ? (influence > 0 ? '#4caf50' : '#f44336') : '#333';
+                                                            return (
+                                                                <div key={tgt} style={{
+                                                                    background: bgColor, border: `1px solid ${borderColor}`,
+                                                                    borderRadius: 3, padding: '3px 5px', textAlign: 'center', minWidth: 42,
+                                                                }}>
+                                                                    <div style={{ fontSize: 8, color: isWin ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>D{tgt}</div>
+                                                                    <div style={{ fontSize: 10, fontWeight: 'bold', color: influence > 0 ? '#4caf50' : influence < 0 ? '#f44336' : '#888' }}>
+                                                                        {influence > 0 ? '+' : ''}{influence.toFixed(1)}%
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <div style={{ marginTop: 4, fontSize: 8, color: '#666' }}>
+                                                        {t.crossDigit.dominantEffects} digits significantly affected | net: {t.crossDigit.netEffect > 0 ? '+' : ''}{t.crossDigit.netEffect.toFixed(1)}%
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 2: Dominance + Predictive ── */}
+                                                <div style={{ marginTop: 6, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                    {/* Dominance Rank */}
+                                                    <div style={{
+                                                        background: '#0d1a0d', border: '1px solid #4caf50',
+                                                        borderRadius: 4, padding: '4px 8px', fontSize: 9, flex: 1, minWidth: 120,
+                                                    }}>
+                                                        <div style={{ color: '#4caf50', fontWeight: 'bold', marginBottom: 2 }}>
+                                                            DOMINANCE
+                                                        </div>
+                                                        <div style={{ color: '#ccc' }}>
+                                                            Trigger D{t.digit} ranked <span style={{ color: '#ffd700', fontWeight: 'bold' }}>#{t.dominance.triggerRank}</span> / 10
+                                                        </div>
+                                                        <div style={{ color: '#888', fontSize: 8 }}>
+                                                            Dominant: D{t.dominance.currentDominant} | Suppressed: D{t.dominance.currentSuppressed}
+                                                        </div>
+                                                        <div style={{ color: t.dominance.dominanceShift > 0 ? '#4caf50' : '#f44336', fontSize: 8 }}>
+                                                            Shift: {t.dominance.dominanceShift > 0 ? '↑ gaining' : t.dominance.dominanceShift < 0 ? '↓ losing' : '→ stable'}
+                                                            {t.dominance.suppressionRelief > 0 && ` | Relief: +${t.dominance.suppressionRelief.toFixed(1)}%`}
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Predictive Accuracy */}
+                                                    <div style={{
+                                                        background: t.predictive.predictionAccuracy > 70 ? '#0d1a0d' : t.predictive.predictionAccuracy > 40 ? '#1a1a0d' : '#1a0d0d',
+                                                        border: `1px solid ${t.predictive.predictionAccuracy > 70 ? '#4caf50' : t.predictive.predictionAccuracy > 40 ? '#ffc107' : '#f44336'}`,
+                                                        borderRadius: 4, padding: '4px 8px', fontSize: 9, flex: 1, minWidth: 120,
+                                                    }}>
+                                                        <div style={{
+                                                            color: t.predictive.predictionAccuracy > 70 ? '#4caf50' : t.predictive.predictionAccuracy > 40 ? '#ffc107' : '#f44336',
+                                                            fontWeight: 'bold', marginBottom: 2,
+                                                        }}>
+                                                            PREDICTIVE MODEL
+                                                        </div>
+                                                        <div style={{ color: '#ccc' }}>
+                                                            Predicted: <span style={{ color: '#ffd700' }}>{t.predictive.predictedBoost > 0 ? '+' : ''}{t.predictive.predictedBoost.toFixed(1)}%</span> boost
+                                                        </div>
+                                                        <div style={{ color: '#888', fontSize: 8 }}>
+                                                            Accuracy: {t.predictive.predictionAccuracy.toFixed(0)}% | Forecast: {t.predictive.forecastConfidence.toFixed(0)}%
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             </div>
                                             );
