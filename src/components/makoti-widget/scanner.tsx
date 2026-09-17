@@ -560,6 +560,13 @@ interface TriggerInfo {
         predictionAccuracy: number;    // how close prediction matches reality (0-100)
         forecastConfidence: number;    // how reliable the forecast is (0-100)
     };
+    losingFilter: {
+        pass: boolean;                 // did the filter pass?
+        belowThreshold: number;        // how many losing digits are < 10%
+        decreasing: number;            // how many losing digits have negative growth
+        totalLosing: number;           // total losing digits
+        growth: number[];              // per-digit growth (recent 30 vs overall 1000)
+    };
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -686,6 +693,14 @@ function analyzeTriggerDigits(
         variance /= n;
         trajectoryStability[d] = variance < 0.5 ? 10 : variance < 2 ? 7 : variance < 5 ? 4 : 1;
     }
+
+    // ── Digit Growth: recent 30 ticks vs overall (same as manual trade) ──
+    // Positive growth = digit increasing, negative = decreasing
+    const overallPcts = calcDigitPcts(digits.slice(-1000));
+    const recentPcts30 = calcDigitPcts(digits.slice(-30));
+    const digitGrowth = Array(10).fill(0).map((_, d) =>
+        Math.round((recentPcts30[d] - overallPcts[d]) * 10) / 10
+    );
 
     // ── Layer 2: Cross-Digit Influence Matrix (CDI) ──
     // For each digit X, measure how it affects every other digit Y in the next 20 ticks
@@ -1014,8 +1029,19 @@ function analyzeTriggerDigits(
         const crossDigitNetEffect = crossDigitMatrix[triggerDigit].reduce((sum, v, d) =>
             sum + (isWin(d) ? v : -v), 0);
 
+        // ── Losing Digit Filter ──
+        // At least half of losing digits must be < 10% AND have negative growth (decreasing)
+        const losingDigits = Array(10).fill(0).map((_, d) => !isWin(d));
+        const losingDigitIndices = losingDigits.map((isLosing, d) => isLosing ? d : -1).filter(d => d >= 0);
+        const losingCount = losingDigitIndices.length;
+        const losingBelowThreshold = losingDigitIndices.filter(d => baselineSmoothed[d] < 10).length;
+        const losingDecreasing = losingDigitIndices.filter(d => digitGrowth[d] < 0).length;
+        const losingMet = losingBelowThreshold >= Math.ceil(losingCount / 2);
+        const losingFading = losingDecreasing >= Math.ceil(losingCount / 2);
+        const losingFilterPass = losingMet && losingFading;
+
         // ══════════════════════════════════════════════════════════════
-        // CONFIDENCE SCORE (Tier 1 + Tier 2)
+        // CONFIDENCE SCORE (Tier 1 + Tier 2 + Losing Filter)
         // ══════════════════════════════════════════════════════════════
 
         const sampleWeight = Math.min(1, positions.length / 20);
@@ -1058,8 +1084,10 @@ function analyzeTriggerDigits(
             + occScore + powerBonus + trajectoryScore + crossDigitScore
             + dominanceScoreVal + predictiveScoreVal;
 
-        // Apply sample-size penalty
-        const confidence = Math.min(100, rawScore * sampleWeight);
+        // Apply sample-size penalty + losing digit filter
+        // If losing digits are NOT below 10% and NOT decreasing, heavy penalty
+        const losingFilterMultiplier = losingFilterPass ? 1.0 : 0.6;
+        const confidence = Math.min(100, rawScore * sampleWeight * losingFilterMultiplier);
 
         triggers.push({
             digit: triggerDigit,
@@ -1111,6 +1139,13 @@ function analyzeTriggerDigits(
                 predictedBoost,
                 predictionAccuracy,
                 forecastConfidence,
+            },
+            losingFilter: {
+                pass: losingFilterPass,
+                belowThreshold: losingBelowThreshold,
+                decreasing: losingDecreasing,
+                totalLosing: losingCount,
+                growth: digitGrowth,
             },
         });
     }
@@ -2039,6 +2074,41 @@ export const Scanner: React.FC = () => {
                                                         <div style={{ color: '#888', fontSize: 8 }}>
                                                             Accuracy: {t.predictive.predictionAccuracy.toFixed(0)}% | Forecast: {t.predictive.forecastConfidence.toFixed(0)}%
                                                         </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 2: Losing Digit Filter ── */}
+                                                <div style={{ marginTop: 6, background: t.losingFilter.pass ? '#0d1a0d' : '#1a0d0d', border: `1px solid ${t.losingFilter.pass ? '#4caf50' : '#f44336'}`, borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, fontWeight: 'bold', color: t.losingFilter.pass ? '#4caf50' : '#f44336', marginBottom: 4 }}>
+                                                        {t.losingFilter.pass ? '✓ LOSING DIGITS FADING' : '✕ LOSING DIGITS NOT FADING'}
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 4 }}>
+                                                        {Array.from({ length: 10 }, (_, d) => {
+                                                            const isLosing = !isWin(d);
+                                                            if (!isLosing) return null;
+                                                            const pct = t.digitShifts.find(s => s.digit === d)?.before ?? 0;
+                                                            const growth = t.losingFilter.growth[d] ?? 0;
+                                                            const below10 = pct < 10;
+                                                            const fading = growth < 0;
+                                                            return (
+                                                                <div key={d} style={{
+                                                                    background: below10 && fading ? '#0d2d0d' : '#2d0d0d',
+                                                                    border: `1px solid ${below10 && fading ? '#4caf50' : '#f44336'}`,
+                                                                    borderRadius: 3, padding: '3px 6px', textAlign: 'center', minWidth: 48,
+                                                                }}>
+                                                                    <div style={{ fontSize: 9, fontWeight: 'bold', color: below10 && fading ? '#4caf50' : '#f44336' }}>D{d}</div>
+                                                                    <div style={{ fontSize: 9, color: '#ccc' }}>{pct.toFixed(1)}%</div>
+                                                                    <div style={{ fontSize: 8, color: growth < 0 ? '#4caf50' : '#f44336' }}>
+                                                                        {growth > 0 ? '+' : ''}{growth.toFixed(1)}%
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <div style={{ fontSize: 8, color: '#888' }}>
+                                                        {t.losingFilter.belowThreshold}/{t.losingFilter.totalLosing} losing digits {'<'} 10%
+                                                        {' | '}
+                                                        {t.losingFilter.decreasing}/{t.losingFilter.totalLosing} decreasing
                                                     </div>
                                                 </div>
                                             </div>
