@@ -2084,7 +2084,7 @@ export const Scanner: React.FC = () => {
                                                     </div>
                                                     <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', marginBottom: 4 }}>
                                                         {Array.from({ length: 10 }, (_, d) => {
-                                                            const isLosing = !isWin(d);
+                                                            const isLosing = entryContractType === 'DIGITOVER' ? d <= entryBarrier : d >= entryBarrier;
                                                             if (!isLosing) return null;
                                                             const pct = t.digitShifts.find(s => s.digit === d)?.before ?? 0;
                                                             const growth = t.losingFilter.growth[d] ?? 0;
