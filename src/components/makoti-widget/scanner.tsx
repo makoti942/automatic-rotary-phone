@@ -1783,7 +1783,10 @@ export const Scanner: React.FC = () => {
                         scanResults.sort((a, b) => {
                             if (a.qualifies && !b.qualifies) return -1;
                             if (!a.qualifies && b.qualifies) return 1;
-                            return (b.triggers[0]?.confidence ?? 0) - (a.triggers[0]?.confidence ?? 0);
+                            // Prefer higher win rate AND higher confidence
+                            const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? a.baselineWinPct * 0.3 : 0);
+                            const bScore = (b.triggers[0]?.confidence ?? 0) + (b.qualifies ? b.baselineWinPct * 0.3 : 0);
+                            return bScore - aScore;
                         });
                         best = scanResults.map(r => r.symbol);
                         bestScore = Math.round(scanResults[0]?.triggers[0]?.confidence ?? 0);
@@ -1821,10 +1824,12 @@ export const Scanner: React.FC = () => {
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
                     const bestTrigger = analysis.triggers[0];
-                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none';
+                    // Winning digits must appear a lot — at least 65% baseline win rate
+                    const winFreqPass = analysis.baselineWinPct >= 65;
+                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
                     const detail = bestTrigger
-                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${bestTrigger.consistency.toFixed(0)}% consistent | Score: ${bestTrigger.confidence.toFixed(0)}/100`
-                        : 'No strong trigger found';
+                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | Win%: ${analysis.baselineWinPct.toFixed(0)}% | Score: ${bestTrigger.confidence.toFixed(0)}/100`
+                        : winFreqPass ? 'No strong trigger found' : `Low win rate (${analysis.baselineWinPct.toFixed(0)}%)`;
 
                     scanResults.push({
                         symbol: sym, label: SYMBOL_LABELS[sym],
