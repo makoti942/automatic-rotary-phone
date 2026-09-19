@@ -108,7 +108,7 @@ const ENTRY_BOT_TEMPLATE = `<xml xmlns="https://developers.google.com/blockly/xm
                                 <field name="VAR" id="tp">Target Profit</field>
                                 <value name="VALUE">
                                   <block type="math_number" id="Fp@weP]m3}8FM?!ZUkU%">
-                                    <field name="NUM">10</field>
+                                    <field name="NUM">__TAKE_PROFIT__</field>
                                   </block>
                                 </value>
                                 <next>
@@ -116,7 +116,7 @@ const ENTRY_BOT_TEMPLATE = `<xml xmlns="https://developers.google.com/blockly/xm
                                     <field name="VAR" id="sl">Stop Loss</field>
                                     <value name="VALUE">
                                       <block type="math_number" id="rM5S%;hX_EE$28Xl#dtG">
-                                        <field name="NUM">50</field>
+                                        <field name="NUM">__STOP_LOSS__</field>
                                       </block>
                                     </value>
                                     <next>
@@ -567,6 +567,35 @@ interface TriggerInfo {
         totalLosing: number;           // total losing digits
         growth: number[];              // per-digit growth (recent 30 vs overall 1000)
     };
+    // Tier 3: New Engines
+    generator: {
+        patternStrength: number;       // 0-100: how predictable the digit sequence is
+        cycleLength: number;           // detected cycle length (0 = no cycle)
+        rhythmScore: number;           // 0-100: how rhythmic digit appearance is
+        sequenceEntropy: number;       // 0-100: low entropy = predictable pattern
+        afterTriggerPatterns: {        // what patterns appear after this trigger
+            repeatRate: number;        // % of times the same digit follows trigger
+            alternationRate: number;   // % of times a different digit follows trigger
+            avgSequenceLength: number; // avg consecutive same-digit runs after trigger
+        };
+    };
+    fullTick: {
+        velocity: number;              // price rate of change (ticks per unit)
+        acceleration: number;          // change in velocity
+        volatility: number;            // price standard deviation
+        trend: 'up' | 'down' | 'flat';
+        trendStrength: number;         // 0-100: how strong the trend is
+        priceRange: number;            // high - low in last 200 ticks
+        momentumScore: number;         // 0-100: composite momentum score
+    };
+    distribution: {
+        fillRate: number;              // how fast winning digits fill after trigger (0-100)
+        concentration: number;         // 0-100: how concentrated the distribution is
+        entropy: number;               // 0-100: high entropy = evenly spread (bad for us)
+        winningMomentum: number;       // rate of change of winning digit %
+        losingMomentum: number;        // rate of change of losing digit %
+        balanceShift: number;          // positive = distribution shifting toward wins
+    };
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -586,12 +615,54 @@ function calcDigitPcts(digits: number[]): number[] {
     return counts.map(c => (c / total) * 100);
 }
 
-// ── Entry Digit Trigger Analysis v2 ──
-// Deep analysis: rolling momentum, decay curves, inter-digit correlation, power scoring
+// ── Engine 3 helper: Distribution Promoter ──
+function analyzeDistribution(afterDigits: number[], isWin: (d: number) => boolean) {
+    if (afterDigits.length < 10) return { fillRate: 0, concentration: 0, entropy: 100, winningMomentum: 0, losingMomentum: 0, balanceShift: 0 };
+    const n = afterDigits.length;
+    const first25 = afterDigits.slice(0, Math.min(25, n));
+    const fillRate = Math.min(100, Math.max(0, (first25.filter(d => isWin(d)).length / first25.length) * 100));
+    const pcts = Array(10).fill(0).map((_, d) => (afterDigits.filter(x => x === d).length / n) * 100);
+    const meanPct = 10;
+    const gini = pcts.reduce((s, p) => s + Math.abs(p - meanPct), 0) / 200;
+    const concentration = Math.min(100, Math.max(0, gini * 1000));
+    let postEntropy = 0;
+    for (let d = 0; d < 10; d++) { const p = pcts[d] / 100; if (p > 0) postEntropy -= p * Math.log2(p); }
+    const entropy = Math.round((postEntropy / 3.32) * 100 * 10) / 10;
+    // Slope of win accumulation
+    const winCounts: number[] = [];
+    let wAcc = 0;
+    for (let i = 0; i < Math.min(25, n); i++) { if (isWin(afterDigits[i])) wAcc++; winCounts.push(wAcc); }
+    let winningMomentum = 0;
+    if (winCounts.length >= 5) {
+        let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+        for (let i = 0; i < winCounts.length; i++) { sx += i; sy += winCounts[i]; sxy += i * winCounts[i]; sx2 += i * i; }
+        const nn = winCounts.length; const mx = sx / nn; const my = sy / nn;
+        const denom = sx2 - nn * mx * mx;
+        winningMomentum = denom > 0 ? Math.round(((sxy - nn * mx * my) / denom) * 1000) / 10 : 0;
+    }
+    // Slope of loss accumulation
+    const loseCounts: number[] = [];
+    let lAcc = 0;
+    for (let i = 0; i < Math.min(25, n); i++) { if (!isWin(afterDigits[i])) lAcc++; loseCounts.push(lAcc); }
+    let losingMomentum = 0;
+    if (loseCounts.length >= 5) {
+        let sx = 0, sy = 0, sxy = 0, sx2 = 0;
+        for (let i = 0; i < loseCounts.length; i++) { sx += i; sy += loseCounts[i]; sxy += i * loseCounts[i]; sx2 += i * i; }
+        const nn = loseCounts.length; const mx = sx / nn; const my = sy / nn;
+        const denom = sx2 - nn * mx * mx;
+        losingMomentum = denom > 0 ? Math.round(((sxy - nn * mx * my) / denom) * 1000) / 10 : 0;
+    }
+    const balanceShift = Math.round((winningMomentum - losingMomentum) * 10) / 10;
+    return { fillRate, concentration, entropy, winningMomentum, losingMomentum, balanceShift };
+}
+
+// ── Entry Digit Trigger Analysis v3 ──
+// Deep analysis: digit generator pattern reader, full tick momentum, distribution promoter
 function analyzeTriggerDigits(
     digits: number[],
     contractType: 'DIGITOVER' | 'DIGITUNDER',
     barrier: number,
+    rawPrices: number[] = [],
 ): { baselinePcts: number[]; baselineWinPct: number; triggers: TriggerInfo[] } {
     const len = digits.length;
     if (len < 30) return { baselinePcts: Array(10).fill(0), baselineWinPct: 0, triggers: [] };
@@ -786,6 +857,156 @@ function analyzeTriggerDigits(
         suppressionReliefMap[triggerD] = suppressedPctsAfterTrigger;
     }
 
+    // ══════════════════════════════════════════════════════════════
+    // TIER 3: NEW ENGINES
+    // ══════════════════════════════════════════════════════════════
+
+    // ── Engine 1: Digit Generator Pattern Reader ──
+    // Reads sequences, cycles, rhythms, and momentum of the digit generator
+    const genLen = Math.min(len, 500); // analyze last 500 for pattern detection
+    const genDigits = digits.slice(-genLen);
+
+    // Pattern Strength: measure how predictable the next digit is
+    // Count bigram (2-digit) and trigram (3-digit) frequencies
+    const bigramCount = new Map<string, number>();
+    const trigramCount = new Map<string, number>();
+    for (let i = 0; i < genLen - 1; i++) {
+        const bg = `${genDigits[i]}${genDigits[i + 1]}`;
+        bigramCount.set(bg, (bigramCount.get(bg) || 0) + 1);
+        if (i < genLen - 2) {
+            const tg = `${genDigits[i]}${genDigits[i + 1]}${genDigits[i + 2]}`;
+            trigramCount.set(tg, (trigramCount.get(tg) || 0) + 1);
+        }
+    }
+    // Pattern strength = how much the most common bigram exceeds random chance (1/100 = 1%)
+    const maxBigramFreq = Math.max(...Array.from(bigramCount.values()));
+    const patternStrength = Math.min(100, Math.max(0, ((maxBigramFreq / (genLen - 1)) / 0.01 - 1) * 20));
+
+    // Cycle Detection: find repeating patterns in digit sequence
+    let cycleLength = 0;
+    let bestCycleScore = 0;
+    for (let cycle = 3; cycle <= 20; cycle++) {
+        let matches = 0;
+        let checked = 0;
+        for (let i = 0; i < genLen - cycle; i++) {
+            if (genDigits[i] === genDigits[i + cycle]) matches++;
+            checked++;
+        }
+        const score = checked > 0 ? matches / checked : 0;
+        if (score > 0.3 && score > bestCycleScore) {
+            bestCycleScore = score;
+            cycleLength = cycle;
+        }
+    }
+
+    // Rhythm Score: measure digit alternation (no long runs of same digit)
+    let alternations = 0;
+    let maxRun = 1, currentRun = 1;
+    for (let i = 1; i < genLen; i++) {
+        if (genDigits[i] !== genDigits[i - 1]) {
+            alternations++;
+            currentRun = 1;
+        } else {
+            currentRun++;
+            if (currentRun > maxRun) maxRun = currentRun;
+        }
+    }
+    const rhythmScore = Math.min(100, Math.max(0, (alternations / (genLen - 1)) * 100));
+
+    // Sequence Entropy: low entropy = predictable
+    const digitFreq = Array(10).fill(0);
+    genDigits.forEach(d => digitFreq[d]++);
+    let entropy = 0;
+    for (let d = 0; d < 10; d++) {
+        const p = digitFreq[d] / genLen;
+        if (p > 0) entropy -= p * Math.log2(p);
+    }
+    // Normalize: max entropy for 10 uniform digits = log2(10) ≈ 3.32
+    const normalizedEntropy = (entropy / 3.32) * 100;
+
+    // ── Engine 2: Full Tick Momentum ──
+    // Analyze full price movement (velocity, acceleration, volatility)
+    let fullTickVelocity = 0;
+    let fullTickAcceleration = 0;
+    let fullTickVolatility = 0;
+    let fullTickTrend: 'up' | 'down' | 'flat' = 'flat';
+    let fullTickTrendStrength = 0;
+    let fullTickPriceRange = 0;
+    let fullTickMomentumScore = 50;
+
+    if (rawPrices.length >= 20) {
+        const rp = rawPrices.slice(-200);
+        const rpLen = rp.length;
+
+        // Price velocity: average change between consecutive ticks
+        let totalChange = 0;
+        let changes: number[] = [];
+        for (let i = 1; i < rpLen; i++) {
+            const change = rp[i] - rp[i - 1];
+            totalChange += change;
+            changes.push(change);
+        }
+        fullTickVelocity = totalChange / (rpLen - 1);
+
+        // Price acceleration: change in velocity
+        const half = Math.floor(rpLen / 2);
+        const firstHalfVel = changes.slice(0, half).reduce((s, c) => s + c, 0) / Math.max(half, 1);
+        const secondHalfVel = changes.slice(half).reduce((s, c) => s + c, 0) / Math.max(rpLen - half, 1);
+        fullTickAcceleration = secondHalfVel - firstHalfVel;
+
+        // Volatility: standard deviation of changes
+        const meanChange = totalChange / (rpLen - 1);
+        const variance = changes.reduce((s, c) => s + (c - meanChange) ** 2, 0) / (rpLen - 1);
+        fullTickVolatility = Math.sqrt(variance);
+
+        // Price range
+        fullTickPriceRange = Math.max(...rp) - Math.min(...rp);
+
+        // Trend detection
+        const recentPrices = rp.slice(-50);
+        const olderPrices = rp.slice(-100, -50);
+        const recentAvg = recentPrices.reduce((s, p) => s + p, 0) / recentPrices.length;
+        const olderAvg = olderPrices.length > 0 ? olderPrices.reduce((s, p) => s + p, 0) / olderPrices.length : recentAvg;
+        const trendDiff = recentAvg - olderAvg;
+        const trendThreshold = fullTickVolatility * 0.3;
+
+        if (trendDiff > trendThreshold) {
+            fullTickTrend = 'up';
+            fullTickTrendStrength = Math.min(100, (trendDiff / trendThreshold) * 50);
+        } else if (trendDiff < -trendThreshold) {
+            fullTickTrend = 'down';
+            fullTickTrendStrength = Math.min(100, (Math.abs(trendDiff) / trendThreshold) * 50);
+        } else {
+            fullTickTrend = 'flat';
+            fullTickTrendStrength = Math.min(50, 50 - (Math.abs(trendDiff) / trendThreshold) * 50);
+        }
+
+        // Momentum score: combine velocity, acceleration, and trend
+        const velScore = Math.min(50, Math.max(-50, fullTickVelocity * 1000));
+        const accelScore = Math.min(30, Math.max(-30, fullTickAcceleration * 10000));
+        const trendScore = fullTickTrend === 'up' ? fullTickTrendStrength * 0.5
+            : fullTickTrend === 'down' ? -fullTickTrendStrength * 0.5 : 0;
+        fullTickMomentumScore = Math.min(100, Math.max(0, 50 + velScore + accelScore + trendScore));
+    }
+
+    const globalGenerator = {
+        patternStrength: Math.round(patternStrength * 10) / 10,
+        cycleLength,
+        rhythmScore: Math.round(rhythmScore * 10) / 10,
+        sequenceEntropy: Math.round(normalizedEntropy * 10) / 10,
+        afterTriggerPatterns: { repeatRate: 0, alternationRate: 0, avgSequenceLength: 0 },
+    };
+
+    const globalFullTick = {
+        velocity: Math.round(fullTickVelocity * 100000) / 100000,
+        acceleration: Math.round(fullTickAcceleration * 100000) / 100000,
+        volatility: Math.round(fullTickVolatility * 100000) / 100000,
+        trend: fullTickTrend,
+        trendStrength: Math.round(fullTickTrendStrength * 10) / 10,
+        priceRange: Math.round(fullTickPriceRange * 100) / 100,
+        momentumScore: Math.round(fullTickMomentumScore * 10) / 10,
+    };
+
     const triggers: TriggerInfo[] = [];
 
     for (let triggerDigit = 0; triggerDigit <= 9; triggerDigit++) {
@@ -808,6 +1029,39 @@ function analyzeTriggerDigits(
         }
 
         if (afterDigits.length === 0) continue;
+
+        // ── Engine 3: Distribution Promoter (per-trigger) ──
+        const distAnalysis = analyzeDistribution(afterDigits, isWin);
+
+        // ── Per-trigger Generator patterns ──
+        // After this trigger, what patterns emerge?
+        let repeatCount = 0, altCount = 0, runLen = 0, totalRuns = 0, runSum = 0;
+        for (const pos of positions) {
+            if (pos + 1 < len) {
+                if (digits[pos + 1] === triggerDigit) repeatCount++;
+                else altCount++;
+            }
+            // Measure consecutive runs after trigger
+            let currentRun = 1;
+            for (let j = pos + 2; j < Math.min(pos + 10, len); j++) {
+                if (digits[j] === digits[j - 1]) currentRun++;
+                else break;
+            }
+            runSum += currentRun;
+            totalRuns++;
+        }
+        const totalTransitions = repeatCount + altCount || 1;
+        const perTriggerGenerator = {
+            patternStrength: globalGenerator.patternStrength,
+            cycleLength: globalGenerator.cycleLength,
+            rhythmScore: globalGenerator.rhythmScore,
+            sequenceEntropy: globalGenerator.sequenceEntropy,
+            afterTriggerPatterns: {
+                repeatRate: Math.round((repeatCount / totalTransitions) * 100 * 10) / 10,
+                alternationRate: Math.round((altCount / totalTransitions) * 100 * 10) / 10,
+                avgSequenceLength: totalRuns > 0 ? Math.round((runSum / totalRuns) * 10) / 10 : 0,
+            },
+        };
 
         // ── Decay Curve: win% at each tick position after trigger ──
         // For each tick offset (1, 2, 3... 25), compute the win% across all trigger occurrences
@@ -1079,13 +1333,37 @@ function analyzeTriggerDigits(
             predictionAccuracy * 0.05
         )); // 0-5
 
+        // Tier 3 components (new engines)
+        // Generator Score: how predictable the digit pattern is + after-trigger behavior
+        const genScore = Math.min(10, Math.max(0,
+            perTriggerGenerator.patternStrength * 0.03 +
+            perTriggerGenerator.rhythmScore * 0.03 +
+            (100 - perTriggerGenerator.sequenceEntropy) * 0.02 +
+            perTriggerGenerator.afterTriggerPatterns.repeatRate * 0.02
+        )); // 0-10
+
+        // Full Tick Score: momentum + trend alignment
+        const fullTickScore = Math.min(8, Math.max(0,
+            Math.abs(fullTickMomentumScore - 50) * 0.1 +
+            (fullTickTrend === 'flat' ? 2 : 0) + // flat is good for entry digit
+            (fullTickVolatility < 0.001 ? 3 : fullTickVolatility < 0.005 ? 2 : 1) // low vol = good
+        )); // 0-8
+
+        // Distribution Score: how quickly winning digits fill + balance shift
+        const distScore = Math.min(12, Math.max(0,
+            distAnalysis.fillRate * 0.05 +
+            distAnalysis.balanceShift * 0.3 +
+            (100 - distAnalysis.entropy) * 0.03 +
+            distAnalysis.winningMomentum * 0.1
+        )); // 0-12
+
         // Raw score
         const rawScore = boostScore + consistencyScore + momentumScore + decayScore
             + occScore + powerBonus + trajectoryScore + crossDigitScore
-            + dominanceScoreVal + predictiveScoreVal;
+            + dominanceScoreVal + predictiveScoreVal
+            + genScore + fullTickScore + distScore;
 
         // Apply sample-size penalty + losing digit filter
-        // If losing digits are NOT below 10% and NOT decreasing, heavy penalty
         const losingFilterMultiplier = losingFilterPass ? 1.0 : 0.6;
         const confidence = Math.min(100, rawScore * sampleWeight * losingFilterMultiplier);
 
@@ -1147,6 +1425,9 @@ function analyzeTriggerDigits(
                 totalLosing: losingCount,
                 growth: digitGrowth,
             },
+            generator: perTriggerGenerator,
+            fullTick: globalFullTick,
+            distribution: distAnalysis,
         });
     }
 
@@ -1278,6 +1559,8 @@ export const Scanner: React.FC = () => {
     const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
     const [entryBarrier, setEntryBarrier] = useState(7);
     const [entryStake, setEntryStake] = useState('1');
+    const [entryTP, setEntryTP] = useState('10');
+    const [entrySL, setEntrySL] = useState('50');
 
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
@@ -1367,6 +1650,8 @@ export const Scanner: React.FC = () => {
             .replace('__NORMAL_PRED__', String(topPrediction.barrier))
             .replace('__ENTRY_DIGIT__', String(topPrediction.entryDigit))
             .replace('__STAKE__', entryStake)
+            .replace('__TAKE_PROFIT__', entryTP)
+            .replace('__STOP_LOSS__', entrySL)
             .replace(/__CONTRACT_TYPE__/g, topPrediction.contractType);
         try {
             const store = DBotStore.instance;
@@ -1381,7 +1666,7 @@ export const Scanner: React.FC = () => {
         } catch (e: any) {
             showNotify(`Failed to load bot: ${e.message}`, 'warn');
         }
-    }, [topPrediction, entryStake, showNotify]);
+    }, [topPrediction, entryStake, entryTP, entrySL, showNotify]);
 
     /* ── Create persistent WS (reused across auto-scan cycles) ──────────── */
     const ensureWs = useCallback(() => {
@@ -1533,7 +1818,7 @@ export const Scanner: React.FC = () => {
                     const [sym, prices] = symbols[idx];
                     const pipSize = PIP_SIZES[sym] || 2;
                     const digits = prices.map(p => Number(Number(p).toFixed(pipSize).slice(-1)));
-                    const analysis = analyzeTriggerDigits(digits, entryType, entryBar);
+                    const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
                     const bestTrigger = analysis.triggers[0];
                     const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none';
@@ -1738,6 +2023,20 @@ export const Scanner: React.FC = () => {
                                 }}
                                 disabled={scanning}
                                 style={{ width: 60, textAlign: 'center' }} />
+                        </div>
+                        <div className='mw-field'>
+                            <label className='mw-label'>Take Profit ($)</label>
+                            <input className='mw-input' type='number' min='1' step='1'
+                                value={entryTP}
+                                onChange={e => setEntryTP(e.target.value)}
+                                disabled={scanning} />
+                        </div>
+                        <div className='mw-field'>
+                            <label className='mw-label'>Stop Loss ($)</label>
+                            <input className='mw-input' type='number' min='1' step='1'
+                                value={entrySL}
+                                onChange={e => setEntrySL(e.target.value)}
+                                disabled={scanning} />
                         </div>
                     </div>
                 )}
@@ -2109,6 +2408,89 @@ export const Scanner: React.FC = () => {
                                                         {t.losingFilter.belowThreshold}/{t.losingFilter.totalLosing} losing digits {'<'} 10%
                                                         {' | '}
                                                         {t.losingFilter.decreasing}/{t.losingFilter.totalLosing} decreasing
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 3: Generator Pattern ── */}
+                                                <div style={{ marginTop: 6, background: '#0a0a1a', border: '1px solid #333', borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, color: '#e040fb', fontWeight: 'bold', marginBottom: 4 }}>
+                                                        DIGIT GENERATOR
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Pattern: <span style={{ color: t.generator.patternStrength > 50 ? '#4caf50' : '#888', fontWeight: 'bold' }}>{t.generator.patternStrength.toFixed(0)}%</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Rhythm: <span style={{ color: t.generator.rhythmScore > 60 ? '#4caf50' : '#888', fontWeight: 'bold' }}>{t.generator.rhythmScore.toFixed(0)}%</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Entropy: <span style={{ color: t.generator.sequenceEntropy < 50 ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>{t.generator.sequenceEntropy.toFixed(0)}%</span>
+                                                        </div>
+                                                        {t.generator.cycleLength > 0 && (
+                                                            <div style={{ fontSize: 8, color: '#ffd700', fontWeight: 'bold' }}>
+                                                                Cycle: {t.generator.cycleLength}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ marginTop: 3, fontSize: 8, color: '#888' }}>
+                                                        After D{t.digit}: repeat {t.generator.afterTriggerPatterns.repeatRate.toFixed(0)}% | alt {t.generator.afterTriggerPatterns.alternationRate.toFixed(0)}% | run avg {t.generator.afterTriggerPatterns.avgSequenceLength.toFixed(1)}
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 3: Full Tick Momentum ── */}
+                                                <div style={{ marginTop: 6, background: '#0a0a1a', border: '1px solid #333', borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, color: '#2196f3', fontWeight: 'bold', marginBottom: 4 }}>
+                                                        FULL TICK ENGINE
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        <div style={{
+                                                            background: t.fullTick.trend === 'flat' ? '#0d1a0d' : '#1a0d0d',
+                                                            border: `1px solid ${t.fullTick.trend === 'flat' ? '#4caf50' : '#f44336'}`,
+                                                            borderRadius: 3, padding: '2px 6px', fontSize: 8,
+                                                            color: t.fullTick.trend === 'flat' ? '#4caf50' : '#f44336',
+                                                        }}>
+                                                            Trend: {t.fullTick.trend.toUpperCase()} ({t.fullTick.trendStrength.toFixed(0)}%)
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Vol: <span style={{ color: t.fullTick.volatility < 0.001 ? '#4caf50' : '#ffc107', fontWeight: 'bold' }}>{t.fullTick.volatility.toFixed(5)}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Momentum: <span style={{ color: t.fullTick.momentumScore > 50 ? '#4caf50' : t.fullTick.momentumScore < 40 ? '#f44336' : '#ffc107', fontWeight: 'bold' }}>{t.fullTick.momentumScore.toFixed(0)}/100</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#888' }}>
+                                                            Range: {t.fullTick.priceRange.toFixed(4)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* ── TIER 3: Distribution Promoter ── */}
+                                                <div style={{ marginTop: 6, background: '#0a0a1a', border: '1px solid #333', borderRadius: 4, padding: 6 }}>
+                                                    <div style={{ fontSize: 9, color: '#ff9800', fontWeight: 'bold', marginBottom: 4 }}>
+                                                        DISTRIBUTION PROMOTER
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                                                        <div style={{
+                                                            background: t.distribution.fillRate > 60 ? '#0d1a0d' : '#1a0d0d',
+                                                            border: `1px solid ${t.distribution.fillRate > 60 ? '#4caf50' : '#f44336'}`,
+                                                            borderRadius: 3, padding: '2px 6px', fontSize: 8,
+                                                            color: t.distribution.fillRate > 60 ? '#4caf50' : '#f44336',
+                                                        }}>
+                                                            Fill: {t.distribution.fillRate.toFixed(0)}%
+                                                        </div>
+                                                        <div style={{
+                                                            background: t.distribution.balanceShift > 0 ? '#0d1a0d' : '#1a0d0d',
+                                                            border: `1px solid ${t.distribution.balanceShift > 0 ? '#4caf50' : '#f44336'}`,
+                                                            borderRadius: 3, padding: '2px 6px', fontSize: 8,
+                                                            color: t.distribution.balanceShift > 0 ? '#4caf50' : '#f44336',
+                                                        }}>
+                                                            Balance: {t.distribution.balanceShift > 0 ? '+' : ''}{t.distribution.balanceShift.toFixed(1)}
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#ccc' }}>
+                                                            Win speed: <span style={{ color: t.distribution.winningMomentum > 0 ? '#4caf50' : '#f44336', fontWeight: 'bold' }}>{t.distribution.winningMomentum > 0 ? '+' : ''}{t.distribution.winningMomentum.toFixed(1)}</span>
+                                                        </div>
+                                                        <div style={{ fontSize: 8, color: '#888' }}>
+                                                            Entropy: {t.distribution.entropy.toFixed(0)}% | Conc: {t.distribution.concentration.toFixed(0)}%
+                                                        </div>
                                                     </div>
                                                 </div>
                                             </div>
