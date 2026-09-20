@@ -1690,7 +1690,7 @@ export const Scanner: React.FC = () => {
     const [entryStake, setEntryStake] = useState('1');
     const [entryTP, setEntryTP] = useState('10');
     const [entrySL, setEntrySL] = useState('50');
-    const [entryRecoveryPred, setEntryRecoveryPred] = useState(5);
+    const [entryRecoveryPred, setEntryRecoveryPred] = useState('5');
     const [aiAuto, setAiAuto] = useState(false);
 
     // Single vs all volatilities
@@ -1785,7 +1785,7 @@ export const Scanner: React.FC = () => {
             .replace('__STAKE__', entryStake)
             .replace('__TAKE_PROFIT__', entryTP)
             .replace('__STOP_LOSS__', entrySL)
-            .replace('__RECOVERY_PRED__', String(entryRecoveryPred))
+            .replace('__RECOVERY_PRED__', entryRecoveryPred)
             .replace(/__CONTRACT_TYPE__/g, topPrediction.contractType);
         try {
             const store = DBotStore.instance;
@@ -2256,10 +2256,7 @@ export const Scanner: React.FC = () => {
                             <label className='mw-label'>Recovery Prediction</label>
                             <input className='mw-input' type='number' min={0} max={9}
                                 value={entryRecoveryPred}
-                                onChange={e => {
-                                    const v = parseInt(e.target.value);
-                                    if (!isNaN(v) && v >= 0 && v <= 9) setEntryRecoveryPred(v);
-                                }}
+                                onChange={e => setEntryRecoveryPred(e.target.value)}
                                 disabled={scanning}
                                 style={{ width: 60, textAlign: 'center' }} />
                         </div>
