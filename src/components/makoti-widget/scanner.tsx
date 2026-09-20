@@ -1684,18 +1684,38 @@ export const Scanner: React.FC = () => {
     const [pendingSymbol, setPendingSymbol] = useState('');
     const [notification, setNotification] = useState<{ msg: string; type: 'info' | 'success' | 'warn' } | null>(null);
 
-    // Entry Digit config
-    const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
-    const [entryBarrier, setEntryBarrier] = useState(7);
-    const [entryStake, setEntryStake] = useState('1');
-    const [entryTP, setEntryTP] = useState('10');
-    const [entrySL, setEntrySL] = useState('50');
-    const [entryRecoveryPred, setEntryRecoveryPred] = useState('5');
-    const [aiAuto, setAiAuto] = useState(false);
+    // Entry Digit config — persisted to localStorage
+    const LS_KEY = 'mw_entry_digit_cfg';
+    const loadEntryCfg = () => {
+        try {
+            const r = localStorage.getItem(LS_KEY);
+            return r ? JSON.parse(r) : {};
+        } catch { return {}; }
+    };
+    const ec = loadEntryCfg();
+    const [entryContractType, setEntryContractType] = useState<'DIGITOVER' | 'DIGITUNDER'>(ec.contractType ?? 'DIGITUNDER');
+    const [entryBarrier, setEntryBarrier] = useState(ec.barrier ?? 7);
+    const [entryStake, setEntryStake] = useState(ec.stake ?? '1');
+    const [entryTP, setEntryTP] = useState(ec.tp ?? '10');
+    const [entrySL, setEntrySL] = useState(ec.sl ?? '50');
+    const [entryRecoveryPred, setEntryRecoveryPred] = useState(ec.recoveryPred ?? '5');
+    const [aiAuto, setAiAuto] = useState(ec.aiAuto ?? false);
 
     // Single vs all volatilities
-    const [singleVol, setSingleVol] = useState(false);
-    const [singleVolSymbol, setSingleVolSymbol] = useState(ALL_SYMBOLS[0]);
+    const [singleVol, setSingleVol] = useState(ec.singleVol ?? false);
+    const [singleVolSymbol, setSingleVolSymbol] = useState(ec.singleVolSymbol ?? ALL_SYMBOLS[0]);
+
+    // Persist all entry config to localStorage
+    useEffect(() => {
+        try {
+            localStorage.setItem(LS_KEY, JSON.stringify({
+                contractType: entryContractType, barrier: entryBarrier,
+                stake: entryStake, tp: entryTP, sl: entrySL,
+                recoveryPred: entryRecoveryPred, aiAuto,
+                singleVol, singleVolSymbol,
+            }));
+        } catch {}
+    }, [entryContractType, entryBarrier, entryStake, entryTP, entrySL, entryRecoveryPred, aiAuto, singleVol, singleVolSymbol]);
     const singleVolRef = useRef(false);
     const singleVolSymbolRef = useRef(ALL_SYMBOLS[0]);
     const symbolsToScanRef = useRef<string[]>(ALL_SYMBOLS);
