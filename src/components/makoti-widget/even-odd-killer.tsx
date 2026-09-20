@@ -99,17 +99,18 @@ export const EvenOddKiller: React.FC = () => {
 
     /* ── Check if dominant side is increasing ── */
     const isIncreasing = (digits: number[], dominant: 'even' | 'odd'): boolean => {
-        if (digits.length < 40) return false;
-        const recent = digits.slice(-20);
-        const older = digits.slice(-50, -20);
-        if (older.length < 10) return false;
+        if (digits.length < 30) return false;
+        const recent = digits.slice(-15);
+        const older = digits.slice(-50, -15);
+        if (older.length < 5) return true; // not enough data, allow
         const recentPct = dominant === 'even'
             ? (recent.filter(d => isEven(d)).length / recent.length) * 100
             : (recent.filter(d => !isEven(d)).length / recent.length) * 100;
         const olderPct = dominant === 'even'
             ? (older.filter(d => isEven(d)).length / older.length) * 100
             : (older.filter(d => !isEven(d)).length / older.length) * 100;
-        return recentPct > olderPct;
+        // Allow if recent is stable or increasing (within 2% tolerance)
+        return recentPct >= olderPct - 2;
     };
 
     /* ── Stop ── */
@@ -186,11 +187,11 @@ export const EvenOddKiller: React.FC = () => {
 
         for (const sym of ALL_SYMBOLS) {
             const digits = buf[sym];
-            if (!digits || digits.length < MIN_TICKS) continue;
+            if (!digits || digits.length < 30) continue;
 
             const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
 
-            // Check even
+            // Check even — >58% and stable/increasing
             if (evenPct > DOMINANCE_THRESHOLD && isIncreasing(digits, 'even')) {
                 if (evenPct > bestPct) {
                     bestPct = evenPct;
@@ -199,7 +200,7 @@ export const EvenOddKiller: React.FC = () => {
                     bestSide = 'even';
                 }
             }
-            // Check odd
+            // Check odd — >58% and stable/increasing
             if (oddPct > DOMINANCE_THRESHOLD && isIncreasing(digits, 'odd')) {
                 if (oddPct > bestPct) {
                     bestPct = oddPct;
@@ -222,15 +223,42 @@ export const EvenOddKiller: React.FC = () => {
             setPhase('waiting_pattern');
             losingStreakRef.current = 0;
             patternReadyRef.current = false;
-            setPatternStatus(`Waiting for pattern: 2 ${bestSide === 'even' ? 'odd' : 'even'} then 1 ${bestSide}...`);
+            setPatternStatus(`Waiting: 2+ ${bestSide === 'even' ? 'odd' : 'even'} then ${label}...`);
             addLog(`SELECTED ${SYMBOL_LABELS[bestSym]}: ${label} at ${bestPct.toFixed(1)}% — waiting for entry pattern`, 'trigger');
         } else {
-            setPatternStatus('No suitable volatility found. Retrying in 3s...');
-            addLog('No volatility with >58% increasing dominant side. Retrying...', 'info');
-            setTimeout(() => {
-                if (runningRef.current) reanalyze();
-            }, 3000);
-        }
+            // Fallback: pick the volatility with highest dominant %, even if not strictly increasing
+            let fallbackSym = '';
+            let fallbackCt: 'DIGITEVEN' | 'DIGITODD' = 'DIGITEVEN';
+            let fallbackSide: 'even' | 'odd' = 'even';
+            let fallbackPct = 0;
+            for (const sym of ALL_SYMBOLS) {
+                const digits = buf[sym];
+                if (!digits || digits.length < 30) continue;
+                const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
+                if (evenPct > fallbackPct) { fallbackPct = evenPct; fallbackSym = sym; fallbackCt = 'DIGITEVEN'; fallbackSide = 'even'; }
+                if (oddPct > fallbackPct) { fallbackPct = oddPct; fallbackSym = sym; fallbackCt = 'DIGITODD'; fallbackSide = 'odd'; }
+            }
+            if (fallbackSym) {
+                selectedSymRef.current = fallbackSym;
+                contractTypeRef.current = fallbackCt;
+                dominantSideRef.current = fallbackSide;
+                dominantPctRef.current = fallbackPct;
+                const label = fallbackCt === 'DIGITEVEN' ? 'EVEN' : 'ODD';
+                setSelectedSym(fallbackSym);
+                setContractLabel(`${label} (${fallbackPct.toFixed(1)}%)`);
+                phaseRef.current = 'waiting_pattern';
+                setPhase('waiting_pattern');
+                losingStreakRef.current = 0;
+                patternReadyRef.current = false;
+                setPatternStatus(`Waiting: 2+ ${fallbackSide === 'even' ? 'odd' : 'even'} then ${label}...`);
+                addLog(`FALLBACK ${SYMBOL_LABELS[fallbackSym]}: ${label} at ${fallbackPct.toFixed(1)}% — waiting for pattern`, 'trigger');
+            } else {
+                setPatternStatus('No volatility data yet. Retrying in 3s...');
+                addLog('No volatility data available. Retrying...', 'info');
+                setTimeout(() => {
+                    if (runningRef.current) reanalyze();
+                }, 3000);
+            }
     }, [addLog]);
 
     /* ── Fire a trade immediately ── */
@@ -337,20 +365,20 @@ export const EvenOddKiller: React.FC = () => {
         const digitIsLose = !digitIsWin;
 
         // Pattern waiting: ONLY after fresh re-analyze (waiting_pattern phase)
+        // 2+ losing digits, then fire on the next winning digit
         if (phaseRef.current === 'waiting_pattern') {
             if (digitIsLose) {
                 losingStreakRef.current++;
-                const need = 2 - losingStreakRef.current;
-                setPatternStatus(`Pattern: ${losingStreakRef.current}/2 losing digits...`);
+                setPatternStatus(`Pattern: ${losingStreakRef.current} losing digits seen — waiting for ${dominantSideRef.current}...`);
             } else if (digitIsWin && losingStreakRef.current >= 2) {
-                // Pattern complete — fire trade 1
+                // Pattern complete — at least 2 losers, now a winner — fire trade 1
                 lockRef.current = true;
                 awaitingResultRef.current = true;
                 lastTradeDigitRef.current = digit;
                 const label = ct === 'DIGITEVEN' ? 'EVEN' : 'ODD';
                 tradesInRoundRef.current = 0;
                 setTradesInRound(0);
-                addLog(`PATTERN TRIGGERED — ${label} on ${SYMBOL_LABELS[sym]} @ $${currentStakeRef.current.toFixed(2)}`, 'trigger');
+                addLog(`PATTERN TRIGGERED — ${losingStreakRef.current} losers then ${label} on ${SYMBOL_LABELS[sym]} @ $${currentStakeRef.current.toFixed(2)}`, 'trigger');
                 setPatternStatus(`TRADING ${label} — 0/${TRADES_PER_ROUND}...`);
 
                 const amt = currentStakeRef.current;
@@ -362,9 +390,10 @@ export const EvenOddKiller: React.FC = () => {
                     }
                 });
             } else if (digitIsWin && losingStreakRef.current < 2) {
+                // Won before 2 losers — keep counting from zero
                 losingStreakRef.current = 0;
                 const losing = winningIsEven ? 'odd' : 'even';
-                setPatternStatus(`Pattern reset. Waiting: 2 ${losing} then ${ct === 'DIGITEVEN' ? 'EVEN' : 'ODD'}...`);
+                setPatternStatus(`Waiting: 2+ ${losing} then ${ct === 'DIGITEVEN' ? 'EVEN' : 'ODD'}...`);
             }
             return;
         }
