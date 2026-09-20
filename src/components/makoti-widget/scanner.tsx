@@ -1913,17 +1913,13 @@ export const Scanner: React.FC = () => {
                         scanResults.sort((a, b) => {
                             if (a.qualifies && !b.qualifies) return -1;
                             if (!a.qualifies && b.qualifies) return 1;
-                            // Prefer higher confidence + lower losing digit frequency + higher immediate win rate
-                            const aLosePct = isUnder
-                                ? a.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
-                                : 100 - a.baselineWinPct;
-                            const bLosePct = isUnder
-                                ? b.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
-                                : 100 - b.baselineWinPct;
+                            // Prefer higher confidence + LOWER max individual losing digit + higher immediate win rate
+                            const aMaxLose = Math.max(...(isUnder ? a.baselinePcts.slice(entryBar) : a.baselinePcts.slice(0, entryBar)));
+                            const bMaxLose = Math.max(...(isUnder ? b.baselinePcts.slice(entryBar) : b.baselinePcts.slice(0, entryBar)));
                             const aImm = a.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
                             const bImm = b.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
-                            const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? (25 - aLosePct) * 0.5 : 0) + aImm * 0.15;
-                            const bScore = (b.triggers[0]?.confidence ?? 0) + (b.qualifies ? (25 - bLosePct) * 0.5 : 0) + bImm * 0.15;
+                            const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? (10.5 - aMaxLose) * 5 : 0) + aImm * 0.15;
+                            const bScore = (b.triggers[0]?.confidence ?? 0) + (b.qualifies ? (10.5 - bMaxLose) * 5 : 0) + bImm * 0.15;
                             return bScore - aScore;
                         });
                         best = scanResults.map(r => r.symbol);
@@ -1962,33 +1958,26 @@ export const Scanner: React.FC = () => {
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
                     const bestTrigger = analysis.triggers[0];
-                    // Winning digits must have HIGH individual percentages
-                    const losingPct = isUnder
-                        ? analysis.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
-                        : 100 - analysis.baselineWinPct;
-                    // Check individual winning digit percentages — at least half must be ≥ 10%
+                    // Individual losing digit check — NO single losing digit can exceed 10.5%
+                    const losingDigits = isUnder
+                        ? analysis.baselinePcts.slice(entryBar)
+                        : analysis.baselinePcts.slice(0, entryBar);
+                    const maxLosingPct = Math.max(...losingDigits);
+                    const individualLosePass = maxLosingPct <= 10.5;
+                    // Winning digits must have HIGH individual percentages — at least half ≥ 10%
                     const winDigits = isUnder
                         ? analysis.baselinePcts.slice(0, entryBar)
                         : analysis.baselinePcts.slice(entryBar + 1);
                     const highPctCount = winDigits.filter(p => p >= 10).length;
                     const winDigitsPass = highPctCount >= Math.ceil(winDigits.length / 2);
-                    // Individual losing digit check — NO single losing digit can exceed 11%
-                    const losingDigits = isUnder
-                        ? analysis.baselinePcts.slice(entryBar)
-                        : analysis.baselinePcts.slice(0, entryBar);
-                    const maxLosingPct = Math.max(...losingDigits);
-                    const individualLosePass = maxLosingPct <= 11;
-                    // UNDER: losing digits ≤ 25% + no single > 11% + win digits strong
-                    // OVER: win rate ≥ 68% + no single losing > 11% + win digits strong
-                    const winFreqPass = isUnder
-                        ? losingPct <= 25 && individualLosePass && winDigitsPass
-                        : analysis.baselineWinPct >= 68 && individualLosePass && winDigitsPass;
+                    // Both conditions must pass
+                    const winFreqPass = individualLosePass && winDigitsPass;
                     const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
                     const detail = bestTrigger
-                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${isUnder ? `Lose%: ${losingPct.toFixed(0)}% (max ${maxLosingPct.toFixed(1)}%)` : `Win%: ${analysis.baselineWinPct.toFixed(0)}%`} | Score: ${bestTrigger.confidence.toFixed(0)}/100`
-                        : winFreqPass ? 'No strong trigger found' : isUnder
-                            ? !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)` : `Too many losing digits (${losingPct.toFixed(0)}%)`
-                            : !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)` : `Low win rate (${analysis.baselineWinPct.toFixed(0)}%)`;
+                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | MaxLose: ${maxLosingPct.toFixed(1)}% | Score: ${bestTrigger.confidence.toFixed(0)}/100`
+                        : winFreqPass ? 'No strong trigger found'
+                            : !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)`
+                            : `Winning digits too weak (${highPctCount}/${winDigits.length} ≥ 10%)`;
 
                     scanResults.push({
                         symbol: sym, label: SYMBOL_LABELS[sym],
