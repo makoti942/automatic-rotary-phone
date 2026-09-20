@@ -1778,6 +1778,8 @@ export const Scanner: React.FC = () => {
 
     const loadBotToBuilder = useCallback(async () => {
         if (!topPrediction) return;
+        const isUnder = topPrediction.contractType === 'DIGITUNDER';
+        const recoveryPred = isUnder ? '6' : '4';
         const xml = ENTRY_BOT_TEMPLATE
             .replace('__SYMBOL__', topPrediction.symbol)
             .replace('__NORMAL_PRED__', String(topPrediction.barrier))
@@ -1785,7 +1787,7 @@ export const Scanner: React.FC = () => {
             .replace('__STAKE__', entryStake)
             .replace('__TAKE_PROFIT__', entryTP)
             .replace('__STOP_LOSS__', entrySL)
-            .replace('__RECOVERY_PRED__', entryRecoveryPred)
+            .replace('__RECOVERY_PRED__', aiAuto ? recoveryPred : entryRecoveryPred)
             .replace(/__CONTRACT_TYPE__/g, topPrediction.contractType);
         try {
             const store = DBotStore.instance;
@@ -1796,11 +1798,16 @@ export const Scanner: React.FC = () => {
                 );
                 showNotify('Bot loaded into workspace!', 'success');
                 (window.DBot as any)?.__minimizeWidget?.();
+                // Auto-click Run button
+                setTimeout(() => {
+                    const runBtn = document.querySelector('#db-animation__run-button') as HTMLButtonElement;
+                    if (runBtn && !runBtn.disabled) runBtn.click();
+                }, 500);
             }
         } catch (e: any) {
             showNotify(`Failed to load bot: ${e.message}`, 'warn');
         }
-    }, [topPrediction, entryStake, entryTP, entrySL, entryRecoveryPred, showNotify]);
+    }, [topPrediction, entryStake, entryTP, entrySL, entryRecoveryPred, aiAuto, showNotify]);
 
     /* ── Create persistent WS (reused across auto-scan cycles) ──────────── */
     const ensureWs = useCallback(() => {
@@ -1953,6 +1960,10 @@ export const Scanner: React.FC = () => {
                                 contractType: resolvedType,
                                 barrier: resolvedBar,
                             });
+                            // AI Auto: set recovery prediction based on contract type
+                            if (aiAutoRef.current) {
+                                setEntryRecoveryPred(resolvedType === 'DIGITUNDER' ? '6' : '4');
+                            }
                         } else {
                             setProgress('No strong trigger pattern found');
                             setTopPrediction(null);
