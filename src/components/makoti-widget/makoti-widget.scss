@@ -3119,3 +3119,43 @@ $mw-radius:   10px;
     }
     .mw-tab-dropdown__item--active { color: #00ff41 !important; text-shadow: 0 0 10px rgba(0,255,65,0.5); }
 }
+
+// ─── EVEN & ODD Theme ──────────────────────────────────────────────
+.even-odd-theme {
+    --eo-accent: #f59e0b;
+    --eo-accent2: #6366f1;
+    --eo-bg: rgba(245, 158, 11, 0.03);
+    border-top: 2px solid var(--eo-accent) !important;
+    .mw-killer__fields {
+        display: flex !important;
+        flex-direction: column !important;
+        gap: 4px !important;
+        padding: 6px 8px !important;
+        border-bottom: 1px solid rgba(245, 158, 11, 0.08) !important;
+    }
+    .mw-field {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px !important;
+        width: 100% !important;
+    }
+    .mw-label {
+        color: var(--eo-accent) !important;
+        font-family: 'Courier New', monospace !important;
+        min-width: 100px !important;
+        font-size: 10px !important;
+        letter-spacing: 2px !important;
+        text-transform: uppercase !important;
+        white-space: nowrap !important;
+    }
+    .mw-input, .mw-sel {
+        flex: 1 !important;
+        background: var(--eo-bg) !important;
+        border: 1px solid rgba(245, 158, 11, 0.15) !important;
+        border-radius: 0 !important;
+        font-family: 'Courier New', monospace !important;
+        color: var(--eo-accent) !important;
+    }
+    .mw-tab-dropdown__item--active { color: var(--eo-accent) !important; text-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
+}
