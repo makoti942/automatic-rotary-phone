@@ -84,7 +84,7 @@ const ENTRY_BOT_TEMPLATE = `<xml xmlns="https://developers.google.com/blockly/xm
                     <field name="VAR" id="recovery_pred_var">Recovery Prediction</field>
                     <value name="VALUE">
                       <block type="math_number" id="7:(PiLkUR8q3fW_XG)=1">
-                        <field name="NUM">5</field>
+                        <field name="NUM">__RECOVERY_PRED__</field>
                       </block>
                     </value>
                     <next>
@@ -1690,6 +1690,7 @@ export const Scanner: React.FC = () => {
     const [entryStake, setEntryStake] = useState('1');
     const [entryTP, setEntryTP] = useState('10');
     const [entrySL, setEntrySL] = useState('50');
+    const [entryRecoveryPred, setEntryRecoveryPred] = useState(5);
 
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
@@ -1781,6 +1782,7 @@ export const Scanner: React.FC = () => {
             .replace('__STAKE__', entryStake)
             .replace('__TAKE_PROFIT__', entryTP)
             .replace('__STOP_LOSS__', entrySL)
+            .replace('__RECOVERY_PRED__', String(entryRecoveryPred))
             .replace(/__CONTRACT_TYPE__/g, topPrediction.contractType);
         try {
             const store = DBotStore.instance;
@@ -2190,6 +2192,17 @@ export const Scanner: React.FC = () => {
                                 value={entrySL}
                                 onChange={e => setEntrySL(e.target.value)}
                                 disabled={scanning} />
+                        </div>
+                        <div className='mw-field'>
+                            <label className='mw-label'>Recovery Prediction</label>
+                            <input className='mw-input' type='number' min={0} max={9}
+                                value={entryRecoveryPred}
+                                onChange={e => {
+                                    const v = parseInt(e.target.value);
+                                    if (!isNaN(v) && v >= 0 && v <= 9) setEntryRecoveryPred(v);
+                                }}
+                                disabled={scanning}
+                                style={{ width: 60, textAlign: 'center' }} />
                         </div>
                     </div>
                 )}
