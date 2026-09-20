@@ -1800,7 +1800,7 @@ export const Scanner: React.FC = () => {
         } catch (e: any) {
             showNotify(`Failed to load bot: ${e.message}`, 'warn');
         }
-    }, [topPrediction, entryStake, entryTP, entrySL, showNotify]);
+    }, [topPrediction, entryStake, entryTP, entrySL, entryRecoveryPred, showNotify]);
 
     /* ── Create persistent WS (reused across auto-scan cycles) ──────────── */
     const ensureWs = useCallback(() => {
