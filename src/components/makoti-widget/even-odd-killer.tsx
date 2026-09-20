@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ALL_SYMBOLS, SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
-import { sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
+import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 
 interface LogEntry { time: string; msg: string; type: 'win' | 'loss' | 'info' | 'trade' | 'trigger' | 'recovery' | 'success'; }
@@ -53,8 +53,7 @@ export const EvenOddKiller: React.FC = () => {
     const totalPnlRef = useRef(0);
 
     const modeRef = useRef<'idle' | 'scanning' | 'waiting_pattern' | 'waiting_result'>('idle');
-    const activeContractIdRef = useRef<string>('');
-    const contractMapRef = useRef<Map<string, { sym: string; stake: number }>>(new Map());
+    const cmapRef = useRef<Map<string, { sym: string; amt: number }>>(new Map());
     const losingStreakRef = useRef(0);
 
     const [symProgress, setSymProgress] = useState<Record<string, { evenPct: number; oddPct: number; ticks: number }>>({});
@@ -93,8 +92,7 @@ export const EvenOddKiller: React.FC = () => {
     const stop = useCallback(() => {
         runningRef.current = false;
         modeRef.current = 'idle';
-        contractMapRef.current.clear();
-        activeContractIdRef.current = '';
+        cmapRef.current.clear();
         setRunning(false);
         setMode('idle');
         setPatternStatus('');
@@ -174,7 +172,7 @@ export const EvenOddKiller: React.FC = () => {
         const amt = currentStakeRef.current;
         const label = ct === 'DIGITEVEN' ? 'EVEN' : 'ODD';
         addLog(`TRADE ${label} ${SYMBOL_LABELS[sym]} @ $${amt.toFixed(2)} (${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND})`, 'trade');
-        setPatternStatus(`TRADING ${label} — waiting for result...`);
+        setPatternStatus(`TRADING ${label}...`);
 
         sendViaNewSystemWithPromise({
             buy: 1, price: amt,
@@ -186,8 +184,7 @@ export const EvenOddKiller: React.FC = () => {
         }).then(r => {
             const cid = r?.buy?.contract_id ?? r?.contract_id;
             if (cid) {
-                activeContractIdRef.current = String(cid);
-                contractMapRef.current.set(String(cid), { sym, stake: amt });
+                cmapRef.current.set(String(cid), { sym, stake: amt });
                 try {
                     transactions.onBotContractEvent({
                         contract_id: cid, transaction_ids: { buy: r?.buy?.transaction_id },
@@ -196,9 +193,6 @@ export const EvenOddKiller: React.FC = () => {
                         date_start: Math.floor(Date.now() / 1000), status: 'open',
                     } as any);
                 } catch {}
-                if (window._newSystemWS?.readyState === WebSocket.OPEN) {
-                    window._newSystemWS.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
-                }
                 addLog(`Contract ${cid} open`, 'info');
             } else {
                 addLog('Buy OK but no contract_id', 'info');
@@ -213,9 +207,6 @@ export const EvenOddKiller: React.FC = () => {
     };
 
     const handleTradeResult = useCallback((won: boolean, profit: number) => {
-        contractMapRef.current.delete(activeContractIdRef.current);
-        activeContractIdRef.current = '';
-
         if (won) {
             tradesWonRef.current++;
             setTradesWon(tradesWonRef.current);
@@ -256,6 +247,30 @@ export const EvenOddKiller: React.FC = () => {
         }
     }, [addLog]);
 
+    /* ── POC listener (proposal_open_contract on _newSystemWS) ── */
+    useEffect(() => {
+        if (!running) return;
+        if (window._newSystemWS?.readyState === WebSocket.OPEN) {
+            window._newSystemWS.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+        }
+        const unsub = onNewSystemMessage((ev: MessageEvent) => {
+            try {
+                const d = JSON.parse(ev.data);
+                if (d.msg_type !== 'proposal_open_contract') return;
+                const c = d.proposal_open_contract;
+                if (!c?.is_sold) return;
+                const cid = String(c.contract_id);
+                const entry = cmapRef.current.get(cid);
+                if (!entry) return;
+                cmapRef.current.delete(cid);
+                const profit = Number(c.profit) || 0;
+                const won = profit >= 0;
+                handleTradeResult(won, profit);
+            } catch {}
+        });
+        return () => { unsub(); };
+    }, [running, handleTradeResult]);
+
     const processTick = useCallback((sym: string, digit: number) => {
         if (!runningRef.current) return;
         if (sym !== selectedSymRef.current) return;
@@ -274,7 +289,7 @@ export const EvenOddKiller: React.FC = () => {
             tradesInRoundRef.current = 0;
             setTradesInRound(0);
             losingStreakRef.current = 0;
-            addLog('PATTERN TRIGGERED — trading now', 'trigger');
+            addLog('PATTERN TRIGGERED', 'trigger');
             fireTradeRef.current();
         } else if (digitIsWin) {
             losingStreakRef.current = 0;
@@ -294,8 +309,7 @@ export const EvenOddKiller: React.FC = () => {
         tradesInRoundRef.current = 0;
         totalPnlRef.current = 0;
         losingStreakRef.current = 0;
-        contractMapRef.current.clear();
-        activeContractIdRef.current = '';
+        cmapRef.current.clear();
         setTradesWon(0);
         setTradesLost(0);
         setTradesInRound(0);
@@ -331,16 +345,6 @@ export const EvenOddKiller: React.FC = () => {
                     const { evenPct, oddPct } = calcEvenOdd(bufRef.current[sym].slice(-50));
                     setSymProgress(prev => ({ ...prev, [sym]: { evenPct, oddPct, ticks: bufRef.current[sym].length } }));
                     processTick(sym, digit);
-                    return;
-                }
-
-                if (data.msg_type === 'proposal_open_contract') {
-                    const c = data.proposal_open_contract;
-                    if (!c?.is_sold) return;
-                    const cid = String(c.contract_id);
-                    if (!contractMapRef.current.has(cid)) return;
-                    const profit = Number(c.profit) || 0;
-                    handleTradeResult(profit > 0, profit);
                 }
             } catch {}
         };
@@ -348,19 +352,16 @@ export const EvenOddKiller: React.FC = () => {
         const mws = openMakotiWS(
             handleMsg,
             () => {
-                addLog('Connected — streaming ticks', 'info');
-                if (window._newSystemWS?.readyState === WebSocket.OPEN) {
-                    window._newSystemWS.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
-                    ALL_SYMBOLS.forEach(sym => {
-                        window._newSystemWS.send(JSON.stringify({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
-                    });
-                }
+                addLog('Connected', 'info');
+                ALL_SYMBOLS.forEach(sym => {
+                    window._newSystemWS?.send(JSON.stringify({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
+                });
                 setTimeout(() => { if (runningRef.current) reanalyzeRef.current(); }, 2000);
             },
             () => { if (runningRef.current) { addLog('Connection lost', 'info'); stop(); } }
         );
         wsRef.current = mws;
-    }, [addLog, processTick, stop, handleTradeResult]);
+    }, [addLog, processTick, stop]);
 
     useEffect(() => () => { try { wsRef.current?.close(); } catch {} }, []);
 
