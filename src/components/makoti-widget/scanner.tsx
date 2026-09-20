@@ -1691,6 +1691,7 @@ export const Scanner: React.FC = () => {
     const [entryTP, setEntryTP] = useState('10');
     const [entrySL, setEntrySL] = useState('50');
     const [entryRecoveryPred, setEntryRecoveryPred] = useState(5);
+    const [aiAuto, setAiAuto] = useState(false);
 
     // Single vs all volatilities
     const [singleVol, setSingleVol] = useState(false);
@@ -1723,10 +1724,12 @@ export const Scanner: React.FC = () => {
     const cancelScanRef = useRef<(() => void) | null>(null);
     const entryContractTypeRef = useRef<'DIGITOVER' | 'DIGITUNDER'>('DIGITUNDER');
     const entryBarrierRef = useRef(7);
+    const aiAutoRef = useRef(false);
 
     // Sync Entry Digit refs
     useEffect(() => { entryContractTypeRef.current = entryContractType; }, [entryContractType]);
     useEffect(() => { entryBarrierRef.current = entryBarrier; }, [entryBarrier]);
+    useEffect(() => { aiAutoRef.current = aiAuto; }, [aiAuto]);
 
     const showNotify = useCallback((msg: string, type: 'info' | 'success' | 'warn' = 'info') => {
         setNotification({ msg, type });
@@ -1901,12 +1904,10 @@ export const Scanner: React.FC = () => {
                 setBestSymbols(best.slice(0, 3));
             } else if (currentBot === 'entry_digit') {
                 // Entry Digit Trigger Analysis — progressive, one volatility at a time
-                const entryType = botRef.current === 'entry_digit' ? entryContractTypeRef.current : 'DIGITOVER';
-                const entryBar = botRef.current === 'entry_digit' ? entryBarrierRef.current : 3;
-                const isUnder = entryType === 'DIGITUNDER';
+                const useAiAuto = aiAutoRef.current;
 
                 const symbols = Array.from(collectedRef.current.entries()).filter(([, p]) => p && p.length >= 30);
-                const scanResults: TriggerDigitResult[] = [];
+                const scanResults: TriggerDigitResult[] & { _bestType?: 'DIGITOVER' | 'DIGITUNDER'; _bestBar?: number }[] = [];
                 let idx = 0;
 
                 const analyzeNext = () => {
@@ -1915,9 +1916,12 @@ export const Scanner: React.FC = () => {
                         scanResults.sort((a, b) => {
                             if (a.qualifies && !b.qualifies) return -1;
                             if (!a.qualifies && b.qualifies) return 1;
-                            // Prefer higher confidence + LOWER max individual losing digit + higher immediate win rate
-                            const aMaxLose = Math.max(...(isUnder ? a.baselinePcts.slice(entryBar) : a.baselinePcts.slice(0, entryBar)));
-                            const bMaxLose = Math.max(...(isUnder ? b.baselinePcts.slice(entryBar) : b.baselinePcts.slice(0, entryBar)));
+                            const aBar = (a as any)._bestBar ?? entryBarrierRef.current;
+                            const bBar = (b as any)._bestBar ?? entryBarrierRef.current;
+                            const aIsUnder = (a as any)._bestType === 'DIGITUNDER';
+                            const bIsUnder = (b as any)._bestType === 'DIGITUNDER';
+                            const aMaxLose = Math.max(...(aIsUnder ? a.baselinePcts.slice(aBar) : a.baselinePcts.slice(0, aBar)));
+                            const bMaxLose = Math.max(...(bIsUnder ? b.baselinePcts.slice(bBar) : b.baselinePcts.slice(0, bBar)));
                             const aImm = a.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
                             const bImm = b.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
                             const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? (10.5 - aMaxLose) * 5 : 0) + aImm * 0.15;
@@ -1934,17 +1938,20 @@ export const Scanner: React.FC = () => {
                         // Show prediction
                         const topResult = scanResults[0];
                         const topTrigger = topResult?.triggers[0];
+                        const resolvedType = (topResult as any)?._bestType ?? entryContractTypeRef.current;
+                        const resolvedBar = (topResult as any)?._bestBar ?? entryBarrierRef.current;
                         if (topTrigger) {
                             const trendLabel = topTrigger.patternTrend.trend === 'strengthening' ? 'STRENGTHENING'
                                 : topTrigger.patternTrend.trend === 'weakening' ? 'WEAKENING'
                                 : topTrigger.patternTrend.trend === 'new' ? 'NEW PATTERN'
                                 : topTrigger.patternTrend.trend === 'dying' ? 'DYING' : 'STABLE';
-                            setProgress(`PREDICTION → ${topResult.label} | Entry Digit: Digit ${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100 | ${topTrigger.significance === 'high' ? '★ SIGNIFICANT' : topTrigger.significance === 'medium' ? '◆ MODERATE' : topTrigger.significance === 'low' ? '○ MARGINAL' : '× NOISE'}`);
+                            const contractLabel = resolvedType === 'DIGITUNDER' ? `UNDER ${resolvedBar}` : `OVER ${resolvedBar}`;
+                            setProgress(`PREDICTION → ${topResult.label} | ${contractLabel} | Entry Digit: Digit ${topTrigger.digit} | ${trendLabel} | Score: ${topTrigger.confidence.toFixed(0)}/100 | ${topTrigger.significance === 'high' ? '★ SIGNIFICANT' : topTrigger.significance === 'medium' ? '◆ MODERATE' : topTrigger.significance === 'low' ? '○ MARGINAL' : '× NOISE'}`);
                             setTopPrediction({
                                 symbol: topResult.symbol, label: topResult.label,
                                 entryDigit: topTrigger.digit,
-                                contractType: entryContractTypeRef.current,
-                                barrier: entryBarrierRef.current,
+                                contractType: resolvedType,
+                                barrier: resolvedBar,
                             });
                         } else {
                             setProgress('No strong trigger pattern found');
@@ -1957,38 +1964,83 @@ export const Scanner: React.FC = () => {
                     const [sym, prices] = symbols[idx];
                     const pipSize = PIP_SIZES[sym] || 2;
                     const digits = prices.map(p => Number(Number(p).toFixed(pipSize).slice(-1)));
-                    const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
-                    const bestTrigger = analysis.triggers[0];
-                    // Individual losing digit check — NO single losing digit can exceed 10.5%
-                    const losingDigits = isUnder
-                        ? analysis.baselinePcts.slice(entryBar)
-                        : analysis.baselinePcts.slice(0, entryBar);
-                    const maxLosingPct = Math.max(...losingDigits);
-                    const individualLosePass = maxLosingPct <= 10.5;
-                    // Winning digits must have HIGH individual percentages — at least half ≥ 10%
-                    const winDigits = isUnder
-                        ? analysis.baselinePcts.slice(0, entryBar)
-                        : analysis.baselinePcts.slice(entryBar + 1);
-                    const highPctCount = winDigits.filter(p => p >= 10).length;
-                    const winDigitsPass = highPctCount >= Math.ceil(winDigits.length / 2);
-                    // Both conditions must pass
-                    const winFreqPass = individualLosePass && winDigitsPass;
-                    const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
-                    const detail = bestTrigger
-                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | MaxLose: ${maxLosingPct.toFixed(1)}% | Score: ${bestTrigger.confidence.toFixed(0)}/100`
-                        : winFreqPass ? 'No strong trigger found'
-                            : !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)`
-                            : `Winning digits too weak (${highPctCount}/${winDigits.length} ≥ 10%)`;
+                    if (useAiAuto) {
+                        // AI AUTO: try all 16 combos, pick the best
+                        let bestCombo: { type: 'DIGITOVER' | 'DIGITUNDER'; bar: number; analysis: ReturnType<typeof analyzeTriggerDigits>; score: number } | null = null;
+                        const combos: ('DIGITOVER' | 'DIGITUNDER')[] = ['DIGITOVER', 'DIGITUNDER'];
+                        for (const ct of combos) {
+                            for (let bar = 1; bar <= 8; bar++) {
+                                const isU = ct === 'DIGITUNDER';
+                                const a = analyzeTriggerDigits(digits, ct, bar, prices);
+                                const bt = a.triggers[0];
+                                if (!bt || bt.confidence < 30 || bt.significance === 'none') continue;
+                                // Check qualification for this combo
+                                const ld = isU ? a.baselinePcts.slice(bar) : a.baselinePcts.slice(0, bar);
+                                const maxL = Math.max(...ld);
+                                if (maxL > 10.5) continue;
+                                const wd = isU ? a.baselinePcts.slice(0, bar) : a.baselinePcts.slice(bar + 1);
+                                const hp = wd.filter(p => p >= 10).length;
+                                if (hp < Math.ceil(wd.length / 2)) continue;
+                                // Score this combo
+                                const imm = bt.pctPattern?.immediateWinRate ?? 0;
+                                const comboScore = bt.confidence + (10.5 - maxL) * 5 + imm * 0.15;
+                                if (!bestCombo || comboScore > bestCombo.score) {
+                                    bestCombo = { type: ct, bar, analysis: a, score: comboScore };
+                                }
+                            }
+                        }
+                        if (bestCombo) {
+                            const bt = bestCombo.analysis.triggers[0];
+                            const isU = bestCombo.type === 'DIGITUNDER';
+                            const ld = isU ? bestCombo.analysis.baselinePcts.slice(bestCombo.bar) : bestCombo.analysis.baselinePcts.slice(0, bestCombo.bar);
+                            const maxL = Math.max(...ld);
+                            scanResults.push({
+                                symbol: sym, label: SYMBOL_LABELS[sym],
+                                baselinePcts: bestCombo.analysis.baselinePcts,
+                                baselineWinPct: bestCombo.analysis.baselineWinPct,
+                                triggers: bestCombo.analysis.triggers,
+                                qualifies: true,
+                                detail: `Best: D${bt.digit} (${bt.occurrences}x) | ${bt.boost.toFixed(1)}% boost | MaxLose: ${maxL.toFixed(1)}% | Score: ${bt.confidence.toFixed(0)}/100 | ${bestCombo.type === 'DIGITUNDER' ? 'UNDER' : 'OVER'} ${bestCombo.bar}`,
+                                _bestType: bestCombo.type,
+                                _bestBar: bestCombo.bar,
+                            } as any);
+                        }
+                    } else {
+                        // MANUAL: use user's configured contract type and barrier
+                        const entryType = entryContractTypeRef.current;
+                        const entryBar = entryBarrierRef.current;
+                        const isUnder = entryType === 'DIGITUNDER';
+                        const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
-                    scanResults.push({
-                        symbol: sym, label: SYMBOL_LABELS[sym],
-                        baselinePcts: analysis.baselinePcts,
-                        baselineWinPct: analysis.baselineWinPct,
-                        triggers: analysis.triggers,
-                        qualifies,
-                        detail,
-                    });
+                        const bestTrigger = analysis.triggers[0];
+                        const losingDigits = isUnder
+                            ? analysis.baselinePcts.slice(entryBar)
+                            : analysis.baselinePcts.slice(0, entryBar);
+                        const maxLosingPct = Math.max(...losingDigits);
+                        const individualLosePass = maxLosingPct <= 10.5;
+                        const winDigits = isUnder
+                            ? analysis.baselinePcts.slice(0, entryBar)
+                            : analysis.baselinePcts.slice(entryBar + 1);
+                        const highPctCount = winDigits.filter(p => p >= 10).length;
+                        const winDigitsPass = highPctCount >= Math.ceil(winDigits.length / 2);
+                        const winFreqPass = individualLosePass && winDigitsPass;
+                        const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
+                        const detail = bestTrigger
+                            ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | MaxLose: ${maxLosingPct.toFixed(1)}% | Score: ${bestTrigger.confidence.toFixed(0)}/100`
+                            : winFreqPass ? 'No strong trigger found'
+                                : !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)`
+                                : `Winning digits too weak (${highPctCount}/${winDigits.length} ≥ 10%)`;
+
+                        scanResults.push({
+                            symbol: sym, label: SYMBOL_LABELS[sym],
+                            baselinePcts: analysis.baselinePcts,
+                            baselineWinPct: analysis.baselineWinPct,
+                            triggers: analysis.triggers,
+                            qualifies,
+                            detail,
+                        });
+                    }
 
                     idx++;
                     setProgress(`Analyzing ${SYMBOL_LABELS[sym]}… (${idx}/${symbols.length})`);
@@ -2159,26 +2211,33 @@ export const Scanner: React.FC = () => {
                                 onChange={e => setEntryStake(e.target.value)}
                                 disabled={scanning} />
                         </div>
-                        <div className='mw-field'>
-                            <label className='mw-label'>Contract Type</label>
-                            <MwSelect value={entryContractType} options={[
-                                { value: 'DIGITOVER', label: 'OVER' },
-                                { value: 'DIGITUNDER', label: 'UNDER' },
-                            ]}
-                                onChange={v => setEntryContractType(v as 'DIGITOVER' | 'DIGITUNDER')} disabled={scanning} />
-                        </div>
-                        <div className='mw-field'>
-                            <label className='mw-label'>Barrier Digit</label>
-                            <input className='mw-input' type='number' min={0} max={9}
-                                defaultValue={entryBarrier}
-                                key={entryBarrier}
-                                onChange={e => {
-                                    const v = parseInt(e.target.value);
-                                    if (!isNaN(v) && v >= 0 && v <= 9) setEntryBarrier(v);
-                                }}
-                                disabled={scanning}
-                                style={{ width: 60, textAlign: 'center' }} />
-                        </div>
+                        {!aiAuto && (<>
+                            <div className='mw-field'>
+                                <label className='mw-label'>Contract Type</label>
+                                <MwSelect value={entryContractType} options={[
+                                    { value: 'DIGITOVER', label: 'OVER' },
+                                    { value: 'DIGITUNDER', label: 'UNDER' },
+                                ]}
+                                    onChange={v => setEntryContractType(v as 'DIGITOVER' | 'DIGITUNDER')} disabled={scanning} />
+                            </div>
+                            <div className='mw-field'>
+                                <label className='mw-label'>Barrier Digit</label>
+                                <input className='mw-input' type='number' min={0} max={9}
+                                    defaultValue={entryBarrier}
+                                    key={entryBarrier}
+                                    onChange={e => {
+                                        const v = parseInt(e.target.value);
+                                        if (!isNaN(v) && v >= 0 && v <= 9) setEntryBarrier(v);
+                                    }}
+                                    disabled={scanning}
+                                    style={{ width: 60, textAlign: 'center' }} />
+                            </div>
+                        </>)}
+                        {aiAuto && (
+                            <div style={{ fontSize: 10, color: '#4caf50', padding: '2px 0' }}>
+                                AI picks best contract + barrier automatically
+                            </div>
+                        )}
                         <div className='mw-field'>
                             <label className='mw-label'>Take Profit ($)</label>
                             <input className='mw-input' type='number' min='1' step='1'
@@ -2234,9 +2293,19 @@ export const Scanner: React.FC = () => {
                             onChange={v => setSingleVolSymbol(v)} disabled={scanning} />
                     </div>
                 )}
-                <button className={`mw-btn mw-btn--scan${scanning ? ' mw-btn--busy' : ''}`} onClick={analyze} disabled={scanning}>
-                    {scanning ? <><span className='mw-spin' /> Analyzing…</> : 'Analyze'}
-                </button>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+                    <label className='mw-switch-row' style={{ margin: 0, flex: 1 }}>
+                        <span className='mw-switch-label' style={{ fontSize: 11 }}>AI Auto</span>
+                        <div className='mw-toggle' onClick={() => { if (!scanning) setAiAuto(v => !v); }}>
+                            <div className={`mw-toggle__track${aiAuto ? ' mw-toggle__track--on' : ''}`}>
+                                <div className={`mw-toggle__thumb${aiAuto ? ' mw-toggle__thumb--on' : ''}`} />
+                            </div>
+                        </div>
+                    </label>
+                    <button className={`mw-btn mw-btn--scan${scanning ? ' mw-btn--busy' : ''}`} onClick={analyze} disabled={scanning}>
+                        {scanning ? <><span className='mw-spin' /> Analyzing…</> : 'Analyze'}
+                    </button>
+                </div>
                 {progress && (
                     <div className='mw-scanner__progress' style={progress.startsWith('PREDICTION') ? {
                         background: '#1a3d1a', border: '1px solid #4caf50', borderRadius: 4,
