@@ -70,7 +70,8 @@ export const EvenOddKiller: React.FC = () => {
     const losingStreakRef = useRef(0);
     const patternReadyRef = useRef(false);
     const awaitingResultRef = useRef(false);
-    const lastTradeDigitRef = useRef(-1);
+    const tradeIdRef = useRef(0);
+    const pendingTradeIdRef = useRef(0);
 
     /* ── UI state ── */
     const [symProgress, setSymProgress] = useState<Record<string, {
@@ -167,6 +168,8 @@ export const EvenOddKiller: React.FC = () => {
         losingStreakRef.current = 0;
         patternReadyRef.current = false;
         awaitingResultRef.current = false;
+        tradeIdRef.current = 0;
+        pendingTradeIdRef.current = 0;
         tradesInRoundRef.current = 0;
         setTradesInRound(0);
         currentStakeRef.current = stakeRef.current;
@@ -259,6 +262,7 @@ export const EvenOddKiller: React.FC = () => {
                     if (runningRef.current) reanalyze();
                 }, 3000);
             }
+        }
     }, [addLog]);
 
     /* ── Fire a trade immediately ── */
@@ -267,8 +271,12 @@ export const EvenOddKiller: React.FC = () => {
         const ct = contractTypeRef.current;
         if (!sym || !runningRef.current) return;
 
+        // Set flags SYNCHRONOUSLY before any async work
         lockRef.current = true;
         awaitingResultRef.current = true;
+        tradeIdRef.current++;
+        const myTradeId = tradeIdRef.current;
+
         const label = ct === 'DIGITEVEN' ? 'EVEN' : 'ODD';
         const isRecovery = phaseRef.current === 'recovery';
         const roundLabel = isRecovery ? `RECOVERY ${recoveryAttemptsRef.current + 1}` : `${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND}`;
@@ -283,12 +291,13 @@ export const EvenOddKiller: React.FC = () => {
                 awaitingResultRef.current = false;
                 lockRef.current = false;
             }
+            // Store the trade ID so processTick knows which trade this is
+            pendingTradeIdRef.current = myTradeId;
         });
     }, [addLog, executeTrade]);
 
     /* ── Handle trade result ── */
     const handleTradeResult = useCallback((won: boolean) => {
-        awaitingResultRef.current = false;
         if (won) {
             tradesWonRef.current++;
             setTradesWon(tradesWonRef.current);
@@ -301,6 +310,7 @@ export const EvenOddKiller: React.FC = () => {
                 addLog('RECOVERY WIN — re-analyzing volatilities', 'success');
                 currentStakeRef.current = stakeRef.current;
                 setCurrentStakeUI(stakeRef.current);
+                awaitingResultRef.current = false;
                 lockRef.current = false;
                 reanalyze();
                 return;
@@ -313,13 +323,13 @@ export const EvenOddKiller: React.FC = () => {
                 addLog(`3 WINS — re-analyzing volatilities`, 'success');
                 currentStakeRef.current = stakeRef.current;
                 setCurrentStakeUI(stakeRef.current);
+                awaitingResultRef.current = false;
                 lockRef.current = false;
                 reanalyze();
                 return;
             }
 
-            // Fire next trade IMMEDIATELY — right now, not on next tick
-            lockRef.current = false;
+            // Fire next trade IMMEDIATELY — flag stays true, fireTrade sets it for the new trade
             fireTrade();
         } else {
             tradesLostRef.current++;
@@ -333,7 +343,6 @@ export const EvenOddKiller: React.FC = () => {
             setPhase('recovery');
             currentStakeRef.current *= martingaleRef.current;
             setCurrentStakeUI(currentStakeRef.current);
-            lockRef.current = false;
             addLog(`RECOVERY: stake $${currentStakeRef.current.toFixed(2)}`, 'recovery');
             setPatternStatus(`RECOVERY — stake $${currentStakeRef.current.toFixed(2)} — firing now...`);
             fireTrade();
@@ -350,8 +359,11 @@ export const EvenOddKiller: React.FC = () => {
         const winningIsEven = ct === 'DIGITEVEN';
 
         // If awaiting trade result — this next tick determines win/loss (1-tick contract)
-        if (awaitingResultRef.current) {
+        // Only resolve if this is the SAME trade we're waiting for (not a new one from fireTrade)
+        if (awaitingResultRef.current && pendingTradeIdRef.current === tradeIdRef.current) {
             const won = winningIsEven ? isEven(digit) : !isEven(digit);
+            // Mark as resolved immediately so next tick doesn't re-resolve
+            pendingTradeIdRef.current = -1;
             handleTradeResult(won);
             return;
         }
@@ -413,6 +425,9 @@ export const EvenOddKiller: React.FC = () => {
         losingStreakRef.current = 0;
         patternReadyRef.current = false;
         recoveryAttemptsRef.current = 0;
+        awaitingResultRef.current = false;
+        tradeIdRef.current = 0;
+        pendingTradeIdRef.current = 0;
         setTradesWon(0);
         setTradesLost(0);
         setTradesInRound(0);
