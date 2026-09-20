@@ -1972,13 +1972,23 @@ export const Scanner: React.FC = () => {
                         : analysis.baselinePcts.slice(entryBar + 1);
                     const highPctCount = winDigits.filter(p => p >= 10).length;
                     const winDigitsPass = highPctCount >= Math.ceil(winDigits.length / 2);
-                    // UNDER: losing digits ≤ 25% + win digits strong
-                    // OVER: win rate ≥ 68% + win digits strong
-                    const winFreqPass = isUnder ? losingPct <= 25 && winDigitsPass : analysis.baselineWinPct >= 68 && winDigitsPass;
+                    // Individual losing digit check — NO single losing digit can exceed 11%
+                    const losingDigits = isUnder
+                        ? analysis.baselinePcts.slice(entryBar)
+                        : analysis.baselinePcts.slice(0, entryBar);
+                    const maxLosingPct = Math.max(...losingDigits);
+                    const individualLosePass = maxLosingPct <= 11;
+                    // UNDER: losing digits ≤ 25% + no single > 11% + win digits strong
+                    // OVER: win rate ≥ 68% + no single losing > 11% + win digits strong
+                    const winFreqPass = isUnder
+                        ? losingPct <= 25 && individualLosePass && winDigitsPass
+                        : analysis.baselineWinPct >= 68 && individualLosePass && winDigitsPass;
                     const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
                     const detail = bestTrigger
-                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${isUnder ? `Lose%: ${losingPct.toFixed(0)}%` : `Win%: ${analysis.baselineWinPct.toFixed(0)}%`} | Score: ${bestTrigger.confidence.toFixed(0)}/100`
-                        : winFreqPass ? 'No strong trigger found' : isUnder ? `Too many losing digits (${losingPct.toFixed(0)}%)` : `Low win rate (${analysis.baselineWinPct.toFixed(0)}%)`;
+                        ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${isUnder ? `Lose%: ${losingPct.toFixed(0)}% (max ${maxLosingPct.toFixed(1)}%)` : `Win%: ${analysis.baselineWinPct.toFixed(0)}%`} | Score: ${bestTrigger.confidence.toFixed(0)}/100`
+                        : winFreqPass ? 'No strong trigger found' : isUnder
+                            ? !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)` : `Too many losing digits (${losingPct.toFixed(0)}%)`
+                            : !individualLosePass ? `Losing digit too high (${maxLosingPct.toFixed(1)}%)` : `Low win rate (${analysis.baselineWinPct.toFixed(0)}%)`;
 
                     scanResults.push({
                         symbol: sym, label: SYMBOL_LABELS[sym],
