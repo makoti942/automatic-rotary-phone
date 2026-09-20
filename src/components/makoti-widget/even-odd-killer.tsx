@@ -243,6 +243,16 @@ export const EvenOddKiller: React.FC = () => {
             setTotalPnl(totalPnlRef.current);
             addLog(`WIN +$${(currentStakeRef.current * 0.95).toFixed(2)}`, 'win');
 
+            // If we were in recovery — re-analyze
+            if (phaseRef.current === 'recovery') {
+                addLog('RECOVERY WIN — re-analyzing volatilities', 'success');
+                currentStakeRef.current = stakeRef.current;
+                setCurrentStakeUI(stakeRef.current);
+                lockRef.current = false;
+                reanalyze();
+                return;
+            }
+
             tradesInRoundRef.current++;
             setTradesInRound(tradesInRoundRef.current);
 
@@ -255,9 +265,9 @@ export const EvenOddKiller: React.FC = () => {
                 return;
             }
 
-            // IMMEDIATE next trade — no pattern wait, fire on next tick
+            // Immediate next trade — no pattern wait
             lockRef.current = false;
-            setPatternStatus(`Trade ${tradesInRoundRef.current}/${TRADES_PER_ROUND} won — firing next trade immediately...`);
+            setPatternStatus(`Trade ${tradesInRoundRef.current}/${TRADES_PER_ROUND} won — next trade immediately...`);
         } else {
             tradesLostRef.current++;
             setTradesLost(tradesLostRef.current);
@@ -265,17 +275,14 @@ export const EvenOddKiller: React.FC = () => {
             setTotalPnl(totalPnlRef.current);
             addLog(`LOSS -$${currentStakeRef.current.toFixed(2)}`, 'loss');
 
-            // Recovery on SAME volatility — wait for pattern before next trade
+            // Recovery: increase stake, fire next trade IMMEDIATELY — no pattern
             phaseRef.current = 'recovery';
             setPhase('recovery');
             currentStakeRef.current *= martingaleRef.current;
             setCurrentStakeUI(currentStakeRef.current);
-            tradesInRoundRef.current = 0;
-            setTradesInRound(0);
-            losingStreakRef.current = 0;
             lockRef.current = false;
-            addLog(`RECOVERY: stake $${currentStakeRef.current.toFixed(2)} — waiting for pattern on ${SYMBOL_LABELS[selectedSymRef.current]}`, 'recovery');
-            setPatternStatus(`RECOVERY — stake $${currentStakeRef.current.toFixed(2)} — waiting for pattern...`);
+            addLog(`RECOVERY: stake $${currentStakeRef.current.toFixed(2)} — firing immediately`, 'recovery');
+            setPatternStatus(`RECOVERY — stake $${currentStakeRef.current.toFixed(2)} — next tick trades...`);
         }
     }, [addLog, reanalyze]);
 
@@ -303,16 +310,14 @@ export const EvenOddKiller: React.FC = () => {
         const digitIsWin = winningIsEven ? isEven(digit) : !isEven(digit);
         const digitIsLose = !digitIsWin;
 
-        // Pattern waiting: only after re-analyze or after loss (recovery)
-        if (phaseRef.current === 'waiting_pattern' || phaseRef.current === 'recovery') {
+        // Pattern waiting: ONLY after fresh re-analyze (waiting_pattern phase)
+        if (phaseRef.current === 'waiting_pattern') {
             if (digitIsLose) {
                 losingStreakRef.current++;
                 const need = 2 - losingStreakRef.current;
-                setPatternStatus(phaseRef.current === 'recovery'
-                    ? `RECOVERY — ${need > 0 ? `${need} more losing digit(s)` : 'next win = trade'}...`
-                    : `Pattern: ${losingStreakRef.current}/2 losing digits...`);
+                setPatternStatus(`Pattern: ${losingStreakRef.current}/2 losing digits...`);
             } else if (digitIsWin && losingStreakRef.current >= 2) {
-                // Pattern complete — fire trade 1 immediately
+                // Pattern complete — fire trade 1
                 lockRef.current = true;
                 awaitingResultRef.current = true;
                 lastTradeDigitRef.current = digit;
@@ -333,21 +338,22 @@ export const EvenOddKiller: React.FC = () => {
             } else if (digitIsWin && losingStreakRef.current < 2) {
                 losingStreakRef.current = 0;
                 const losing = winningIsEven ? 'odd' : 'even';
-                setPatternStatus(phaseRef.current === 'recovery'
-                    ? `RECOVERY — reset. Waiting: 2 ${losing} then ${ct === 'DIGITEVEN' ? 'EVEN' : 'ODD'}...`
-                    : `Pattern reset. Waiting: 2 ${losing} then ${ct === 'DIGITEVEN' ? 'EVEN' : 'ODD'}...`);
+                setPatternStatus(`Pattern reset. Waiting: 2 ${losing} then ${ct === 'DIGITEVEN' ? 'EVEN' : 'ODD'}...`);
             }
             return;
         }
 
-        // After pattern triggered — fire trades immediately on each tick (no pattern wait)
-        if (tradesInRoundRef.current > 0 && tradesInRoundRef.current < TRADES_PER_ROUND) {
+        // After pattern triggered OR in recovery — fire trades immediately on every tick
+        if (!awaitingResultRef.current) {
             lockRef.current = true;
             awaitingResultRef.current = true;
             lastTradeDigitRef.current = digit;
             const label = ct === 'DIGITEVEN' ? 'EVEN' : 'ODD';
-            addLog(`TRADE ${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND} — ${label} @ $${currentStakeRef.current.toFixed(2)}`, 'trade');
-            setPatternStatus(`TRADING ${label} — ${tradesInRoundRef.current}/${TRADES_PER_ROUND}...`);
+            const isRecovery = phaseRef.current === 'recovery';
+            const roundLabel = isRecovery ? `RECOVERY ${recoveryAttemptsRef.current + 1}` : `${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND}`;
+            addLog(`TRADE ${roundLabel} — ${label} @ $${currentStakeRef.current.toFixed(2)}`, 'trade');
+            setPatternStatus(`TRADING ${label} — ${roundLabel}...`);
+            if (isRecovery) recoveryAttemptsRef.current++;
 
             const amt = currentStakeRef.current;
             executeTrade(sym, ct, amt).then(ok => {
