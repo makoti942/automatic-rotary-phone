@@ -596,6 +596,19 @@ interface TriggerInfo {
         losingMomentum: number;        // rate of change of losing digit %
         balanceShift: number;          // positive = distribution shifting toward wins
     };
+    // Tier 4: Digit Percentage Pattern Engine
+    pctPattern: {
+        flowConsistency: number;       // 0-100: how consistent percentage flow is over 1000 ticks
+        winPctStrength: number;        // 0-100: average winning digit percentage strength
+        immediateWinRate: number;      // 0-100: % of winning digits in first 5 ticks after trigger
+        digitRelationships: {          // which digits promote/suppress others by percentage
+            source: number;
+            target: number;
+            effect: number;            // percentage point change
+        }[];
+        percentageStability: number[]; // per-digit: how stable its percentage is (low = stable)
+        fullFlowPcts: number[][];      // [digit][window] = percentage across 10 windows of 100 ticks
+    };
 }
 
 type ScanResult = SymbolDigitResult | SymbolDirectionResult | TriggerDigitResult;
@@ -654,6 +667,105 @@ function analyzeDistribution(afterDigits: number[], isWin: (d: number) => boolea
     }
     const balanceShift = Math.round((winningMomentum - losingMomentum) * 10) / 10;
     return { fillRate, concentration, entropy, winningMomentum, losingMomentum, balanceShift };
+}
+
+// ── Engine 4: Digit Percentage Pattern ──
+// Full 1000-tick flow analysis: percentage behavior, relationships, stability
+function analyzePctPattern(
+    digits: number[],
+    isWin: (d: number) => boolean,
+    afterDigits: number[],
+) {
+    const len = digits.length;
+    const WINDOWS = 10;
+    const WINDOW_SIZE = Math.floor(len / WINDOWS);
+    if (len < 100) return {
+        flowConsistency: 0, winPctStrength: 0, immediateWinRate: 0,
+        digitRelationships: [], percentageStability: Array(10).fill(0),
+        fullFlowPcts: Array.from({ length: 10 }, () => Array(WINDOWS).fill(10)),
+    };
+
+    // Full flow: digit percentages across 10 windows of 100 ticks each
+    const fullFlowPcts: number[][] = Array.from({ length: 10 }, () => []);
+    for (let w = 0; w < WINDOWS; w++) {
+        const start = w * WINDOW_SIZE;
+        const end = Math.min(start + WINDOW_SIZE, len);
+        const winSlice = digits.slice(start, end);
+        const counts = Array(10).fill(0);
+        winSlice.forEach(d => { if (d >= 0 && d <= 9) counts[d]++; });
+        const total = winSlice.length || 1;
+        for (let d = 0; d < 10; d++) {
+            fullFlowPcts[d].push(Math.round((counts[d] / total) * 1000) / 10);
+        }
+    }
+
+    // Flow consistency: how stable each digit's percentage is across windows
+    const percentageStability = Array(10).fill(0).map((_, d) => {
+        const vals = fullFlowPcts[d];
+        const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+        const variance = vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length;
+        // Low variance = high stability
+        return Math.round(Math.min(10, Math.max(0, 10 - variance)) * 10) / 10;
+    });
+
+    // Flow consistency score: average stability across all digits
+    const flowConsistency = Math.round(
+        (percentageStability.reduce((s, v) => s + v, 0) / 10) * 10
+    ) * 10; // 0-100
+
+    // Win percentage strength: average % of winning digits
+    const winPcts = fullFlowPcts.map((vals, d) => isWin(d) ? vals : []);
+    const avgWinPct = winPcts.reduce((s, vals) => {
+        if (vals.length === 0) return s;
+        return s + vals.reduce((a, b) => a + b, 0) / vals.length;
+    }, 0) / (isWin(0) ? 10 : isWin(9) ? 10 : 7); // normalize by expected win count
+    const winPctStrength = Math.round(Math.min(100, Math.max(0, avgWinPct * 7)) * 10) / 10;
+
+    // Immediate win rate: % of winning digits in first 5 ticks after trigger
+    const immediate = afterDigits.slice(0, Math.min(5, afterDigits.length));
+    const immediateWinRate = immediate.length > 0
+        ? Math.round((immediate.filter(d => isWin(d)).length / immediate.length) * 1000) / 10
+        : 0;
+
+    // Digit relationships: which digits promote/suppress others by percentage
+    const relationships: { source: number; target: number; effect: number }[] = [];
+    for (let src = 0; src < 10; src++) {
+        const srcPositions: number[] = [];
+        for (let i = 0; i < len - 20; i++) {
+            if (digits[i] === src) srcPositions.push(i);
+        }
+        if (srcPositions.length < 3) continue;
+        // Get digit percentages in next 20 ticks after src
+        const afterSrc: number[] = [];
+        for (const pos of srcPositions) {
+            for (let j = pos + 1; j < Math.min(pos + 20, len); j++) {
+                afterSrc.push(digits[j]);
+            }
+        }
+        const afterCounts = Array(10).fill(0);
+        afterSrc.forEach(d => { if (d >= 0 && d <= 9) afterCounts[d]++; });
+        const afterTotal = afterSrc.length || 1;
+        // Compare to baseline
+        const baselineCounts = Array(10).fill(0);
+        digits.forEach(d => { if (d >= 0 && d <= 9) baselineCounts[d]++; });
+        for (let tgt = 0; tgt < 10; tgt++) {
+            const afterPct = Math.round((afterCounts[tgt] / afterTotal) * 1000) / 10;
+            const basePct = Math.round((baselineCounts[tgt] / len) * 1000) / 10;
+            const effect = Math.round((afterPct - basePct) * 10) / 10;
+            if (Math.abs(effect) > 0.5) {
+                relationships.push({ source: src, target: tgt, effect });
+            }
+        }
+    }
+
+    return {
+        flowConsistency,
+        winPctStrength,
+        immediateWinRate,
+        digitRelationships: relationships.slice(0, 20), // top 20 relationships
+        percentageStability,
+        fullFlowPcts,
+    };
 }
 
 // ── Entry Digit Trigger Analysis v3 ──
@@ -1033,6 +1145,9 @@ function analyzeTriggerDigits(
         // ── Engine 3: Distribution Promoter (per-trigger) ──
         const distAnalysis = analyzeDistribution(afterDigits, isWin);
 
+        // ── Engine 4: Digit Percentage Pattern (per-trigger) ──
+        const pctPatternAnalysis = analyzePctPattern(digits, isWin, afterDigits);
+
         // ── Per-trigger Generator patterns ──
         // After this trigger, what patterns emerge?
         let repeatCount = 0, altCount = 0, runLen = 0, totalRuns = 0, runSum = 0;
@@ -1357,11 +1472,24 @@ function analyzeTriggerDigits(
             distAnalysis.winningMomentum * 0.1
         )); // 0-12
 
+        // Tier 4: Digit Percentage Pattern Score
+        // Immediate win appearance: winning digits in first 5 ticks after trigger
+        const immediateWinScore = Math.min(8, Math.max(0,
+            pctPatternAnalysis.immediateWinRate * 0.08
+        )); // 0-8
+
+        // Flow consistency + win strength
+        const pctPatternScore = Math.min(7, Math.max(0,
+            pctPatternAnalysis.flowConsistency * 0.03 +
+            pctPatternAnalysis.winPctStrength * 0.04
+        )); // 0-7
+
         // Raw score
         const rawScore = boostScore + consistencyScore + momentumScore + decayScore
             + occScore + powerBonus + trajectoryScore + crossDigitScore
             + dominanceScoreVal + predictiveScoreVal
-            + genScore + fullTickScore + distScore;
+            + genScore + fullTickScore + distScore
+            + immediateWinScore + pctPatternScore;
 
         // Apply sample-size penalty + losing digit filter
         const losingFilterMultiplier = losingFilterPass ? 1.0 : 0.6;
@@ -1428,6 +1556,7 @@ function analyzeTriggerDigits(
             generator: perTriggerGenerator,
             fullTick: globalFullTick,
             distribution: distAnalysis,
+            pctPattern: pctPatternAnalysis,
         });
     }
 
@@ -1784,15 +1913,17 @@ export const Scanner: React.FC = () => {
                         scanResults.sort((a, b) => {
                             if (a.qualifies && !b.qualifies) return -1;
                             if (!a.qualifies && b.qualifies) return 1;
-                            // Prefer higher confidence + lower losing digit frequency
+                            // Prefer higher confidence + lower losing digit frequency + higher immediate win rate
                             const aLosePct = isUnder
                                 ? a.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
                                 : 100 - a.baselineWinPct;
                             const bLosePct = isUnder
                                 ? b.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
                                 : 100 - b.baselineWinPct;
-                            const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? (30 - aLosePct) * 0.5 : 0);
-                            const bScore = (b.triggers[0]?.confidence ?? 0) + (b.qualifies ? (30 - bLosePct) * 0.5 : 0);
+                            const aImm = a.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
+                            const bImm = b.triggers[0]?.pctPattern?.immediateWinRate ?? 0;
+                            const aScore = (a.triggers[0]?.confidence ?? 0) + (a.qualifies ? (25 - aLosePct) * 0.5 : 0) + aImm * 0.15;
+                            const bScore = (b.triggers[0]?.confidence ?? 0) + (b.qualifies ? (25 - bLosePct) * 0.5 : 0) + bImm * 0.15;
                             return bScore - aScore;
                         });
                         best = scanResults.map(r => r.symbol);
@@ -1831,12 +1962,19 @@ export const Scanner: React.FC = () => {
                     const analysis = analyzeTriggerDigits(digits, entryType, entryBar, prices);
 
                     const bestTrigger = analysis.triggers[0];
-                    // For UNDER: losing digits (7,8,9) must appear LESS (≤30% total)
-                    // For OVER: winning digits must appear MORE (≥65% total)
+                    // Winning digits must have HIGH individual percentages
                     const losingPct = isUnder
                         ? analysis.baselinePcts.slice(entryBar).reduce((s, p) => s + p, 0)
                         : 100 - analysis.baselineWinPct;
-                    const winFreqPass = isUnder ? losingPct <= 30 : analysis.baselineWinPct >= 65;
+                    // Check individual winning digit percentages — at least half must be ≥ 10%
+                    const winDigits = isUnder
+                        ? analysis.baselinePcts.slice(0, entryBar)
+                        : analysis.baselinePcts.slice(entryBar + 1);
+                    const highPctCount = winDigits.filter(p => p >= 10).length;
+                    const winDigitsPass = highPctCount >= Math.ceil(winDigits.length / 2);
+                    // UNDER: losing digits ≤ 25% + win digits strong
+                    // OVER: win rate ≥ 68% + win digits strong
+                    const winFreqPass = isUnder ? losingPct <= 25 && winDigitsPass : analysis.baselineWinPct >= 68 && winDigitsPass;
                     const qualifies = bestTrigger !== undefined && bestTrigger.confidence >= 40 && bestTrigger.significance !== 'none' && winFreqPass;
                     const detail = bestTrigger
                         ? `Best: D${bestTrigger.digit} (${bestTrigger.occurrences}x) | ${bestTrigger.boost.toFixed(1)}% boost | ${isUnder ? `Lose%: ${losingPct.toFixed(0)}%` : `Win%: ${analysis.baselineWinPct.toFixed(0)}%`} | Score: ${bestTrigger.confidence.toFixed(0)}/100`
