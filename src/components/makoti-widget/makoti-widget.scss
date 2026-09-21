@@ -3159,3 +3159,5 @@ $mw-radius:   10px;
     }
     .mw-tab-dropdown__item--active { color: var(--eo-accent) !important; text-shadow: 0 0 10px rgba(245, 158, 11, 0.5); }
 }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }

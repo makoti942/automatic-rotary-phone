@@ -83,6 +83,14 @@ export const EvenOddKiller: React.FC = () => {
     const [currentStakeUI, setCurrentStakeUI] = useState(stakeRef.current);
     const [mode, setMode] = useState('idle');
     const [patternStatus, setPatternStatus] = useState('');
+    const [toast, setToast] = useState<{ msg: string; color: string } | null>(null);
+    const toastTimerRef = useRef<ReturnType<typeof setTimeout>>();
+
+    const showToast = useCallback((msg: string, color: string) => {
+        setToast({ msg, color });
+        try { clearTimeout(toastTimerRef.current); } catch {}
+        toastTimerRef.current = setTimeout(() => setToast(null), 6000);
+    }, []);
 
     const isEven = (d: number) => d === 0 || d === 2 || d === 4 || d === 6 || d === 8;
 
@@ -116,7 +124,8 @@ export const EvenOddKiller: React.FC = () => {
             runningRef.current = false;
             setRunning(false);
             addLog(`TAKE PROFIT HIT: $${pnl.toFixed(2)} >= $${tp.toFixed(2)}`, 'success');
-            showDesktopNotification('Take Profit Hit!', `Profit: $${pnl.toFixed(2)} (Target: $${tp.toFixed(2)})`);
+            showDesktopNotification('Take Profit Hit!', `Profit: $${pnl.toFixed(2)}`);
+            showToast(`TAKE PROFIT HIT: +$${pnl.toFixed(2)}`, '#4caf50');
             setPatternStatus(`TP HIT — $${pnl.toFixed(2)}`);
             return true;
         }
@@ -126,12 +135,13 @@ export const EvenOddKiller: React.FC = () => {
             runningRef.current = false;
             setRunning(false);
             addLog(`STOP LOSS HIT: $${pnl.toFixed(2)} <= -$${sl.toFixed(2)}`, 'loss');
-            showDesktopNotification('Stop Loss Hit!', `Loss: $${pnl.toFixed(2)} (Limit: -$${sl.toFixed(2)})`);
+            showDesktopNotification('Stop Loss Hit!', `Loss: $${pnl.toFixed(2)}`);
+            showToast(`STOP LOSS HIT: $${pnl.toFixed(2)}`, '#f44336');
             setPatternStatus(`SL HIT — $${pnl.toFixed(2)}`);
             return true;
         }
         return false;
-    }, [addLog]);
+    }, [addLog, showToast]);
 
     const stop = useCallback(() => {
         runningRef.current = false;
@@ -412,7 +422,18 @@ export const EvenOddKiller: React.FC = () => {
     useEffect(() => () => { try { wsRef.current?.close(); } catch {} }, []);
 
     return (
-        <div className='mw-killer even-odd-theme'>
+        <div className='mw-killer even-odd-theme' style={{ position: 'relative' }}>
+            {toast && (
+                <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100,
+                    background: toast.color, color: '#fff', fontWeight: 700,
+                    textAlign: 'center', padding: '10px 12px', borderRadius: 6,
+                    fontSize: 13, boxShadow: '0 4px 16px rgba(0,0,0,0.4)',
+                    animation: 'fadeIn 0.3s ease',
+                }}>
+                    {toast.msg}
+                </div>
+            )}
             <div className='mw-killer__fields'>
                 <div className='mw-field'>
                     <label className='mw-label'>Stake ($)</label>
