@@ -162,6 +162,8 @@ export function useManualTrade() {
     const pipRef = useRef(pipSize);
     const pricesRef = useRef<number[]>([]);
     const symbolRef = useRef(activeSymbol);
+    const lastTickTimeRef = useRef(Date.now());
+    const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const reqIdRef = useRef(0);
     const fetchReqIdRef = useRef(0);
     const subReqIdRef = useRef(0);
@@ -206,11 +208,10 @@ export function useManualTrade() {
                     return;
                 }
                 if (data.msg_type === 'tick' && data.tick) {
-                    // Only accept ticks for OUR symbol, whichever subscription
-                    // (ours or a shared one) delivered them.
                     if (data.tick.symbol !== symbolRef.current) return;
                     const quote = Number(data.tick.quote);
                     if (!isNaN(quote)) {
+                        lastTickTimeRef.current = Date.now();
                         setCurrentTick({ quote, epoch: data.tick.epoch });
                         setLastDigit(getDigit(quote, pipRef.current));
                         pricesRef.current = [...pricesRef.current.slice(-999), quote];
@@ -424,6 +425,53 @@ export function useManualTrade() {
             }
         };
     }, [activeSymbol]);
+
+    // Heartbeat: detect stale ticks and resubscribe
+    const resubscribeTicks = useCallback(() => {
+        if (!symbolRef.current) return;
+        if (subIdRef.current) {
+            sendViaNewSystem({ forget: subIdRef.current });
+            subIdRef.current = null;
+        }
+        subReqIdRef.current = 0;
+        const subId = ++reqIdRef.current;
+        subReqIdRef.current = subId;
+        sendViaNewSystem({
+            ticks_history: symbolRef.current,
+            count: 1,
+            end: 'latest',
+            style: 'ticks',
+            subscribe: 1,
+            req_id: subId,
+        });
+        lastTickTimeRef.current = Date.now();
+    }, []);
+
+    useEffect(() => {
+        lastTickTimeRef.current = Date.now();
+        if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+        heartbeatRef.current = setInterval(() => {
+            if (!mountedRef.current) return;
+            const elapsed = Date.now() - lastTickTimeRef.current;
+            if (elapsed > 8000) {
+                resubscribeTicks();
+            }
+        }, 5000);
+        return () => { if (heartbeatRef.current) clearInterval(heartbeatRef.current); };
+    }, [activeSymbol, resubscribeTicks]);
+
+    // Reconnect: when WS comes back online, resubscribe ticks
+    useEffect(() => {
+        const check = setInterval(() => {
+            if (window._newSystemWS?.readyState === WebSocket.OPEN && mountedRef.current) {
+                const elapsed = Date.now() - lastTickTimeRef.current;
+                if (elapsed > 8000) {
+                    resubscribeTicks();
+                }
+            }
+        }, 3000);
+        return () => clearInterval(check);
+    }, [resubscribeTicks]);
 
     // The bulk seed may land before active_symbols delivers the real pip size —
     // recompute stats whenever it changes so digits are never mis-parsed.
