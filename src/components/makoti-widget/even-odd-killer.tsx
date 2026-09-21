@@ -166,7 +166,13 @@ export const EvenOddKiller: React.FC = () => {
         const buf = bufRef.current;
         let bestSym = '', bestCt: 'DIGITEVEN' | 'DIGITODD' = 'DIGITEVEN', bestSide: 'even' | 'odd' = 'even', bestPct = 0;
 
-        for (const sym of ALL_SYMBOLS) {
+        const sortedSyms = [...ALL_SYMBOLS].sort((a, b) => {
+            if (a.startsWith('1HZ') && !b.startsWith('1HZ')) return 1;
+            if (!a.startsWith('1HZ') && b.startsWith('1HZ')) return -1;
+            return 0;
+        });
+
+        for (const sym of sortedSyms) {
             const digits = buf[sym];
             if (!digits || digits.length < 30) continue;
             const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
@@ -179,7 +185,7 @@ export const EvenOddKiller: React.FC = () => {
         }
 
         if (!bestSym) {
-            for (const sym of ALL_SYMBOLS) {
+            for (const sym of sortedSyms) {
                 const digits = buf[sym];
                 if (!digits || digits.length < 30) continue;
                 const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
