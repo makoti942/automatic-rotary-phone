@@ -166,13 +166,7 @@ export const EvenOddKiller: React.FC = () => {
         const buf = bufRef.current;
         let bestSym = '', bestCt: 'DIGITEVEN' | 'DIGITODD' = 'DIGITEVEN', bestSide: 'even' | 'odd' = 'even', bestPct = 0;
 
-        const sortedSyms = [...ALL_SYMBOLS].sort((a, b) => {
-            if (a.startsWith('1HZ') && !b.startsWith('1HZ')) return 1;
-            if (!a.startsWith('1HZ') && b.startsWith('1HZ')) return -1;
-            return 0;
-        });
-
-        for (const sym of sortedSyms) {
+        for (const sym of ALL_SYMBOLS) {
             const digits = buf[sym];
             if (!digits || digits.length < 30) continue;
             const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
@@ -185,7 +179,7 @@ export const EvenOddKiller: React.FC = () => {
         }
 
         if (!bestSym) {
-            for (const sym of sortedSyms) {
+            for (const sym of ALL_SYMBOLS) {
                 const digits = buf[sym];
                 if (!digits || digits.length < 30) continue;
                 const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
@@ -406,9 +400,9 @@ export const EvenOddKiller: React.FC = () => {
             () => {
                 addLog('Connected', 'info');
                 ALL_SYMBOLS.forEach(sym => {
-                    window._newSystemWS?.send(JSON.stringify({ ticks_history: sym, count: 100, end: 'latest', style: 'ticks' }));
+                    window._newSystemWS?.send(JSON.stringify({ ticks_history: sym, count: 300, end: 'latest', style: 'ticks' }));
                 });
-                setTimeout(() => { if (runningRef.current) reanalyzeRef.current(); }, 2000);
+                setTimeout(() => { if (runningRef.current) reanalyzeRef.current(); }, 5000);
             },
             () => { if (runningRef.current) { addLog('Connection lost', 'info'); stop(); } }
         );
