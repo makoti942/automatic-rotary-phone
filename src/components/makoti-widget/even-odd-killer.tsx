@@ -9,7 +9,7 @@ const MAX_TICKS = 200;
 const DOMINANCE_THRESHOLD = 58;
 const TRADES_PER_ROUND = 3;
 const LS_KEY = 'mw_eo_config';
-const DEFAULT_CFG = { stake: '0.35', martingale: '2' };
+const DEFAULT_CFG = { stake: '0.35', martingale: '2', takeProfit: '', stopLoss: '' };
 
 function loadCfg(): typeof DEFAULT_CFG {
     try { const r = localStorage.getItem(LS_KEY); return r ? { ...DEFAULT_CFG, ...JSON.parse(r) } : DEFAULT_CFG; }
@@ -19,19 +19,36 @@ function saveCfg(c: typeof DEFAULT_CFG) {
     try { localStorage.setItem(LS_KEY, JSON.stringify(c)); } catch {}
 }
 
+function showDesktopNotification(title: string, body: string) {
+    if (!('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+        new Notification(title, { body, icon: '/favicon.ico' });
+    } else if (Notification.permission !== 'denied') {
+        Notification.requestPermission().then(p => {
+            if (p === 'granted') new Notification(title, { body, icon: '/favicon.ico' });
+        });
+    }
+}
+
 export const EvenOddKiller: React.FC = () => {
     const { transactions } = useStore();
 
     const cfg = loadCfg();
     const [stake, setStake] = useState(cfg.stake);
     const [martingale, setMartingale] = useState(cfg.martingale);
+    const [takeProfit, setTakeProfit] = useState(cfg.takeProfit);
+    const [stopLoss, setStopLoss] = useState(cfg.stopLoss);
     const [running, setRunning] = useState(false);
 
     const stakeRef = useRef(parseFloat(cfg.stake));
     const martingaleRef = useRef(parseFloat(cfg.martingale));
-    useEffect(() => { saveCfg({ stake, martingale }); }, [stake, martingale]);
+    const takeProfitRef = useRef(parseFloat(cfg.takeProfit) || 0);
+    const stopLossRef = useRef(parseFloat(cfg.stopLoss) || 0);
+    useEffect(() => { saveCfg({ stake, martingale, takeProfit, stopLoss }); }, [stake, martingale, takeProfit, stopLoss]);
     useEffect(() => { stakeRef.current = parseFloat(stake) || 0.35; }, [stake]);
     useEffect(() => { martingaleRef.current = parseFloat(martingale) || 2; }, [martingale]);
+    useEffect(() => { takeProfitRef.current = parseFloat(takeProfit) || 0; }, [takeProfit]);
+    useEffect(() => { stopLossRef.current = parseFloat(stopLoss) || 0; }, [stopLoss]);
 
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -52,7 +69,7 @@ export const EvenOddKiller: React.FC = () => {
     const tradesInRoundRef = useRef(0);
     const totalPnlRef = useRef(0);
 
-    const modeRef = useRef<'idle' | 'scanning' | 'waiting_pattern' | 'waiting_result'>('idle');
+    const modeRef = useRef<'idle' | 'scanning' | 'waiting_pattern' | 'waiting_result' | 'tp_hit' | 'sl_hit'>('idle');
     const cmapRef = useRef<Map<string, { sym: string; amt: number }>>(new Map());
     const losingStreakRef = useRef(0);
 
@@ -89,6 +106,33 @@ export const EvenOddKiller: React.FC = () => {
         return rPct >= oPct - 2;
     };
 
+    const checkTpSl = useCallback(() => {
+        const pnl = totalPnlRef.current;
+        const tp = takeProfitRef.current;
+        const sl = stopLossRef.current;
+        if (tp > 0 && pnl >= tp) {
+            modeRef.current = 'tp_hit';
+            setMode('tp_hit');
+            runningRef.current = false;
+            setRunning(false);
+            addLog(`TAKE PROFIT HIT: $${pnl.toFixed(2)} >= $${tp.toFixed(2)}`, 'success');
+            showDesktopNotification('Take Profit Hit!', `Profit: $${pnl.toFixed(2)} (Target: $${tp.toFixed(2)})`);
+            setPatternStatus(`TP HIT — $${pnl.toFixed(2)}`);
+            return true;
+        }
+        if (sl > 0 && pnl <= -sl) {
+            modeRef.current = 'sl_hit';
+            setMode('sl_hit');
+            runningRef.current = false;
+            setRunning(false);
+            addLog(`STOP LOSS HIT: $${pnl.toFixed(2)} <= -$${sl.toFixed(2)}`, 'loss');
+            showDesktopNotification('Stop Loss Hit!', `Loss: $${pnl.toFixed(2)} (Limit: -$${sl.toFixed(2)})`);
+            setPatternStatus(`SL HIT — $${pnl.toFixed(2)}`);
+            return true;
+        }
+        return false;
+    }, [addLog]);
+
     const stop = useCallback(() => {
         runningRef.current = false;
         modeRef.current = 'idle';
@@ -105,6 +149,7 @@ export const EvenOddKiller: React.FC = () => {
     const fireTradeRef = useRef<() => void>(() => {});
 
     reanalyzeRef.current = () => {
+        if (!runningRef.current) return;
         modeRef.current = 'scanning';
         setMode('scanning');
         losingStreakRef.current = 0;
@@ -193,7 +238,7 @@ export const EvenOddKiller: React.FC = () => {
                         date_start: Math.floor(Date.now() / 1000), status: 'open',
                     } as any);
                 } catch {}
-                addLog(`Contract ${cid} open`, 'info');
+                addLog(`Contract ${cid}`, 'info');
             } else {
                 addLog('Buy OK but no contract_id', 'info');
                 modeRef.current = 'waiting_pattern';
@@ -207,12 +252,15 @@ export const EvenOddKiller: React.FC = () => {
     };
 
     const handleTradeResult = useCallback((won: boolean, profit: number) => {
+        totalPnlRef.current += profit;
+        setTotalPnl(totalPnlRef.current);
+
+        if (checkTpSl()) return;
+
         if (won) {
             tradesWonRef.current++;
             setTradesWon(tradesWonRef.current);
-            totalPnlRef.current += profit;
-            setTotalPnl(totalPnlRef.current);
-            addLog(`WIN +$${profit.toFixed(2)}`, 'win');
+            addLog(`WIN +$${profit.toFixed(2)} | P&L: $${totalPnlRef.current.toFixed(2)}`, 'win');
 
             tradesInRoundRef.current++;
             setTradesInRound(tradesInRoundRef.current);
@@ -227,27 +275,22 @@ export const EvenOddKiller: React.FC = () => {
                 return;
             }
 
-            addLog(`Firing trade ${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND}`, 'info');
+            addLog(`Next: trade ${tradesInRoundRef.current + 1}/${TRADES_PER_ROUND}`, 'info');
             fireTradeRef.current();
         } else {
             tradesLostRef.current++;
             setTradesLost(tradesLostRef.current);
-            totalPnlRef.current += profit;
-            setTotalPnl(totalPnlRef.current);
-            addLog(`LOSS $${profit.toFixed(2)}`, 'loss');
+            addLog(`LOSS $${profit.toFixed(2)} | P&L: $${totalPnlRef.current.toFixed(2)}`, 'loss');
 
             currentStakeRef.current *= martingaleRef.current;
             setCurrentStakeUI(currentStakeRef.current);
-            tradesInRoundRef.current = 0;
-            setTradesInRound(0);
             addLog(`RECOVERY: stake $${currentStakeRef.current.toFixed(2)}`, 'recovery');
             setPatternStatus(`RECOVERY — stake $${currentStakeRef.current.toFixed(2)}`);
 
             setTimeout(() => { if (runningRef.current) fireTradeRef.current(); }, 300);
         }
-    }, [addLog]);
+    }, [addLog, checkTpSl]);
 
-    /* ── POC listener (proposal_open_contract on _newSystemWS) ── */
     useEffect(() => {
         if (!running) return;
         if (window._newSystemWS?.readyState === WebSocket.OPEN) {
@@ -282,7 +325,7 @@ export const EvenOddKiller: React.FC = () => {
 
         if (!digitIsWin) {
             losingStreakRef.current++;
-            setPatternStatus(`Pattern: ${losingStreakRef.current} losing digits — waiting...`);
+            setPatternStatus(`Pattern: ${losingStreakRef.current} losing digits...`);
         } else if (digitIsWin && losingStreakRef.current >= 2) {
             modeRef.current = 'waiting_result';
             setMode('waiting_result');
@@ -315,6 +358,9 @@ export const EvenOddKiller: React.FC = () => {
         setTradesInRound(0);
         setTotalPnl(0);
         addLog('Starting EVEN & ODD...', 'info');
+
+        if (takeProfitRef.current > 0) addLog(`Take Profit: $${takeProfitRef.current.toFixed(2)}`, 'info');
+        if (stopLossRef.current > 0) addLog(`Stop Loss: $${stopLossRef.current.toFixed(2)}`, 'info');
 
         const handleMsg = (data: any) => {
             try {
@@ -378,6 +424,16 @@ export const EvenOddKiller: React.FC = () => {
                     <input className='mw-input' type='number' min='1' step='0.1'
                         value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} />
                 </div>
+                <div className='mw-field'>
+                    <label className='mw-label'>Take Profit ($)</label>
+                    <input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off'
+                        value={takeProfit} onChange={e => setTakeProfit(e.target.value)} disabled={running} />
+                </div>
+                <div className='mw-field'>
+                    <label className='mw-label'>Stop Loss ($)</label>
+                    <input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off'
+                        value={stopLoss} onChange={e => setStopLoss(e.target.value)} disabled={running} />
+                </div>
             </div>
 
             <button className={`mw-btn${running ? ' mw-btn--stop' : ' mw-btn--kill'}`}
@@ -396,6 +452,15 @@ export const EvenOddKiller: React.FC = () => {
                 </div>
             )}
 
+            {!running && (mode === 'tp_hit' || mode === 'sl_hit') && (
+                <div className='mw-killer__mode-note' style={{ marginTop: 8 }}>
+                    {mode === 'tp_hit'
+                        ? <span style={{ color: '#4caf50', fontWeight: 700 }}>TAKE PROFIT HIT ${totalPnl.toFixed(2)}</span>
+                        : <span style={{ color: '#f44336', fontWeight: 700 }}>STOP LOSS HIT ${totalPnl.toFixed(2)}</span>
+                    }
+                </div>
+            )}
+
             {running && (
                 <div style={{ display: 'flex', gap: 8, fontSize: 11, padding: '4px 8px', flexWrap: 'wrap' }}>
                     <span>Won: <b style={{ color: '#4caf50' }}>{tradesWon}</b></span>
@@ -403,6 +468,8 @@ export const EvenOddKiller: React.FC = () => {
                     <span>Round: <b style={{ color: '#2196f3' }}>{tradesInRound}/{TRADES_PER_ROUND}</b></span>
                     <span>P&L: <b style={{ color: totalPnl >= 0 ? '#4caf50' : '#f44336' }}>${totalPnl.toFixed(2)}</b></span>
                     <span>Stake: <b>${currentStakeUI.toFixed(2)}</b></span>
+                    {takeProfitRef.current > 0 && <span>TP: <b style={{ color: '#4caf50' }}>${takeProfitRef.current.toFixed(2)}</b></span>}
+                    {stopLossRef.current > 0 && <span>SL: <b style={{ color: '#f44336' }}>-${stopLossRef.current.toFixed(2)}</b></span>}
                 </div>
             )}
 
