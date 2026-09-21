@@ -68,6 +68,14 @@ export type ContractMode = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDE
 
 const VOLATILITY_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100', '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
 
+const MT_LS_KEY = 'mw_manual_trade_cfg';
+function loadMtCfg() {
+    try { return JSON.parse(localStorage.getItem(MT_LS_KEY) || '{}'); } catch { return {}; }
+}
+function saveMtCfg(cfg: Record<string, any>) {
+    try { localStorage.setItem(MT_LS_KEY, JSON.stringify(cfg)); } catch {}
+}
+
 // Fallback symbols used when active_symbols API returns no results
 const FALLBACK_SYMBOLS = VOLATILITY_SYMBOLS.map(s => ({
     display_name: s,
@@ -114,19 +122,20 @@ function computeDigitGrowth(prices: number[], pipSize: number): { counts: number
 }
 
 export function useManualTrade() {
+    const _cfg = loadMtCfg();
     const [symbols, setSymbols] = useState<SymbolInfo[]>([]);
-    const [activeSymbol, setActiveSymbol] = useState('R_100');
+    const [activeSymbol, setActiveSymbol] = useState(_cfg.activeSymbol || 'R_100');
     const [currentTick, setCurrentTick] = useState<TickInfo | null>(null);
     const [lastDigit, setLastDigit] = useState<number | null>(null);
     const [digitCounts, setDigitCounts] = useState<number[]>(Array(10).fill(0));
     const [digitGrowth, setDigitGrowth] = useState<number[]>(Array(10).fill(0));
     const [digitTotal, setDigitTotal] = useState(0);
     const [pipSize, setPipSize] = useState(2);
-    const [tradeType, setTradeTypeState] = useState<TradeType>('matches-differs');
-    const [contractMode, setContractMode] = useState<ContractMode>('DIGITMATCH');
-    const [selectedDigit, setSelectedDigit] = useState(5);
-    const [stake, setStake] = useState('10');
-    const [duration, setDuration] = useState(1);
+    const [tradeType, setTradeTypeState] = useState<TradeType>(_cfg.tradeType || 'matches-differs');
+    const [contractMode, setContractMode] = useState<ContractMode>(_cfg.contractMode || 'DIGITMATCH');
+    const [selectedDigit, setSelectedDigit] = useState(_cfg.selectedDigit ?? 5);
+    const [stake, setStake] = useState(_cfg.stake || '10');
+    const [duration, setDuration] = useState(_cfg.duration || 1);
     const [proposal, setProposal] = useState<ProposalInfo | null>(null);
     const [isProposalLoading, setIsProposalLoading] = useState(false);
     const [isBuying, setIsBuying] = useState(false);
@@ -142,6 +151,14 @@ export function useManualTrade() {
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const mountedRef = useRef(true);
+
+    // Persist config to localStorage
+    useEffect(() => {
+        saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration });
+    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration]);
+    useEffect(() => {
+        return () => { saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration }); };
+    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration]);
     const pipRef = useRef(pipSize);
     const pricesRef = useRef<number[]>([]);
     const symbolRef = useRef(activeSymbol);

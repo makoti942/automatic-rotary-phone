@@ -50,6 +50,11 @@ export const EvenOddKiller: React.FC = () => {
     useEffect(() => { takeProfitRef.current = parseFloat(takeProfit) || 0; }, [takeProfit]);
     useEffect(() => { stopLossRef.current = parseFloat(stopLoss) || 0; }, [stopLoss]);
 
+    // Save config on unmount so tab switches don't lose changes
+    useEffect(() => {
+        return () => { saveCfg({ stake, martingale, takeProfit, stopLoss }); };
+    }, [stake, martingale, takeProfit, stopLoss]);
+
     const [logs, setLogs] = useState<LogEntry[]>([]);
     const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
         const time = new Date().toLocaleTimeString();
