@@ -379,7 +379,7 @@ export const EvenOddKiller: React.FC = () => {
         const handleMsg = (data: any) => {
             try {
                 if (data.msg_type === 'ticks_history' && data.ticks) {
-                    const sym = data.ticks_history || data.echo?.ticks_history;
+                    const sym = data.echo_req?.ticks_history || data.ticks_history;
                     if (!sym) return;
                     const prices: number[] = data.ticks.map((t: any) => Number(t.quote));
                     if (!bufRef.current[sym]) bufRef.current[sym] = [];
@@ -414,7 +414,7 @@ export const EvenOddKiller: React.FC = () => {
             () => {
                 addLog('Connected', 'info');
                 ALL_SYMBOLS.forEach(sym => {
-                    window._newSystemWS?.send(JSON.stringify({ ticks_history: sym, count: 300, end: 'latest', style: 'ticks' }));
+                    window._newSystemWS?.send(JSON.stringify({ ticks_history: sym, count: 300, end: 'latest', style: 'ticks', subscribe: 1 }));
                 });
                 setTimeout(() => { if (runningRef.current) reanalyzeRef.current(); }, 5000);
             },
