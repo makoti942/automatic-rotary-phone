@@ -176,22 +176,26 @@ export const EvenOddKiller: React.FC = () => {
         const buf = bufRef.current;
         let bestSym = '', bestCt: 'DIGITEVEN' | 'DIGITODD' = 'DIGITEVEN', bestSide: 'even' | 'odd' = 'even', bestPct = 0;
 
+        const scanResults: string[] = [];
         for (const sym of ALL_SYMBOLS) {
             const digits = buf[sym];
-            if (!digits || digits.length < 30) continue;
+            if (!digits || digits.length < 30) { scanResults.push(`${sym}: no data`); continue; }
             const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
-            if (evenPct > DOMINANCE_THRESHOLD && isIncreasing(digits, 'even') && evenPct > bestPct) {
+            const inc = isIncreasing(digits, evenPct >= oddPct ? 'even' : 'odd');
+            scanResults.push(`${sym}: E=${evenPct.toFixed(1)}% O=${oddPct.toFixed(1)}% inc=${inc}`);
+            if (evenPct >= DOMINANCE_THRESHOLD && inc && evenPct > bestPct) {
                 bestPct = evenPct; bestSym = sym; bestCt = 'DIGITEVEN'; bestSide = 'even';
             }
-            if (oddPct > DOMINANCE_THRESHOLD && isIncreasing(digits, 'odd') && oddPct > bestPct) {
+            if (oddPct >= DOMINANCE_THRESHOLD && inc && oddPct > bestPct) {
                 bestPct = oddPct; bestSym = sym; bestCt = 'DIGITODD'; bestSide = 'odd';
             }
         }
+        addLog(`Scan: ${scanResults.join(' | ')}`, 'info');
 
         if (!bestSym) {
             for (const sym of ALL_SYMBOLS) {
                 const digits = buf[sym];
-                if (!digits || digits.length < 30) continue;
+                if (!digits || digits.length < 50) continue;
                 const { evenPct, oddPct } = calcEvenOdd(digits.slice(-50));
                 if (evenPct > bestPct) { bestPct = evenPct; bestSym = sym; bestCt = 'DIGITEVEN'; bestSide = 'even'; }
                 if (oddPct > bestPct) { bestPct = oddPct; bestSym = sym; bestCt = 'DIGITODD'; bestSide = 'odd'; }
