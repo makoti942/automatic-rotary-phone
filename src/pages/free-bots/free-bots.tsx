@@ -63,6 +63,8 @@ const FreeBots = observer(() => {
                 'Simple and effective martingale bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts, doubles the stake after each loss and resets to the initial stake after a win.',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY':
                 'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
+            'NEW BOT WITH ENTRY POINT':
+                'Trades Under 7 on the first trade, then switches to Under 8 for subsequent trades. Uses Over 4 or Over 5 as recovery predictions. Features entry digit detection, martingale recovery, and take profit/stop loss management.',
                         };
 
         // Try exact match first
@@ -98,6 +100,7 @@ const FreeBots = observer(() => {
             'MAKOTI RISE/FALL V4': '/robot-images/bot15.png',
             'FREE BOT WITH MARTINGALE': '/robot-images/bot7.png',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/bot9.png',
+            'NEW BOT WITH ENTRY POINT': '/robot-images/bot13.png',
         };
 
         // Try exact match first
@@ -132,6 +135,7 @@ const FreeBots = observer(() => {
             'MAKOTIRISE_FALLV4.xml',
             'FREE BOT WITH MARTINGALE.xml',
             'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
+            'NEW_BOT_WITH_ENTRY_POINT.xml',
         ];
     };
 
@@ -295,7 +299,7 @@ const FreeBots = observer(() => {
                                 <div className='free-bot-card__body'>
                                     <div className='free-bot-card__header'>
                                         <Text size='s' weight='bold' className='free-bot-card__title'>
-                                            {bot.name}
+                                            #{index + 1} — {bot.name}
                                         </Text>
 
                                         <Text size='xs' className='free-bot-card__description'>
