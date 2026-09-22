@@ -271,10 +271,8 @@
 }
 
 .free-bot-card--super-premium {
-    border: 2px solid transparent;
-    background-image: linear-gradient(var(--general-section-1), var(--general-section-1)), linear-gradient(135deg, #fbbf24, #f59e0b, #d97706, #fbbf24, #f59e0b);
-    background-origin: border-box;
-    background-clip: padding-box, border-box;
+    border: 2px solid #f59e0b;
+    background: linear-gradient(135deg, #fbbf24, #f59e0b, #d97706);
     animation: super-premium-glow 2s ease-in-out infinite alternate;
 
     &::before {
@@ -285,25 +283,71 @@
     }
 
     &::after {
-        background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
-        color: #1e1b4b !important;
+        background: rgba(30, 27, 75, 0.85) !important;
+        color: #fbbf24 !important;
         font-size: 8px !important;
         padding: 3px 8px !important;
         box-shadow: 0 2px 8px rgba(251, 191, 36, 0.6), 0 0 12px rgba(251, 191, 36, 0.3) !important;
         animation: super-premium-badge-pulse 1.5s ease-in-out infinite;
     }
 
+    .free-bot-card__icon {
+        background: rgba(30, 27, 75, 0.5) !important;
+        border-bottom: 2px solid rgba(30, 27, 75, 0.4) !important;
+    }
+
+    .free-bot-card__title {
+        color: #1e1b4b !important;
+    }
+
+    .free-bot-card__description {
+        color: rgba(30, 27, 75, 0.75) !important;
+    }
+
+    .free-bot-card__badge {
+        &--beginner {
+            background: rgba(30, 27, 75, 0.15) !important;
+            color: #1e1b4b !important;
+            border: 1px solid rgba(30, 27, 75, 0.3) !important;
+        }
+
+        &--intermediate {
+            background: rgba(30, 27, 75, 0.15) !important;
+            color: #1e1b4b !important;
+            border: 1px solid rgba(30, 27, 75, 0.3) !important;
+        }
+
+        &--advanced {
+            background: rgba(30, 27, 75, 0.15) !important;
+            color: #1e1b4b !important;
+            border: 1px solid rgba(30, 27, 75, 0.3) !important;
+        }
+
+        &--strategy {
+            background: rgba(30, 27, 75, 0.15) !important;
+            color: #1e1b4b !important;
+            border: 1px solid rgba(30, 27, 75, 0.3) !important;
+        }
+    }
+
+    .free-bot-card__feature-tag {
+        background: rgba(30, 27, 75, 0.1) !important;
+        color: #1e1b4b !important;
+        border: 1px solid rgba(30, 27, 75, 0.2) !important;
+    }
+
     &:hover {
-        box-shadow: 0 8px 30px rgba(251, 191, 36, 0.4), 0 0 20px rgba(251, 191, 36, 0.2);
+        box-shadow: 0 8px 30px rgba(251, 191, 36, 0.5), 0 0 25px rgba(251, 191, 36, 0.3);
         transform: translateY(-4px) scale(1.02);
     }
 
     .free-bot-card__load-btn {
-        background: linear-gradient(135deg, #f59e0b, #d97706) !important;
-        box-shadow: 0 3px 12px rgba(251, 191, 36, 0.4);
+        background: linear-gradient(135deg, #1e1b4b, #312e81) !important;
+        color: #fbbf24 !important;
+        box-shadow: 0 3px 12px rgba(30, 27, 75, 0.4);
 
         &:hover:not(:disabled) {
-            box-shadow: 0 5px 20px rgba(251, 191, 36, 0.6);
+            box-shadow: 0 5px 20px rgba(30, 27, 75, 0.6);
         }
     }
 }
