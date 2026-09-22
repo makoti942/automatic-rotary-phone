@@ -1,10 +1,11 @@
 const memoryCache = new Map<string, string>();
 const XML_BASE = '/xml/';
+const CACHE_BUST = Date.now();
 
 export const fetchXmlWithCache = async (file: string): Promise<string | null> => {
     if (memoryCache.has(file)) return memoryCache.get(file) || null;
     try {
-        const response = await fetch(`${XML_BASE}${file}`);
+        const response = await fetch(`${XML_BASE}${file}?v=${CACHE_BUST}`);
         if (!response.ok) return null;
         const xml = await response.text();
         memoryCache.set(file, xml);
