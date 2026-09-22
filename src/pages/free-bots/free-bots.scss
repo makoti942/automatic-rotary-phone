@@ -270,6 +270,59 @@
     }
 }
 
+.free-bot-card--super-premium {
+    border: 2px solid transparent;
+    background-image: linear-gradient(var(--general-section-1), var(--general-section-1)), linear-gradient(135deg, #fbbf24, #f59e0b, #d97706, #fbbf24, #f59e0b);
+    background-origin: border-box;
+    background-clip: padding-box, border-box;
+    animation: super-premium-glow 2s ease-in-out infinite alternate;
+
+    &::before {
+        background: linear-gradient(90deg, #fbbf24, #f59e0b, #d97706, #f59e0b, #fbbf24) !important;
+        background-size: 200% 100%;
+        animation: super-premium-shimmer 3s linear infinite;
+        height: 4px !important;
+    }
+
+    &::after {
+        background: linear-gradient(135deg, #fbbf24, #f59e0b) !important;
+        color: #1e1b4b !important;
+        font-size: 8px !important;
+        padding: 3px 8px !important;
+        box-shadow: 0 2px 8px rgba(251, 191, 36, 0.6), 0 0 12px rgba(251, 191, 36, 0.3) !important;
+        animation: super-premium-badge-pulse 1.5s ease-in-out infinite;
+    }
+
+    &:hover {
+        box-shadow: 0 8px 30px rgba(251, 191, 36, 0.4), 0 0 20px rgba(251, 191, 36, 0.2);
+        transform: translateY(-4px) scale(1.02);
+    }
+
+    .free-bot-card__load-btn {
+        background: linear-gradient(135deg, #f59e0b, #d97706) !important;
+        box-shadow: 0 3px 12px rgba(251, 191, 36, 0.4);
+
+        &:hover:not(:disabled) {
+            box-shadow: 0 5px 20px rgba(251, 191, 36, 0.6);
+        }
+    }
+}
+
+@keyframes super-premium-glow {
+    from { box-shadow: 0 4px 15px rgba(251, 191, 36, 0.2), 0 0 8px rgba(251, 191, 36, 0.1); }
+    to   { box-shadow: 0 4px 20px rgba(251, 191, 36, 0.4), 0 0 16px rgba(251, 191, 36, 0.2); }
+}
+
+@keyframes super-premium-shimmer {
+    0%   { background-position: -200% 0; }
+    100% { background-position: 200% 0; }
+}
+
+@keyframes super-premium-badge-pulse {
+    0%, 100% { box-shadow: 0 2px 8px rgba(251, 191, 36, 0.6), 0 0 12px rgba(251, 191, 36, 0.3); }
+    50%      { box-shadow: 0 2px 12px rgba(251, 191, 36, 0.8), 0 0 20px rgba(251, 191, 36, 0.5); }
+}
+
 @media (max-width: 768px) {
     .free-bots {
         padding: 12px 10px 120px 10px;

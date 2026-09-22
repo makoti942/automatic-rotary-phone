@@ -1,0 +1,499 @@
+<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
+  <variables>
+    <variable id="initStakeVar">Initial Stake</variable>
+    <variable id="stakeVar">Current Stake</variable>
+    <variable id="lossPoolVar">Loss Pool</variable>
+    <variable id="firstDoneVar">First Trade Executed</variable>
+    <variable id="splitFactorVar">Split Factor</variable>
+    <variable id="entryDigitVar">Entry Digit</variable>
+    <variable id="maxStakeVar">Max Stake Cap</variable>
+    <variable id="predictionVar">Prediction Barrier</variable>
+  </variables>
+
+  <block type="trade_definition" id="}F,4#Sa]HciWV~Jye~gS" deletable="false" x="0" y="60">
+    <statement name="TRADE_OPTIONS">
+      <block type="trade_definition_market" id="O=Zr3]zqZ|*|,(##^,4c" deletable="false" movable="false">
+        <field name="MARKET_LIST">synthetic_index</field>
+        <field name="SUBMARKET_LIST">random_index</field>
+        <field name="SYMBOL_LIST">1HZ100V</field>
+        <next>
+          <block type="trade_definition_tradetype" id="i40q+Oi2S.]BY-XJFe9^" deletable="false" movable="false">
+            <field name="TRADETYPECAT_LIST">digits</field>
+            <field name="TRADETYPE_LIST">overunder</field>
+            <next>
+              <block type="trade_definition_contracttype" id="LK05VSNer$#lcXas8F@e" deletable="false" movable="false">
+                <field name="TYPE_LIST">both</field>
+                <next>
+                  <block type="trade_definition_candleinterval" id="`nkOFF!xRr2R8Ezn7K9n" deletable="false" movable="false">
+                    <field name="CANDLEINTERVAL_LIST">60</field>
+                    <next>
+                      <block type="trade_definition_restartbuysell" id="T-9x~q$,1Ey3?SzFdNq#" deletable="false" movable="false">
+                        <field name="TIME_MACHINE_ENABLED">FALSE</field>
+                        <next>
+                          <block type="trade_definition_restartonerror" id="UaD8ITktDA15Ca1).)ah" deletable="false" movable="false">
+                            <field name="RESTARTONERROR">TRUE</field>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="INITIALIZATION">
+      <block type="variables_set" id="setInitialStakeValue">
+        <field name="VAR" id="initStakeVar">Initial Stake</field>
+        <value name="VALUE">
+          <block type="math_number" id="initialStakeValue">
+            <field name="NUM">1</field>
+          </block>
+        </value>
+        <next>
+          <block type="variables_set" id="setCurrentStakeInitial">
+            <field name="VAR" id="stakeVar">Current Stake</field>
+            <value name="VALUE">
+              <block type="variables_get" id="getInitialStake">
+                <field name="VAR" id="initStakeVar">Initial Stake</field>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="setLossPoolInit">
+                <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                <value name="VALUE">
+                  <block type="math_number" id="numLossPool">
+                    <field name="NUM">0</field>
+                  </block>
+                </value>
+                <next>
+                  <block type="variables_set" id="setSplitFactorInit">
+                    <field name="VAR" id="splitFactorVar">Split Factor</field>
+                    <value name="VALUE">
+                      <block type="math_number" id="numSplitFactor">
+                        <field name="NUM">2</field>
+                      </block>
+                    </value>
+                    <next>
+                      <block type="variables_set" id="setMaxStakeInit">
+                        <field name="VAR" id="maxStakeVar">Max Stake Cap</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="numMaxStake">
+                            <field name="NUM">15</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="setEntryDigitInit">
+                            <field name="VAR" id="entryDigitVar">Entry Digit</field>
+                            <value name="VALUE">
+                              <block type="math_number" id="numEntryDigit">
+                                <field name="NUM">2</field>
+                              </block>
+                            </value>
+                            <next>
+                              <block type="variables_set" id="setFirstDoneInit">
+                                <field name="VAR" id="firstDoneVar">First Trade Executed</field>
+                                <value name="VALUE">
+                                  <block type="logic_boolean" id="boolFalseInit">
+                                    <field name="BOOL">FALSE</field>
+                                  </block>
+                                </value>
+                                <next>
+                                  <block type="variables_set" id="setPredictionInit">
+                                    <field name="VAR" id="predictionVar">Prediction Barrier</field>
+                                    <value name="VALUE">
+                                      <block type="math_number" id="numPredFirst">
+                                        <field name="NUM">7</field>
+                                      </block>
+                                    </value>
+                                  </block>
+                                </next>
+                              </block>
+                            </next>
+                          </block>
+                        </next>
+                      </block>
+                    </next>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+    <statement name="SUBMARKET">
+      <block type="trade_definition_tradeoptions" id="/6=T~KI`X+mn5$|K,]tI">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" has_first_barrier="false" has_second_barrier="false" has_prediction="true" vh_enabled="false"></mutation>
+        <field name="DURATIONTYPE_LIST">t</field>
+        <field name="VIRTUAL_HOOK_ENABLED">FALSE</field>
+        <field name="BULK_TRADE_ENABLED">FALSE</field>
+        <value name="DURATION">
+          <shadow type="math_number_positive" id="T8`V0lfU%!:y1+zCGft1">
+            <field name="NUM">1</field>
+          </shadow>
+        </value>
+        <value name="AMOUNT">
+          <block type="variables_get" id="getStakeAmount">
+            <field name="VAR" id="stakeVar">Current Stake</field>
+          </block>
+        </value>
+        <value name="PREDICTION">
+          <block type="variables_get" id="getPredictionAmount">
+            <field name="VAR" id="predictionVar">Prediction Barrier</field>
+          </block>
+        </value>
+      </block>
+    </statement>
+  </block>
+
+  <block type="during_purchase" id="+w,G6!xJ[/-nmPnseM#W" x="1062" y="60">
+    <statement name="DURING_PURCHASE_STACK">
+      <block type="controls_if" id="#V}P95eI72f!K:%T2~l_">
+        <value name="IF0">
+          <block type="check_sell" id="}59N!Q/`.q~;0abDkIs#"></block>
+        </value>
+      </block>
+    </statement>
+  </block>
+
+  <block type="after_purchase" id="c;hEA7}nM@_,g?5*L(=e" x="1062" y="292">
+    <statement name="AFTERPURCHASE_STACK">
+      <block type="controls_if" id="checkWinLossResult">
+        <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+        <value name="IF0">
+          <block type="contract_check_result" id="checkWinResult">
+            <field name="CHECK_RESULT">win</field>
+          </block>
+        </value>
+        <!-- WIN LOGIC -->
+        <statement name="DO0">
+          <block type="controls_if" id="checkLossPoolActive">
+            <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+            <value name="IF0">
+              <block type="logic_compare" id="isPoolGtZero">
+                <field name="OP">GT</field>
+                <value name="A">
+                  <block type="variables_get" id="getLPWin">
+                    <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="math_number" id="numZeroWin">
+                    <field name="NUM">0</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <statement name="DO0">
+              <block type="variables_set" id="deductLossPool">
+                <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                <value name="VALUE">
+                  <block type="math_arithmetic" id="subProfitFromPool">
+                    <field name="OP">MINUS</field>
+                    <value name="A">
+                      <block type="variables_get" id="getLP1">
+                        <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="read_details" id="getContractProfitWin">
+                        <field name="DETAIL_INDEX">4</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="controls_if" id="checkFullyRecovered">
+                    <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+                    <value name="IF0">
+                      <block type="logic_compare" id="isPoolLteZero">
+                        <field name="OP">LTE</field>
+                        <value name="A">
+                          <block type="variables_get" id="getLP2">
+                            <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="math_number" id="numZero2">
+                            <field name="NUM">0</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="resetPoolToZero">
+                        <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                        <value name="VALUE">
+                          <block type="math_number" id="numZeroReset">
+                            <field name="NUM">0</field>
+                          </block>
+                        </value>
+                        <next>
+                          <block type="variables_set" id="resetStakeWin">
+                            <field name="VAR" id="stakeVar">Current Stake</field>
+                            <value name="VALUE">
+                              <block type="variables_get" id="getInitStake1">
+                                <field name="VAR" id="initStakeVar">Initial Stake</field>
+                              </block>
+                            </value>
+                          </block>
+                        </next>
+                      </block>
+                    </statement>
+                    <statement name="ELSE">
+                      <block type="variables_set" id="calcStakeWinPartial">
+                        <field name="VAR" id="stakeVar">Current Stake</field>
+                        <value name="VALUE">
+                          <block type="math_arithmetic" id="addBaseSplitWin">
+                            <field name="OP">ADD</field>
+                            <value name="A">
+                              <block type="variables_get" id="getInitStake2">
+                                <field name="VAR" id="initStakeVar">Initial Stake</field>
+                              </block>
+                            </value>
+                            <value name="B">
+                              <block type="math_arithmetic" id="divPoolWin">
+                                <field name="OP">DIVIDE</field>
+                                <value name="A">
+                                  <block type="variables_get" id="getLP3">
+                                    <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                                  </block>
+                                </value>
+                                <value name="B">
+                                  <block type="variables_get" id="getSFWin">
+                                    <field name="VAR" id="splitFactorVar">Split Factor</field>
+                                  </block>
+                                </value>
+                              </block>
+                            </value>
+                          </block>
+                        </value>
+                      </block>
+                    </statement>
+                  </block>
+                </next>
+              </block>
+            </statement>
+            <statement name="ELSE">
+              <block type="variables_set" id="resetStakeNormalWin">
+                <field name="VAR" id="stakeVar">Current Stake</field>
+                <value name="VALUE">
+                  <block type="variables_get" id="getInitStake3">
+                    <field name="VAR" id="initStakeVar">Initial Stake</field>
+                  </block>
+                </value>
+              </block>
+            </statement>
+          </block>
+        </statement>
+        <!-- LOSS LOGIC -->
+        <statement name="ELSE">
+          <block type="variables_set" id="addLossToPool">
+            <field name="VAR" id="lossPoolVar">Loss Pool</field>
+            <value name="VALUE">
+              <block type="math_arithmetic" id="addLostAmount">
+                <field name="OP">ADD</field>
+                <value name="A">
+                  <block type="variables_get" id="getLP4">
+                    <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="math_single" id="absContractLoss">
+                    <field name="OP">ABS</field>
+                    <value name="NUM">
+                      <block type="read_details" id="getContractProfitLoss">
+                        <field name="DETAIL_INDEX">4</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <next>
+              <block type="variables_set" id="calcStakeLoss">
+                <field name="VAR" id="stakeVar">Current Stake</field>
+                <value name="VALUE">
+                  <block type="math_arithmetic" id="addBaseSplitLoss">
+                    <field name="OP">ADD</field>
+                    <value name="A">
+                      <block type="variables_get" id="getInitStake4">
+                        <field name="VAR" id="initStakeVar">Initial Stake</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="math_arithmetic" id="divPoolLoss">
+                        <field name="OP">DIVIDE</field>
+                        <value name="A">
+                          <block type="variables_get" id="getLP5">
+                            <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="variables_get" id="getSFLoss">
+                            <field name="VAR" id="splitFactorVar">Split Factor</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <next>
+                  <block type="controls_if" id="checkMaxStakeCap">
+                    <value name="IF0">
+                      <block type="logic_compare" id="isStakeGtMax">
+                        <field name="OP">GT</field>
+                        <value name="A">
+                          <block type="variables_get" id="getStakeCheck">
+                            <field name="VAR" id="stakeVar">Current Stake</field>
+                          </block>
+                        </value>
+                        <value name="B">
+                          <block type="variables_get" id="getMaxCheck">
+                            <field name="VAR" id="maxStakeVar">Max Stake Cap</field>
+                          </block>
+                        </value>
+                      </block>
+                    </value>
+                    <statement name="DO0">
+                      <block type="variables_set" id="capCurrentStake">
+                        <field name="VAR" id="stakeVar">Current Stake</field>
+                        <value name="VALUE">
+                          <block type="variables_get" id="getMaxSet">
+                            <field name="VAR" id="maxStakeVar">Max Stake Cap</field>
+                          </block>
+                        </value>
+                      </block>
+                    </statement>
+                  </block>
+                </next>
+              </block>
+            </next>
+          </block>
+        </statement>
+        <next>
+          <!-- MASTER BARRIER EVALUATION BEFORE TRADE AGAIN -->
+          <block type="controls_if" id="evalBarrierNext">
+            <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
+            <value name="IF0">
+              <block type="logic_operation" id="orCondEval">
+                <field name="OP">OR</field>
+                <value name="A">
+                  <block type="logic_compare" id="isFDNotDone">
+                    <field name="OP">EQ</field>
+                    <value name="A">
+                      <block type="variables_get" id="getFDEval">
+                        <field name="VAR" id="firstDoneVar">First Trade Executed</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="logic_boolean" id="boolFalseEval">
+                        <field name="BOOL">FALSE</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="logic_compare" id="isPoolGtZeroEval">
+                    <field name="OP">GT</field>
+                    <value name="A">
+                      <block type="variables_get" id="getLPEval">
+                        <field name="VAR" id="lossPoolVar">Loss Pool</field>
+                      </block>
+                    </value>
+                    <value name="B">
+                      <block type="math_number" id="numZeroEval">
+                        <field name="NUM">0</field>
+                      </block>
+                    </value>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <statement name="DO0">
+              <block type="variables_set" id="setPred7Eval">
+                <field name="VAR" id="predictionVar">Prediction Barrier</field>
+                <value name="VALUE">
+                  <block type="math_number" id="n7Eval">
+                    <field name="NUM">7</field>
+                  </block>
+                </value>
+              </block>
+            </statement>
+            <statement name="ELSE">
+              <block type="variables_set" id="setPred8Eval">
+                <field name="VAR" id="predictionVar">Prediction Barrier</field>
+                <value name="VALUE">
+                  <block type="math_number" id="n8Eval">
+                    <field name="NUM">8</field>
+                  </block>
+                </value>
+              </block>
+            </statement>
+            <next>
+              <block type="trade_again" id="G=znPPs6=xtZA|o(KBQX"></block>
+            </next>
+          </block>
+        </next>
+      </block>
+    </statement>
+  </block>
+
+  <block type="before_purchase" id="D_FIc+E9*cr|grV8}?n?" deletable="false" x="0" y="978">
+    <statement name="BEFOREPURCHASE_STACK">
+      <block type="controls_if" id="checkEntryCondition">
+        <value name="IF0">
+          <block type="logic_operation" id="orCheck">
+            <field name="OP">OR</field>
+            <value name="A">
+              <block type="logic_compare" id="isFirstDone">
+                <field name="OP">EQ</field>
+                <value name="A">
+                  <block type="variables_get" id="getFDVar">
+                    <field name="VAR" id="firstDoneVar">First Trade Executed</field>
+                  </block>
+                </value>
+                <value name="B">
+                  <block type="logic_boolean" id="boolTrue1">
+                    <field name="BOOL">TRUE</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+            <value name="B">
+              <block type="logic_compare" id="isDigitEqual">
+                <field name="OP">EQ</field>
+                <value name="A">
+                  <block type="last_digit" id="getLastDigit"></block>
+                </value>
+                <value name="B">
+                  <block type="variables_get" id="getEntryDigit">
+                    <field name="VAR" id="entryDigitVar">Entry Digit</field>
+                  </block>
+                </value>
+              </block>
+            </value>
+          </block>
+        </value>
+        <statement name="DO0">
+          <block type="variables_set" id="setFirstDoneTrue">
+            <field name="VAR" id="firstDoneVar">First Trade Executed</field>
+            <value name="VALUE">
+              <block type="logic_boolean" id="boolTrue2">
+                <field name="BOOL">TRUE</field>
+              </block>
+            </value>
+            <next>
+              <block type="purchase" id="og/YYS3nvV1*r61Co/hE">
+                <field name="PURCHASE_LIST">DIGITUNDER</field>
+              </block>
+            </next>
+          </block>
+        </statement>
+      </block>
+    </statement>
+  </block>
+</xml>

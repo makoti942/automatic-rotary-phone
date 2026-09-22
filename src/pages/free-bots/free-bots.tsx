@@ -65,6 +65,8 @@ const FreeBots = observer(() => {
                 'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
             'NEW BOT WITH ENTRY POINT':
                 'Trades Under 7 on the first trade, then switches to Under 8 for subsequent trades. Uses Over 4 or Over 5 as recovery predictions. Features entry digit detection, martingale recovery, and take profit/stop loss management.',
+            'SPLIT MARTINGALE BOT PREMIUM':
+                'Advanced split martingale strategy. Tracks losses in a pool and splits recovery across trades using a configurable split factor. Uses entry digit detection with Under 7/8 barrier switching. Includes max stake cap for risk management.',
                         };
 
         // Try exact match first
@@ -101,6 +103,7 @@ const FreeBots = observer(() => {
             'FREE BOT WITH MARTINGALE': '/robot-images/bot7.png',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/bot9.png',
             'NEW BOT WITH ENTRY POINT': '/robot-images/bot13.png',
+            'SPLIT MARTINGALE BOT PREMIUM': '/robot-images/bot15.png',
         };
 
         // Try exact match first
@@ -136,6 +139,7 @@ const FreeBots = observer(() => {
             'FREE BOT WITH MARTINGALE.xml',
             'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
             'NEW_BOT_WITH_ENTRY_POINT.xml',
+            'SPLIT_MARTINGALE_BOT_PREMIUM.xml',
         ];
     };
 
@@ -203,6 +207,7 @@ const FreeBots = observer(() => {
                 // Update skeletons to our explicit list
                 const skeletonBots: BotData[] = manifest.map(item => {
                     const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
+                    const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
                     const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
                     return {
                         name: botName,
@@ -211,8 +216,8 @@ const FreeBots = observer(() => {
                         strategy: 'Multi-Strategy',
                         features: DEFAULT_FEATURES,
                         xml: '',
-                        badge_text: isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
-                        badge_class: isPremiumPlus ? 'premium-plus' : 'premium',
+                        badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
+                        badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
                     };
                 });
                 setAvailableBots(skeletonBots);
@@ -225,6 +230,7 @@ const FreeBots = observer(() => {
                         const xml = await fetchXmlWithCache(item.file);
                         if (xml) {
                             const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
+                            const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
                             const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
                             loadedBots.push({
                                 name: botName,
@@ -233,8 +239,8 @@ const FreeBots = observer(() => {
                                 strategy: 'Multi-Strategy',
                                 features: DEFAULT_FEATURES,
                                 xml,
-                                badge_text: isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
-                                badge_class: isPremiumPlus ? 'premium-plus' : 'premium',
+                                badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
+                                badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
                             });
                             setAvailableBots([...loadedBots, ...skeletonBots.slice(loadedBots.length)]);
                         }
