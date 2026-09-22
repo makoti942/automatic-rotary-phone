@@ -1,18 +1,17 @@
 <xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true" collection="false">
   <variables>
-    <variable id="initStakeVar">Initial Stake</variable>
-    <variable id="stakeVar">Current Stake</variable>
-    <variable id="lossPoolVar">Loss Pool</variable>
-    <variable id="firstDoneVar">First Trade Executed</variable>
-    <variable id="splitFactorVar">Split Factor</variable>
-    <variable id="entryDigitVar">Entry Digit</variable>
-    <variable id="maxStakeVar">Max Stake Cap</variable>
-    <variable id="predictionVar">Prediction Barrier</variable>
-    <variable id="u7CountVar">Under 7 Counter</variable>
     <variable id="bar1Var">Primary Barrier</variable>
     <variable id="bar2Var">Secondary Barrier</variable>
+    <variable id="stakeVar">Current Stake</variable>
+    <variable id="predictionVar">Prediction Barrier</variable>
+    <variable id="lossPoolVar">Loss Pool</variable>
+    <variable id="initStakeVar">Initial Stake</variable>
+    <variable id="u7CountVar">Under 7 Counter</variable>
+    <variable id="firstDoneVar">First Trade Executed</variable>
+    <variable id="entryDigitVar">Entry Digit</variable>
+    <variable id="splitFactorVar">Split Factor</variable>
+    <variable id="maxStakeVar">Max Stake Cap</variable>
   </variables>
-
   <block type="trade_definition" id="}F,4#Sa]HciWV~Jye~gS" deletable="false" x="0" y="60">
     <statement name="TRADE_OPTIONS">
       <block type="trade_definition_market" id="O=Zr3]zqZ|*|,(##^,4c" deletable="false" movable="false">
@@ -48,7 +47,6 @@
       </block>
     </statement>
     <statement name="INITIALIZATION">
-      <!-- CONFIGURE YOUR TWO BARRIERS HERE -->
       <block type="variables_set" id="setBar1Init">
         <field name="VAR" id="bar1Var">Primary Barrier</field>
         <value name="VALUE">
@@ -121,7 +119,6 @@
                                           </block>
                                         </value>
                                         <next>
-                                          <!-- FIRST TRADE STARTS ON PRIMARY BARRIER (7) -->
                                           <block type="variables_set" id="setPredictionInit">
                                             <field name="VAR" id="predictionVar">Prediction Barrier</field>
                                             <value name="VALUE">
@@ -176,6 +173,9 @@
           </block>
         </value>
         <value name="PREDICTION">
+          <shadow type="math_number_positive" id="2/SfX`;2v)I5`-E?g+1m" inline="true">
+            <field name="NUM">1</field>
+          </shadow>
           <block type="variables_get" id="getPredictionAmount">
             <field name="VAR" id="predictionVar">Prediction Barrier</field>
           </block>
@@ -183,8 +183,7 @@
       </block>
     </statement>
   </block>
-
-  <block type="during_purchase" id="+w,G6!xJ[/-nmPnseM#W" x="1062" y="60">
+  <block type="during_purchase" id="+w,G6!xJ[/-nmPnseM#W" x="1079" y="60">
     <statement name="DURING_PURCHASE_STACK">
       <block type="controls_if" id="#V}P95eI72f!K:%T2~l_">
         <value name="IF0">
@@ -193,8 +192,7 @@
       </block>
     </statement>
   </block>
-
-  <block type="after_purchase" id="c;hEA7}nM@_,g?5*L(=e" x="1062" y="292">
+  <block type="after_purchase" id="c;hEA7}nM@_,g?5*L(=e" x="1079" y="292">
     <statement name="AFTERPURCHASE_STACK">
       <block type="controls_if" id="checkWinLossResult">
         <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
@@ -203,7 +201,6 @@
             <field name="CHECK_RESULT">win</field>
           </block>
         </value>
-        <!-- WIN LOGIC -->
         <statement name="DO0">
           <block type="controls_if" id="checkLossPoolActive">
             <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
@@ -412,7 +409,6 @@
             </statement>
           </block>
         </statement>
-        <!-- LOSS LOGIC -->
         <statement name="ELSE">
           <block type="variables_set" id="addLossToPoolDirect">
             <field name="VAR" id="lossPoolVar">Loss Pool</field>
@@ -503,7 +499,6 @@
           </block>
         </statement>
         <next>
-          <!-- EVALUATE BARRIER FOR NEXT TRADE USING CENTRAL VARIABLES -->
           <block type="controls_if" id="evalBarrierNext">
             <mutation xmlns="http://www.w3.org/1999/xhtml" else="1"></mutation>
             <value name="IF0">
@@ -569,25 +564,13 @@
       </block>
     </statement>
   </block>
-
-  <block type="before_purchase" id="D_FIc+E9*cr|grV8}?n?" deletable="false" x="0" y="978">
+  <block type="before_purchase" id="D_FIc+E9*cr|grV8}?n?" deletable="false" x="0" y="1170">
     <statement name="BEFOREPURCHASE_STACK">
-      <!-- LIVE LAST DIGIT NOTIFICATION -->
       <block type="notify" id="notifyLastDigit">
         <field name="NOTIFICATION_TYPE">info</field>
         <field name="NOTIFICATION_SOUND">silent</field>
         <value name="MESSAGE">
-          <block type="text_join" id="joinLastDigit">
-            <mutation items="2"></mutation>
-            <value name="ADD0">
-              <block type="text" id="txtLastDigitLabel">
-                <field name="TEXT">Last Digit: </field>
-              </block>
-            </value>
-            <value name="ADD1">
-              <block type="last_digit" id="getNotifyLastDigit"></block>
-            </value>
-          </block>
+          <block type="last_digit" id="u[Oe$}FVu/)[NPl$Bl,@"></block>
         </value>
         <next>
           <block type="controls_if" id="checkEntryCondition">
@@ -643,5 +626,8 @@
         </next>
       </block>
     </statement>
+  </block>
+  <block type="text_join" id="joinLastDigit" x="0" y="2056">
+    <field name="VARIABLE" id="n]6MN{b+7=~UHd6nP{f@">text</field>
   </block>
 </xml>
