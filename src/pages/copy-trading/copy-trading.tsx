@@ -18,7 +18,9 @@ import {
     subscribeBalance,
     subscribeOpenContracts,
     onTradeMessage,
-    updateMyBalanceToFirebase,
+    saveMyBalance,
+    hasContractBeenCounted,
+    markContractCounted,
 } from './copy-trade-executor';
 import './copy-trading.scss';
 
@@ -40,6 +42,21 @@ interface TradeRecord {
     status: 'won' | 'lost' | 'pending';
 }
 
+const STORAGE_KEY_TRADES = 'mw_copy_trade_history';
+const STORAGE_KEY_STATS = 'mw_copy_stats';
+
+function loadPersistedTrades(): TradeRecord[] {
+    try { return JSON.parse(localStorage.getItem(STORAGE_KEY_TRADES) || '[]'); }
+    catch { return []; }
+}
+
+function loadPersistedStats() {
+    try {
+        const s = JSON.parse(localStorage.getItem(STORAGE_KEY_STATS) || 'null');
+        return s || { totalTrades: 0, wins: 0, losses: 0, totalPnl: 0 };
+    } catch { return { totalTrades: 0, wins: 0, losses: 0, totalPnl: 0 }; }
+}
+
 const CopyTrading: React.FC = () => {
     const [mode, setMode] = useState<'none' | 'master' | 'follower'>(() => {
         return (localStorage.getItem('mw_copy_mode') as 'master' | 'follower') || 'none';
@@ -50,15 +67,25 @@ const CopyTrading: React.FC = () => {
     const [followerToken, setFollowerToken] = useState('');
     const [followerName, setFollowerName] = useState('');
     const [followers, setFollowers] = useState<Record<string, FollowerEntry>>({});
-    const [stats, setStats] = useState({ totalTrades: 0, wins: 0, losses: 0, totalPnl: 0 });
+    const [stats, setStats] = useState(loadPersistedStats);
     const [statusMsg, setStatusMsg] = useState('');
     const [balance, setBalance] = useState<number | null>(null);
-    const [tradeHistory, setTradeHistory] = useState<TradeRecord[]>([]);
+    const [tradeHistory, setTradeHistory] = useState<TradeRecord[]>(loadPersistedTrades);
     const [availableMasters, setAvailableMasters] = useState<Record<string, MasterProfile>>({});
     const [selectedMaster, setSelectedMaster] = useState<{ id: string; profile: MasterProfile } | null>(null);
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
     const accountId = useRef(getAccountId());
+
+    // Persist tradeHistory to localStorage
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY_TRADES, JSON.stringify(tradeHistory));
+    }, [tradeHistory]);
+
+    // Persist stats to localStorage
+    useEffect(() => {
+        localStorage.setItem(STORAGE_KEY_STATS, JSON.stringify(stats));
+    }, [stats]);
 
     const loadMasterProfile = useCallback(async () => {
         const id = localStorage.getItem('mw_copy_master_id');
@@ -106,13 +133,22 @@ const CopyTrading: React.FC = () => {
                 if (data.msg_type === 'balance' && data.balance) {
                     const newBal = Number(data.balance.balance);
                     setBalance(newBal);
+
+                    // Master pushes own balance
                     const mid = localStorage.getItem('mw_copy_master_id');
-                    if (mid) updateMyBalanceToFirebase(mid, newBal);
+                    const fid = localStorage.getItem('mw_copy_follower_master');
+                    if (mid) {
+                        saveMyBalance(mid, accountId.current, newBal);
+                    }
                 }
 
                 if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
                     const poc = data.proposal_open_contract;
                     if (poc.is_sold && poc.contract_id) {
+                        // Prevent double-counting
+                        if (hasContractBeenCounted(poc.contract_id)) return;
+                        markContractCounted(poc.contract_id);
+
                         const profit = Number(poc.profit) || 0;
                         const stake = Number(poc.buy_price) || 0;
                         const won = profit > 0;
@@ -124,10 +160,7 @@ const CopyTrading: React.FC = () => {
                             time: Date.now(),
                             status: won ? 'won' : 'lost',
                         };
-                        setTradeHistory(prev => {
-                            if (prev.some(t => t.id === record.id)) return prev;
-                            return [record, ...prev].slice(0, 100);
-                        });
+                        setTradeHistory(prev => [record, ...prev].slice(0, 100));
                         setStats(prev => ({
                             totalTrades: prev.totalTrades + 1,
                             wins: prev.wins + (won ? 1 : 0),
@@ -170,7 +203,7 @@ const CopyTrading: React.FC = () => {
     useEffect(() => {
         if (mode !== 'master' || !myMasterId) return;
         loadFollowerData();
-        const interval = setInterval(loadFollowerData, 10000);
+        const interval = setInterval(loadFollowerData, 8000);
         return () => clearInterval(interval);
     }, [mode, myMasterId, loadFollowerData]);
 
@@ -229,6 +262,14 @@ const CopyTrading: React.FC = () => {
         setStatusMsg('Follower removed');
     };
 
+    const handleClearStats = () => {
+        setTradeHistory([]);
+        setStats({ totalTrades: 0, wins: 0, losses: 0, totalPnl: 0 });
+        localStorage.removeItem(STORAGE_KEY_TRADES);
+        localStorage.removeItem(STORAGE_KEY_STATS);
+        setStatusMsg('Stats cleared');
+    };
+
     const followerCount = Object.keys(followers).length;
     const winRate = stats.totalTrades > 0 ? ((stats.wins / stats.totalTrades) * 100).toFixed(1) : '0.0';
 
@@ -282,7 +323,7 @@ const CopyTrading: React.FC = () => {
                         Refresh List
                     </button>
                     {Object.keys(availableMasters).length === 0 ? (
-                        <div className='ct__empty'>No masters available yet. Check back later.</div>
+                        <div className='ct__empty'>No masters available yet.</div>
                     ) : (
                         <div className='ct__master-list'>
                             {Object.entries(availableMasters).map(([mid, m]) => {
@@ -395,7 +436,10 @@ const CopyTrading: React.FC = () => {
                     </div>
 
                     <div className='ct__section'>
-                        <div className='ct__section-header'><span>Recent Trades</span></div>
+                        <div className='ct__section-header'>
+                            <span>Recent Trades</span>
+                            <button className='ct__btn ct__btn--small' onClick={handleClearStats}>Clear Stats</button>
+                        </div>
                         {tradeHistory.length === 0 ? (
                             <div className='ct__empty'>No trades yet. Start trading in Manual Trade or Bot Builder.</div>
                         ) : (

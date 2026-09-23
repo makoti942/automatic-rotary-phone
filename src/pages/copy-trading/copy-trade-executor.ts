@@ -1,8 +1,13 @@
-import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats, dbSet } from './firebase-config';
+import {
+    getFollowers,
+    getFollowerStats,
+    setFollowerStats,
+    clearFollowerStats,
+    type FollowerStats,
+} from './firebase-config';
 
 // ══════════════════════════════════════════════════════════════
 // INLINED from @/auth/NewDerivAuth — NEVER import that module
-// here or the TDZ crash returns.
 // ══════════════════════════════════════════════════════════════
 
 function convertToNewFormat(data: any): any {
@@ -79,136 +84,121 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Legacy WebSocket for buy_contract_for_multiple_accounts
-// (the new API WS doesn't support this call)
+// Per-follower WebSocket execution
+// Each follower gets their own WS connection with their token
 // ══════════════════════════════════════════════════════════════
 
-const LEGACY_WS_URL = 'wss://ws.derivws.com/websockets/v3';
-let legacyWs: WebSocket | null = null;
-let legacyWsReady = false;
-let legacyWsQueue: { msg: object; resolve: (v: any) => void; reject: (e: any) => void }[] = [];
+const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
+const WS_BASE = 'wss://ws.derivws.com/websockets/v3';
 
-function getMasterToken(): string | null {
-    try {
-        const activeLoginId = localStorage.getItem('active_loginid');
-        if (!activeLoginId) return null;
-        const clientAccounts = JSON.parse(localStorage.getItem('client.accounts') || '{}');
-        if (clientAccounts[activeLoginId]?.token) return clientAccounts[activeLoginId].token;
-        const accountsList = JSON.parse(localStorage.getItem('accountsList') || '{}');
-        if (accountsList[activeLoginId]) return accountsList[activeLoginId];
-        return null;
-    } catch { return null; }
-}
-
-function getLegacyWs(): Promise<WebSocket> {
-    if (legacyWs && legacyWs.readyState === WebSocket.OPEN) {
-        return Promise.resolve(legacyWs);
-    }
-    if (legacyWs && legacyWs.readyState === WebSocket.CONNECTING) {
-        return new Promise((resolve, reject) => {
-            const check = setInterval(() => {
-                if (legacyWs && legacyWs.readyState === WebSocket.OPEN) {
-                    clearInterval(check);
-                    resolve(legacyWs);
-                }
-            }, 100);
-            setTimeout(() => { clearInterval(check); reject(new Error('Legacy WS connect timeout')); }, 10000);
-        });
-    }
+async function buyOnFollowerAccount(
+    followerToken: string,
+    contractParams: Record<string, unknown>,
+    stake: number
+): Promise<any> {
     return new Promise((resolve, reject) => {
-        const token = getMasterToken();
-        if (!token) { reject(new Error('No master token')); return; }
-        console.log('[CopyTrade] Opening legacy WS...');
-        legacyWs = new WebSocket(LEGACY_WS_URL);
-        legacyWs.onopen = () => {
-            console.log('[CopyTrade] Legacy WS open, authorizing...');
-            legacyWs!.send(JSON.stringify({ authorize: token, req_id: 99999 }));
+        const wsUrl = `${WS_BASE}?app_id=${APP_ID}&token=${followerToken}`;
+        console.log(`[CopyTrade] Opening follower WS for token ending ...${followerToken.slice(-4)}`);
+        const ws = new WebSocket(wsUrl);
+        let authorized = false;
+        let tradeComplete = false;
+
+        const cleanup = () => {
+            try { ws.close(); } catch {}
         };
-        legacyWs.onmessage = (event) => {
+
+        const timeout = setTimeout(() => {
+            cleanup();
+            if (!tradeComplete) reject(new Error('Follower buy timeout'));
+        }, 30000);
+
+        ws.onopen = () => {
+            console.log(`[CopyTrade] Follower WS open, getting proposal...`);
+            ws.send(JSON.stringify({
+                proposal: 1,
+                amount: stake,
+                basis: 'stake',
+                contract_type: contractParams.contract_type,
+                currency: contractParams.currency,
+                duration: contractParams.duration,
+                duration_unit: contractParams.duration_unit,
+                underlying_symbol: contractParams.underlying_symbol,
+                barrier: contractParams.barrier,
+                subscribe: 0,
+                req_id: 1,
+            }));
+        };
+
+        ws.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.req_id === 99999) {
-                    if (data.error) {
-                        console.error('[CopyTrade] Legacy WS auth failed:', data.error.message);
-                        reject(new Error(data.error.message));
-                        return;
-                    }
-                    console.log('[CopyTrade] Legacy WS authorized OK');
-                    legacyWsReady = true;
-                    resolve(legacyWs!);
-                    while (legacyWsQueue.length > 0) {
-                        const queued = legacyWsQueue.shift()!;
-                        legacyWs!.send(JSON.stringify(queued.msg));
-                        const handler = (e: MessageEvent) => {
-                            try {
-                                const d = JSON.parse(e.data);
-                                if (d.req_id || d.msg_type === 'buy' || d.msg_type === 'error' || d.msg_type === 'buy_contract_for_multiple_accounts') {
-                                    legacyWs!.removeEventListener('message', handler);
-                                    if (d.error) queued.reject(d);
-                                    else queued.resolve(d);
-                                }
-                            } catch {}
-                        };
-                        legacyWs!.addEventListener('message', handler);
-                    }
-                    return;
-                }
-            } catch {}
-        };
-        legacyWs.onerror = (err) => { console.error('[CopyTrade] Legacy WS error:', err); legacyWsReady = false; };
-        legacyWs.onclose = () => {
-            console.log('[CopyTrade] Legacy WS closed');
-            legacyWsReady = false;
-            legacyWs = null;
-            legacyWsQueue.forEach(q => q.reject(new Error('Legacy WS closed')));
-            legacyWsQueue = [];
-        };
-    });
-}
 
-async function sendLegacyWs(msg: object): Promise<any> {
-    const ws = await getLegacyWs();
-    return new Promise((resolve, reject) => {
-        const id = Date.now();
-        const wrapped = { ...msg as any, req_id: id };
-        const handler = (event: MessageEvent) => {
-            try {
-                const d = JSON.parse(event.data);
-                if (d.req_id === id) {
-                    ws.removeEventListener('message', handler);
-                    if (d.error) reject(d);
-                    else resolve(d);
+                // Handle proposal response
+                if (data.req_id === 1 && data.proposal) {
+                    console.log(`[CopyTrade] Got proposal: ${data.proposal.id}, buying...`);
+                    ws.send(JSON.stringify({
+                        buy: data.proposal.id,
+                        price: data.proposal.ask_price,
+                        req_id: 2,
+                    }));
+                }
+
+                // Handle buy response
+                if (data.req_id === 2) {
+                    if (data.error) {
+                        console.error(`[CopyTrade] Follower buy error:`, data.error.message);
+                        tradeComplete = true;
+                        clearTimeout(timeout);
+                        cleanup();
+                        reject(new Error(data.error.message));
+                    } else if (data.buy) {
+                        console.log(`[CopyTrade] Follower buy success:`, data.buy.contract_id);
+                        tradeComplete = true;
+                        clearTimeout(timeout);
+                        cleanup();
+                        resolve(data.buy);
+                    }
                 }
             } catch {}
         };
-        ws.addEventListener('message', handler);
-        ws.send(JSON.stringify(wrapped));
-        setTimeout(() => { ws.removeEventListener('message', handler); reject(new Error('Timeout')); }, 30000);
+
+        ws.onerror = (err) => {
+            console.error(`[CopyTrade] Follower WS error:`, err);
+            tradeComplete = true;
+            clearTimeout(timeout);
+            cleanup();
+            reject(new Error('Follower WS error'));
+        };
+
+        ws.onclose = () => {
+            if (!tradeComplete) {
+                tradeComplete = true;
+                clearTimeout(timeout);
+                reject(new Error('Follower WS closed unexpectedly'));
+            }
+        };
     });
 }
 
 // ══════════════════════════════════════════════════════════════
 // Global interceptor — listens for master's buy messages
-// and forwards to followers
 // ══════════════════════════════════════════════════════════════
 
 let interceptorInstalled = false;
 let masterId: string | null = null;
 let unsubs: (() => void)[] = [];
+let countedContractIds: Set<string> = new Set();
 
 export function installCopyTradeInterceptor(mId: string) {
     if (interceptorInstalled) return;
     interceptorInstalled = true;
     masterId = mId;
+    countedContractIds = new Set();
     console.log('[CopyTrade] Interceptor installed for master:', mId);
-
-    getLegacyWs().catch(err => {
-        console.warn('[CopyTrade] Could not pre-connect legacy WS:', err.message);
-    });
 
     const unsub1 = onNewSystemMessageLocal((data: any) => {
         if (data.msg_type === 'buy' && data.buy && data.buy.contract_id) {
-            console.log('[CopyTrade] Master trade detected:', data.buy.contract_id, data.buy);
+            console.log('[CopyTrade] Master trade detected:', data.buy.contract_id);
             forwardTradeToFollowers(data.buy);
         }
     });
@@ -220,16 +210,11 @@ export function uninstallCopyTradeInterceptor() {
     masterId = null;
     unsubs.forEach(u => u());
     unsubs = [];
-    if (legacyWs) {
-        legacyWs.close();
-        legacyWs = null;
-    }
-    legacyWsReady = false;
-    legacyWsQueue = [];
+    countedContractIds = new Set();
 }
 
 // ══════════════════════════════════════════════════════════════
-// Forward trade to followers
+// Forward trade to followers via per-follower WS
 // ══════════════════════════════════════════════════════════════
 
 async function forwardTradeToFollowers(buyData: any) {
@@ -241,15 +226,15 @@ async function forwardTradeToFollowers(buyData: any) {
         return;
     }
 
-    const entries = Object.entries(followers);
-    const validEntries = entries.filter(([, f]) => f.token);
-    if (validEntries.length === 0) {
+    const entries = Object.entries(followers).filter(([, f]) => f.token);
+    if (entries.length === 0) {
         console.log('[CopyTrade] No followers with tokens');
         return;
     }
 
-    console.log(`[CopyTrade] Forwarding to ${validEntries.length} followers`);
+    console.log(`[CopyTrade] Forwarding to ${entries.length} followers`);
 
+    // Get master contract details
     let contractParams: Record<string, unknown> = {};
     let stake = 1;
     try {
@@ -277,40 +262,20 @@ async function forwardTradeToFollowers(buyData: any) {
         if (contract.barrier) {
             contractParams.barrier = contract.barrier;
         }
-        console.log('[CopyTrade] Contract params:', contractParams);
+        console.log('[CopyTrade] Contract params:', JSON.stringify(contractParams));
     } catch (err) {
         console.error('[CopyTrade] Failed to get contract details:', err);
         return;
     }
 
-    // Execute on each follower individually via legacy WS
-    for (const [fid, follower] of validEntries) {
+    // Execute on each follower via separate WS
+    for (const [fid, follower] of entries) {
         try {
-            const propResult = await sendLegacyWs({
-                proposal: 1,
-                amount: stake,
-                basis: 'stake',
-                contract_type: contractParams.contract_type,
-                currency: contractParams.currency,
-                duration: contractParams.duration,
-                duration_unit: contractParams.duration_unit,
-                underlying_symbol: contractParams.underlying_symbol,
-                barrier: contractParams.barrier,
-                subscribe: 0,
-            });
-            const proposal = (propResult as any)?.proposal;
-            if (proposal) {
-                const buyResult = await sendLegacyWs({
-                    buy: proposal.id,
-                    price: proposal.ask_price,
-                });
-                console.log(`[CopyTrade] Buy succeeded for ${fid}:`, buyResult);
-                await updateFollowerStats(masterId!, fid, contractParams, stake);
-            } else {
-                console.error(`[CopyTrade] No proposal for ${fid}:`, propResult);
-            }
-        } catch (indErr) {
-            console.error(`[CopyTrade] Buy failed for ${fid}:`, indErr);
+            const buyResult = await buyOnFollowerAccount(follower.token, contractParams, stake);
+            console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
+            await updateFollowerStats(masterId, fid, contractParams, stake);
+        } catch (err: any) {
+            console.error(`[CopyTrade] FAILED for ${fid} (${follower.name}):`, err.message || err);
         }
     }
 }
@@ -323,7 +288,7 @@ async function updateFollowerStats(
 ) {
     try {
         const existing = await getFollowerStats(mId, followerId);
-        const stats: import('./firebase-config').FollowerStats = existing || {
+        const stats: FollowerStats = existing || {
             totalTrades: 0,
             wins: 0,
             losses: 0,
@@ -366,8 +331,17 @@ export async function resetFollowerStats(followerId: string) {
     await clearFollowerStats(masterId, followerId);
 }
 
-export async function updateMyBalanceToFirebase(myId: string, balance: number) {
+export function hasContractBeenCounted(contractId: string): boolean {
+    return countedContractIds.has(contractId);
+}
+
+export function markContractCounted(contractId: string) {
+    countedContractIds.add(contractId);
+}
+
+export async function saveMyBalance(masterId: string, followerId: string, balance: number) {
     try {
-        await dbSet(`masters/${myId}/balance`, balance);
+        const { dbSet } = await import('./firebase-config');
+        await dbSet(`masters/${masterId}/followers/${followerId}/balance`, balance);
     } catch {}
 }
