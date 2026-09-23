@@ -153,11 +153,15 @@ const CopyTrading: React.FC = () => {
                     const newBal = Number(data.balance.balance);
                     setBalance(newBal);
 
-                    // Master pushes own balance
+                    // Master pushes own balance to Firebase
                     const mid = localStorage.getItem('mw_copy_master_id');
-                    const fid = localStorage.getItem('mw_copy_follower_master');
+                    const followingMaster = localStorage.getItem('mw_copy_follower_master');
                     if (mid) {
                         saveMyBalance(mid, accountId.current, newBal);
+                    }
+                    // Follower pushes their balance under the master they follow
+                    if (followingMaster) {
+                        saveMyBalance(followingMaster, accountId.current, newBal);
                     }
                 }
 
@@ -204,16 +208,13 @@ const CopyTrading: React.FC = () => {
         setFollowers(f);
         const statsMap: Record<string, FollowerStats> = {};
         const balMap: Record<string, number> = {};
-        for (const fid of Object.keys(f)) {
+        for (const [fid, f] of Object.entries(f)) {
             const s = await getFollowerStats(myMasterId, fid);
             if (s) statsMap[fid] = s;
-            try {
-                const res = await fetch(`https://makoti-6ba23-default-rtdb.firebaseio.com/masters/${myMasterId}/followers/${fid}/balance.json`);
-                if (res.ok) {
-                    const b = await res.json();
-                    if (b !== null) balMap[fid] = Number(b);
-                }
-            } catch {}
+            // Read balance from follower entry
+            if (typeof f.balance === 'number') {
+                balMap[fid] = f.balance;
+            }
         }
         setFollowerStatsMap(statsMap);
         setFollowerBalances(balMap);
@@ -253,6 +254,7 @@ const CopyTrading: React.FC = () => {
             name: followerName.trim() || 'Follower',
             account_id: followerId,
             created_at: Date.now(),
+            balance: 0,
         };
         const ok = await addFollower(masterIdInput.trim(), followerId, entry);
         if (ok) {
@@ -430,10 +432,10 @@ const CopyTrading: React.FC = () => {
                                     const fBal = followerBalances[fid];
                                     return (
                                         <div key={fid} className='ct__follower'>
-                                            <div className='ct__follower-avatar'>{getInitials(f.name)}</div>
+                                            <div className='ct__follower-avatar'>{getInitials(f.name || 'Follower')}</div>
                                             <div className='ct__follower-info'>
-                                                <span className='ct__follower-name'>{f.name}</span>
-                                                <span className='ct__follower-id'>{f.account_id}</span>
+                                            <span className='ct__follower-name'>{f.name || 'Follower'}</span>
+                                            <span className='ct__follower-id'>{f.account_id || fid}</span>
                                                 {fBal !== undefined && (
                                                     <span className='ct__follower-balance'>Balance: ${fBal.toFixed(2)}</span>
                                                 )}

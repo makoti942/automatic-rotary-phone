@@ -47,6 +47,7 @@ export interface FollowerEntry {
     name: string;
     account_id: string;
     created_at: number;
+    balance?: number;
 }
 
 export interface FollowerStats {
