@@ -1,12 +1,5 @@
 /**
  * Firebase Realtime Database REST API — zero dependencies.
- *
- * SETUP:
- * 1. Go to https://console.firebase.google.com → Create project
- * 2. Go to Realtime Database → Create database → Start in test mode
- * 3. Go to Project Settings → General → Your apps → Add web app
- * 4. Copy the config object and paste below
- * 5. Go to Realtime Database → Rules → set read/write to true (or use auth)
  */
 
 const FIREBASE_CONFIG = {
@@ -22,7 +15,6 @@ const FIREBASE_CONFIG = {
 
 const DB_URL = FIREBASE_CONFIG.databaseURL;
 
-// ── Helpers ────────────────────────────────────────────────────
 async function dbGet(path: string) {
     const res = await fetch(`${DB_URL}/${path}.json`);
     if (!res.ok) return null;
@@ -32,15 +24,6 @@ async function dbGet(path: string) {
 async function dbSet(path: string, data: unknown) {
     const res = await fetch(`${DB_URL}/${path}.json`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-    });
-    return res.ok;
-}
-
-async function dbPush(path: string, data: unknown) {
-    const res = await fetch(`${DB_URL}/${path}.json`, {
-        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
     });
@@ -66,6 +49,14 @@ export interface FollowerEntry {
     created_at: number;
 }
 
+export interface FollowerStats {
+    totalTrades: number;
+    wins: number;
+    losses: number;
+    totalPnl: number;
+    contracts: { id: string; type: string; stake: number; pnl: number; time: number }[];
+}
+
 // ── Master CRUD ────────────────────────────────────────────────
 export async function getMaster(masterId: string): Promise<MasterProfile | null> {
     return dbGet(`masters/${masterId}`);
@@ -77,6 +68,18 @@ export async function setMaster(masterId: string, profile: MasterProfile): Promi
 
 export async function removeMaster(masterId: string): Promise<boolean> {
     return dbRemove(`masters/${masterId}`);
+}
+
+export async function getAllMasters(): Promise<Record<string, MasterProfile>> {
+    const data = await dbGet('masters');
+    if (!data) return {};
+    const result: Record<string, MasterProfile> = {};
+    for (const [key, value] of Object.entries(data)) {
+        if (value && typeof value === 'object' && (value as any).account_id && (value as any).name) {
+            result[key] = value as MasterProfile;
+        }
+    }
+    return result;
 }
 
 // ── Follower CRUD ──────────────────────────────────────────────
@@ -98,9 +101,26 @@ export async function getFollowers(
     return dbGet(`masters/${masterId}/followers`);
 }
 
-export async function isFollowerConnected(
+// ── Follower Stats ──────────────────────────────────────────────
+export async function getFollowerStats(
     masterId: string,
     followerId: string
-): Promise<FollowerEntry | null> {
-    return dbGet(`masters/${masterId}/followers/${followerId}`);
+): Promise<FollowerStats | null> {
+    return dbGet(`masters/${masterId}/followers/${followerId}/stats`);
+}
+
+export async function setFollowerStats(
+    masterId: string,
+    followerId: string,
+    stats: FollowerStats
+): Promise<boolean> {
+    return dbSet(`masters/${masterId}/followers/${followerId}/stats`, stats);
+}
+
+export async function clearFollowerStats(
+    masterId: string,
+    followerId: string
+): Promise<boolean> {
+    const empty: FollowerStats = { totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, contracts: [] };
+    return setFollowerStats(masterId, followerId, empty);
 }

@@ -361,6 +361,100 @@
         gap: 8px;
     }
 
+    &__master-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-height: 300px;
+        overflow-y: auto;
+    }
+
+    &__master-card {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px;
+        background: var(--general-section-1);
+        border: 2px solid transparent;
+        border-radius: 8px;
+        cursor: pointer;
+        transition: all 0.2s;
+
+        &:hover {
+            border-color: #fbbf24;
+            transform: translateY(-1px);
+        }
+    }
+
+    &__master-card-avatar {
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: #1e1b4b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 800;
+        flex-shrink: 0;
+    }
+
+    &__master-card-info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+
+    &__master-card-name {
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-prominent);
+    }
+
+    &__master-card-id {
+        font-size: 9px;
+        color: var(--text-less-prominent);
+        font-family: monospace;
+    }
+
+    &__master-card-follow {
+        font-size: 11px;
+        font-weight: 700;
+        color: #fbbf24;
+    }
+
+    &__selected-master {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: var(--general-section-1);
+        border-radius: 8px;
+        margin-bottom: 10px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-prominent);
+
+        .ct__master-card-avatar {
+            width: 28px;
+            height: 28px;
+            font-size: 10px;
+        }
+
+        span {
+            flex: 1;
+        }
+    }
+
+    &__follower-stats {
+        display: block;
+        font-size: 8px;
+        color: var(--text-less-prominent);
+        margin-top: 1px;
+    }
+
     &__trade-list {
         display: flex;
         flex-direction: column;
