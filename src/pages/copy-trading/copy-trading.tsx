@@ -84,6 +84,7 @@ const CopyTrading: React.FC = () => {
     const [followerFirebaseTrades, setFollowerFirebaseTrades] = useState<TradeRecord[]>([]);
     const [previewMode, setPreviewMode] = useState(false);
     const [showMasterId, setShowMasterId] = useState(false);
+    const [visibleFollowerIds, setVisibleFollowerIds] = useState<Set<string>>(new Set());
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -321,8 +322,8 @@ const CopyTrading: React.FC = () => {
                         setTradeHistory(arr);
                     }
                 } catch {}
-                try { if (alive) timer = setTimeout(load, 3000); } catch {}
-            }).catch(() => { try { if (alive) timer = setTimeout(load, 3000); } catch {} });
+                try { if (alive) timer = setTimeout(load, 1000); } catch {}
+            }).catch(() => { try { if (alive) timer = setTimeout(load, 1000); } catch {} });
         };
         load();
         return () => { alive = false; clearTimeout(timer); };
@@ -580,7 +581,16 @@ const CopyTrading: React.FC = () => {
                                             <div className='ct__follower-avatar'>{getInitials(f.name || 'Follower')}</div>
                                             <div className='ct__follower-info'>
                                             <span className='ct__follower-name'>{f.name || 'Follower'}{fBal !== undefined && <span className='ct__follower-balance-inline'> · ${fBal.toFixed(2)}</span>}</span>
-                                            <span className='ct__follower-id'>{f.account_id || fid}</span>
+                                            <span className='ct__follower-id'>
+                                                {visibleFollowerIds.has(fid) ? (f.account_id || fid) : '••••••••'}
+                                                <span className='ct__eye' onClick={() => setVisibleFollowerIds(prev => {
+                                                    const next = new Set(prev);
+                                                    if (next.has(fid)) next.delete(fid); else next.add(fid);
+                                                    return next;
+                                                })}>
+                                                    {visibleFollowerIds.has(fid) ? '👁' : '👁‍🗨'}
+                                                </span>
+                                            </span>
                                                 {fs && (
                                                     <span className='ct__follower-stats'>
                                                         {fs.totalTrades} trades · {fs.wins}W/{fs.losses}L ·

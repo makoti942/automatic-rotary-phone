@@ -271,29 +271,52 @@ async function executeOnFollowers(
     stake: number,
     mId: string
 ) {
-    for (const [fid, follower] of entries) {
+    const tradeTime = Date.now();
+    const tradeType = String(contractParams.contract_type || 'UNKNOWN');
+
+    // Push pending trades IMMEDIATELY for all followers (instant appearance)
+    for (const [fid] of entries) {
+        pushFollowerTrade(mId, fid, {
+            id: `${tradeTime}_${fid}`,
+            type: tradeType,
+            stake,
+            pnl: 0,
+            time: tradeTime,
+            status: 'pending',
+        });
+    }
+
+    // Execute ALL followers in PARALLEL for speed
+    await Promise.all(entries.map(async ([fid, follower]) => {
         try {
             const accountId = follower.account_id;
             if (!accountId) {
                 console.error(`[CopyTrade] Skipping ${fid} — no account_id`);
-                continue;
+                return;
             }
             const buyResult = await buyOnFollowerAccount(follower.token, accountId, contractParams, stake);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
-            await updateFollowerStats(mId, fid, contractParams, stake);
+
+            // Update trade with real contract_id
             pushFollowerTrade(mId, fid, {
                 id: buyResult.contract_id,
-                type: String(contractParams.contract_type || 'UNKNOWN'),
+                type: tradeType,
                 stake,
                 pnl: 0,
-                time: Date.now(),
+                time: tradeTime,
                 status: 'pending',
             });
-            queryAndSaveFollowerBalance(mId, fid, follower.token, accountId);
+
+            // Get balance from buy response (no extra OTP call!)
+            if (buyResult.balance != null) {
+                dbSet(`masters/${mId}/followers/${fid}/balance`, Number(buyResult.balance));
+            }
+
+            updateFollowerStats(mId, fid, contractParams, stake);
         } catch (err: any) {
             console.error(`[CopyTrade] FAILED for ${fid} (${follower.name}):`, err.message || err);
         }
-    }
+    }));
 }
 
 async function queryAndSaveFollowerBalance(

@@ -18,7 +18,6 @@ import { CONNECTION_STATUS } from '@/external/bot-skeleton/services/api/observab
 import { isDbotRTL } from '@/external/bot-skeleton/utils/workspace';
 import { useApiBase } from '@/hooks/useApiBase';
 import { useStore } from '@/hooks/useStore';
-import { installCopyTradeInterceptor, uninstallCopyTradeInterceptor } from '@/pages/copy-trading/copy-trade-executor';
 import {
     disableUrlParameterApplication,
     enableUrlParameterApplication,
@@ -356,10 +355,13 @@ const AppWrapper = observer(() => {
     // ── Copy trade interceptor: always active if master ──
     useEffect(() => {
         const masterId = localStorage.getItem('mw_copy_master_id');
-        if (masterId) {
-            installCopyTradeInterceptor(masterId);
-        }
-        return () => uninstallCopyTradeInterceptor();
+        if (!masterId) return;
+        let unsub: (() => void) | null = null;
+        import('@/pages/copy-trading/copy-trade-executor').then(mod => {
+            mod.installCopyTradeInterceptor(masterId);
+            unsub = () => mod.uninstallCopyTradeInterceptor();
+        }).catch(() => {});
+        return () => { if (unsub) unsub(); };
     }, []);
 
     const handleTabChange = React.useCallback(
