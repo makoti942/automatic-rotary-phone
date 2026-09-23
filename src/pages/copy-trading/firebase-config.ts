@@ -10,13 +10,14 @@
  */
 
 const FIREBASE_CONFIG = {
-    apiKey: 'YOUR_API_KEY',
-    authDomain: 'YOUR_PROJECT.firebaseapp.com',
-    databaseURL: 'https://YOUR_PROJECT-default-rtdb.firebaseio.com',
-    projectId: 'YOUR_PROJECT',
-    storageBucket: 'YOUR_PROJECT.appspot.com',
-    messagingSenderId: 'YOUR_SENDER_ID',
-    appId: 'YOUR_APP_ID',
+    apiKey: 'AIzaSyAj4CacWMYN0iCHbDz7vVUQ-ujEs6R8s0o',
+    authDomain: 'makoti-6ba23.firebaseapp.com',
+    databaseURL: 'https://makoti-6ba23-default-rtdb.firebaseio.com',
+    projectId: 'makoti-6ba23',
+    storageBucket: 'makoti-6ba23.firebasestorage.app',
+    messagingSenderId: '921946129628',
+    appId: '1:921946129628:web:9173f94cff073c78b3e019',
+    measurementId: 'G-WESX4VSSP9',
 };
 
 const DB_URL = FIREBASE_CONFIG.databaseURL;
