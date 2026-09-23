@@ -486,7 +486,7 @@ const CopyTrading: React.FC = () => {
                     ) : (
                         <div className='ct__master-list'>
                             {Object.entries(availableMasters).map(([mid, m]) => {
-                                if (mid === accountId.current) return null;
+                                if (!previewMode && mid === accountId.current) return null;
                                 return (
                                     <div key={mid} className='ct__master-card' onClick={() => {
                                         setSelectedMaster({ id: mid, profile: m });
@@ -494,8 +494,7 @@ const CopyTrading: React.FC = () => {
                                     }}>
                                         <div className='ct__master-card-avatar'>{getInitials(m.name)}</div>
                                         <div className='ct__master-card-info'>
-                                            <span className='ct__master-card-name'>{m.name}</span>
-                                            <span className='ct__master-card-id'>{mid}</span>
+                                            <span className='ct__master-card-name'>{m.name} {previewMode && mid === accountId.current && '(You)'}</span>
                                         </div>
                                         <span className='ct__master-card-follow'>Follow →</span>
                                     </div>
