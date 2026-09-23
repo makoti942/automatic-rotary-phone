@@ -323,7 +323,6 @@ const CopyTrading: React.FC = () => {
                 } catch {}
                 try { if (alive) timer = setTimeout(load, 3000); } catch {}
             }).catch(() => { try { if (alive) timer = setTimeout(load, 3000); } catch {} });
-            });
         };
         load();
         return () => { alive = false; clearTimeout(timer); };
