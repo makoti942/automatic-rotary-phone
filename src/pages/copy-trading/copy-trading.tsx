@@ -83,6 +83,7 @@ const CopyTrading: React.FC = () => {
     const [tradeTrigger, setTradeTrigger] = useState(0);
     const [followerFirebaseTrades, setFollowerFirebaseTrades] = useState<TradeRecord[]>([]);
     const [previewMode, setPreviewMode] = useState(false);
+    const [showMasterId, setShowMasterId] = useState(false);
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -532,7 +533,12 @@ const CopyTrading: React.FC = () => {
                         <div className='ct__avatar'>{getInitials(masterName || 'M')}</div>
                         <div className='ct__header-info'>
                             <h3>{masterName}</h3>
-                            <span className='ct__id'>ID: {myMasterId}</span>
+                            <span className='ct__id'>
+                                ID: {showMasterId ? myMasterId : '••••••••'}
+                                <span className='ct__eye' onClick={() => setShowMasterId(v => !v)}>
+                                    {showMasterId ? '👁' : '👁‍🗨'}
+                                </span>
+                            </span>
                         </div>
                     </div>
 
