@@ -56,23 +56,46 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Per-follower WS via legacy endpoint with token in URL
+// Per-follower trade via OTP flow (Deriv-approved)
+// 1. POST /accounts/{accountId}/otp with follower token
+// 2. Get one-time WebSocket URL
+// 3. Connect → proposal → buy
 // ══════════════════════════════════════════════════════════════
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const WS_DEMO = 'wss://api.derivws.com/trading/v1/options/ws/demo';
-const WS_REAL = 'wss://api.derivws.com/trading/v1/options/ws';
+const API_BASE = 'https://api.derivws.com/trading/v1';
+
+async function fetchFollowerOTP(followerToken: string, accountId: string): Promise<string> {
+    const endpoint = `${API_BASE}/options/accounts/${accountId}/otp`;
+    console.log(`[CopyTrade] Fetching OTP for account ${accountId}...`);
+    const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+            Authorization: `Bearer ${followerToken}`,
+        },
+    });
+    if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        throw new Error(`OTP fetch failed: ${res.status} ${text}`);
+    }
+    const json = await res.json();
+    const wsUrl = json?.data?.url;
+    if (!wsUrl) throw new Error('No WebSocket URL in OTP response');
+    console.log(`[CopyTrade] OTP received for ${accountId}`);
+    return wsUrl;
+}
 
 async function buyOnFollowerAccount(
     followerToken: string,
+    accountId: string,
     contractParams: Record<string, unknown>,
-    stake: number,
-    isDemo: boolean
+    stake: number
 ): Promise<any> {
-    const tag = followerToken.slice(-4);
-    const wsBase = isDemo ? WS_DEMO : WS_REAL;
-    const wsUrl = `${wsBase}?app_id=${APP_ID}&token=${followerToken}`;
-    console.log(`[CopyTrade] Opening follower WS ...${tag} (${isDemo ? 'DEMO' : 'REAL'})`);
+    const tag = accountId.slice(-4);
+
+    const wsUrl = await fetchFollowerOTP(followerToken, accountId);
+    console.log(`[CopyTrade] Connecting follower WS ...${tag} via OTP`);
+
     const ws = new WebSocket(wsUrl);
 
     return new Promise((resolve, reject) => {
@@ -81,7 +104,7 @@ async function buyOnFollowerAccount(
         const timeout = setTimeout(() => { cleanup(); if (!done) reject(new Error('Follower buy timeout')); }, 30000);
 
         ws.onopen = () => {
-            console.log(`[CopyTrade] ...${tag} WS open, getting proposal...`);
+            console.log(`[CopyTrade] ...${tag} WS open, sending proposal...`);
             ws.send(JSON.stringify({
                 proposal: 1,
                 amount: stake,
@@ -250,8 +273,12 @@ async function executeOnFollowers(
 ) {
     for (const [fid, follower] of entries) {
         try {
-            const isDemo = follower.is_demo !== false;
-            const buyResult = await buyOnFollowerAccount(follower.token, contractParams, stake, isDemo);
+            const accountId = follower.account_id;
+            if (!accountId) {
+                console.error(`[CopyTrade] Skipping ${fid} — no account_id`);
+                continue;
+            }
+            const buyResult = await buyOnFollowerAccount(follower.token, accountId, contractParams, stake);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
             await updateFollowerStats(mId, fid, contractParams, stake);
         } catch (err: any) {
