@@ -170,6 +170,8 @@ let masterId: string | null = null;
 let unsubs: (() => void)[] = [];
 let countedContractIds: Set<string> = new Set();
 let cachedFollowers: Record<string, any> = {};
+let lastProposalParams: Record<string, any> | null = null;
+let origSend: ((data: string) => void) | null = null;
 
 export function refreshCachedFollowers(f: Record<string, any>) {
     cachedFollowers = f;
@@ -181,10 +183,31 @@ export function installCopyTradeInterceptor(mId: string) {
     masterId = mId;
     countedContractIds = new Set();
     cachedFollowers = {};
+    lastProposalParams = null;
     console.log('[CopyTrade] Interceptor installed for master:', mId);
 
     // Pre-cache followers from Firebase
     getFollowers(mId).then(f => { if (f) cachedFollowers = f; }).catch(() => {});
+
+    // Monkey-patch _newSystemWS.send to intercept outgoing PROPOSAL requests
+    // This captures the exact contract_type (DIGITUNDER, etc.), barrier, duration, underlying
+    try {
+        const ws = (window as any)._newSystemWS;
+        if (ws && ws.send) {
+            origSend = ws.send.bind(ws);
+            ws.send = (raw: string) => {
+                try {
+                    const msg = JSON.parse(raw);
+                    if (msg.proposal === 1) {
+                        lastProposalParams = { ...msg };
+                        delete lastProposalParams.req_id;
+                        console.log('[CopyTrade] Captured proposal params:', JSON.stringify(lastProposalParams));
+                    }
+                } catch {}
+                origSend!(raw);
+            };
+        }
+    } catch {}
 
     const unsub1 = onNewSystemMessageLocal((data: any) => {
         if (data.msg_type === 'buy' && data.buy && data.buy.contract_id) {
@@ -201,6 +224,13 @@ export function uninstallCopyTradeInterceptor() {
     unsubs.forEach(u => u());
     unsubs = [];
     countedContractIds = new Set();
+    cachedFollowers = {};
+    lastProposalParams = null;
+    try {
+        const ws = (window as any)._newSystemWS;
+        if (ws && origSend) { ws.send = origSend; }
+    } catch {}
+    origSend = null;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -229,51 +259,72 @@ async function forwardTradeToFollowers(buyData: any) {
 
     console.log(`[CopyTrade] Forwarding to ${entries.length} followers`);
 
-    // Extract contract params from buy data — the buy response has everything we need
-    // buyData = { contract_id, buy_price, payout, contract_type, ... }
-    // We also try to get more details via proposal_open_contract but handle failure gracefully
+    // Use the CAPTURED proposal params — these are the EXACT params the bot used
+    // (DIGITUNDER, barrier, duration, underlying, etc.)
     let contractParams: Record<string, unknown>;
     let stake = Number(buyData.buy_price) || 1;
 
-    // Try to get full details from proposal_open_contract
-    try {
-        const pocResult = await sendViaNewSystemLocal({
-            proposal_open_contract: 1,
-            contract_id: buyData.contract_id,
-            subscribe: 0,
-        });
-        const contract = (pocResult as any)?.proposal_open_contract;
-        if (contract) {
+    if (lastProposalParams) {
+        // Build contract params from the captured proposal
+        const p = lastProposalParams;
+        contractParams = {
+            amount: Number(p.amount) || stake,
+            basis: p.basis || 'stake',
+            contract_type: p.contract_type || 'CALL',
+            currency: p.currency || 'USD',
+            duration: p.duration || 1,
+            duration_unit: p.duration_unit || 't',
+            underlying_symbol: p.underlying_symbol || p.symbol || '1HZ100V',
+        };
+        if (p.barrier != null) contractParams.barrier = p.barrier;
+        if (p.barrier2 != null) contractParams.barrier2 = p.barrier2;
+        console.log('[CopyTrade] Contract params (from captured proposal):', JSON.stringify(contractParams));
+    } else {
+        // Fallback: try POC, then buy data
+        console.log('[CopyTrade] No captured proposal, trying fallback');
+        try {
+            const pocResult = await sendViaNewSystemLocal({
+                proposal_open_contract: 1,
+                contract_id: buyData.contract_id,
+                subscribe: 0,
+            });
+            const contract = (pocResult as any)?.proposal_open_contract;
+            if (contract) {
+                contractParams = {
+                    amount: stake,
+                    basis: 'stake',
+                    contract_type: contract.contract_type || buyData.contract_type || 'CALL',
+                    currency: contract.currency || 'USD',
+                    duration: contract.duration || 1,
+                    duration_unit: contract.duration_unit || 't',
+                    underlying_symbol: contract.underlying || buyData.underlying || '1HZ100V',
+                };
+                if (contract.barrier) contractParams.barrier = contract.barrier;
+            } else {
+                contractParams = {
+                    amount: stake, basis: 'stake',
+                    contract_type: buyData.contract_type || 'CALL',
+                    currency: buyData.currency || 'USD',
+                    duration: buyData.duration || 1,
+                    duration_unit: buyData.duration_unit || 't',
+                    underlying_symbol: buyData.underlying || '1HZ100V',
+                };
+                if (buyData.barrier) contractParams.barrier = buyData.barrier;
+            }
+        } catch {
             contractParams = {
-                amount: stake,
-                basis: 'stake',
-                contract_type: contract.contract_type || buyData.contract_type || 'CALL',
-                currency: contract.currency || 'USD',
-                duration: contract.duration || 1,
-                duration_unit: contract.duration_unit || 't',
-                underlying_symbol: contract.underlying || '1HZ100V',
+                amount: stake, basis: 'stake',
+                contract_type: buyData.contract_type || 'CALL',
+                currency: buyData.currency || 'USD',
+                duration: buyData.duration || 1,
+                duration_unit: buyData.duration_unit || 't',
+                underlying_symbol: buyData.underlying || '1HZ100V',
             };
-            if (contract.barrier) contractParams.barrier = contract.barrier;
-            console.log('[CopyTrade] Contract params (from POC):', JSON.stringify(contractParams));
-            await executeOnFollowers(entries, contractParams, stake, masterId);
-            return;
+            if (buyData.barrier) contractParams.barrier = buyData.barrier;
         }
-    } catch (err) {
-        console.log('[CopyTrade] POC query failed, using buy data directly');
+        console.log('[CopyTrade] Contract params (fallback):', JSON.stringify(contractParams));
     }
 
-    // Fallback: build params from buy data
-    contractParams = {
-        amount: stake,
-        basis: 'stake',
-        contract_type: buyData.contract_type || 'CALL',
-        currency: buyData.currency || 'USD',
-        duration: buyData.duration || 1,
-        duration_unit: buyData.duration_unit || 't',
-        underlying_symbol: buyData.underlying || '1HZ100V',
-    };
-    if (buyData.barrier) contractParams.barrier = buyData.barrier;
-    console.log('[CopyTrade] Contract params (from buy):', JSON.stringify(contractParams));
     await executeOnFollowers(entries, contractParams, stake, masterId);
 }
 
