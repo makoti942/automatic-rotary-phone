@@ -37,6 +37,7 @@ import {
     LabelPairedObjectsColumnCaptionRegularIcon,
     LabelPairedPlayLgFillIcon,
     LabelPairedPuzzlePieceTwoCaptionBoldIcon,
+    LabelPairedArrowRightCaptionRegularIcon,
 } from '@deriv/quill-icons/LabelPaired';
 import { LegacyGuide1pxIcon } from '@deriv/quill-icons/Legacy';
 import { Localize, localize } from '@deriv-com/translations';
@@ -51,6 +52,7 @@ import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
 import TradingViewComponent from '@/components/trading-view-chart/trading-view';
+import CopyTrading from '../copy-trading/copy-trading';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
@@ -87,7 +89,7 @@ const AppWrapper = observer(() => {
     const { clear } = summary_card;
     const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -489,6 +491,21 @@ const AppWrapper = observer(() => {
                                 id='id-trading-view'
                             >
                                 <div className='trading-view-tab-placeholder' />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedArrowRightCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Copy Trading' />
+                                    </>
+                                }
+                                id='id-copy-trading'
+                            >
+                                <CopyTrading />
                             </div>
                             <div
                                 label={
