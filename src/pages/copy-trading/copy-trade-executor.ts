@@ -1,4 +1,4 @@
-import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats } from './firebase-config';
+import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats, dbSet } from './firebase-config';
 
 // ══════════════════════════════════════════════════════════════
 // INLINED from @/auth/NewDerivAuth — NEVER import that module
@@ -7,41 +7,26 @@ import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats } 
 function convertToNewFormat(data: any): any {
     if (!data || typeof data !== 'object') return data;
     const out = Array.isArray(data) ? data.map(convertToNewFormat) : { ...data };
-    if (out.proposal === 1 && out.symbol) {
-        out.underlying_symbol = out.symbol;
-        delete out.symbol;
-    }
-    if ('buy' in out) {
-        out.buy = String(out.buy);
-    }
+    if (out.proposal === 1 && out.symbol) { out.underlying_symbol = out.symbol; delete out.symbol; }
+    if ('buy' in out) { out.buy = String(out.buy); }
     if (out.parameters && typeof out.parameters === 'object') {
         out.parameters = { ...out.parameters };
-        if ('symbol' in out.parameters) {
-            out.parameters.underlying_symbol = out.parameters.symbol;
-            delete out.parameters.symbol;
-        }
+        if ('symbol' in out.parameters) { out.parameters.underlying_symbol = out.parameters.symbol; delete out.parameters.symbol; }
     }
     return out;
 }
 
 function parseEventDetail(detail: any): any {
     if (!detail) return null;
-    if (typeof detail === 'string') {
-        try { return JSON.parse(detail); } catch { return null; }
-    }
-    if (detail.data && typeof detail.data === 'string') {
-        try { return JSON.parse(detail.data); } catch { return null; }
-    }
+    if (typeof detail === 'string') { try { return JSON.parse(detail); } catch { return null; } }
+    if (detail.data && typeof detail.data === 'string') { try { return JSON.parse(detail.data); } catch { return null; } }
     return detail;
 }
 
 function onNewSystemMessageLocal(cb: (data: any) => void): () => void {
     if (typeof window === 'undefined') return () => {};
     const handler = (event: Event) => {
-        try {
-            const parsed = parseEventDetail((event as CustomEvent).detail);
-            if (parsed) cb(parsed);
-        } catch (_) {}
+        try { const parsed = parseEventDetail((event as CustomEvent).detail); if (parsed) cb(parsed); } catch (_) {}
     };
     window.addEventListener('newSystemMessage', handler);
     return () => window.removeEventListener('newSystemMessage', handler);
@@ -50,10 +35,7 @@ function onNewSystemMessageLocal(cb: (data: any) => void): () => void {
 function sendViaNewSystemLocal(msg: any): Promise<any> {
     return new Promise((resolve, reject) => {
         const ws = (window as any)._newSystemWS;
-        if (!ws || ws.readyState !== WebSocket.OPEN) {
-            reject(new Error('WebSocket not open'));
-            return;
-        }
+        if (!ws || ws.readyState !== WebSocket.OPEN) { reject(new Error('WebSocket not open')); return; }
         const reqId = msg.req_id || Date.now();
         const toSend = { ...convertToNewFormat(msg), req_id: reqId };
         const msgType = Object.keys(msg).find(k => k !== 'passthrough' && k !== 'req_id');
@@ -63,81 +45,22 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
                 if (!parsed) return;
                 if (parsed.req_id === reqId || (msgType && parsed.msg_type === msgType)) {
                     window.removeEventListener('newSystemMessage', handler);
-                    if (parsed.error) reject(parsed);
-                    else resolve(parsed);
+                    if (parsed.error) reject(parsed); else resolve(parsed);
                 }
             } catch (_) {}
         };
         window.addEventListener('newSystemMessage', handler);
         ws.send(JSON.stringify(toSend));
-        setTimeout(() => {
-            window.removeEventListener('newSystemMessage', handler);
-            reject(new Error('Timeout'));
-        }, 30000);
+        setTimeout(() => { window.removeEventListener('newSystemMessage', handler); reject(new Error('Timeout')); }, 30000);
     });
 }
 
 // ══════════════════════════════════════════════════════════════
-// Per-follower WebSocket — opens a SEPARATE WS for each follower
-// with their token, authorizes, gets proposal, buys.
-// Uses the SAME API endpoint as the main app.
+// Per-follower WS via legacy endpoint with token in URL
 // ══════════════════════════════════════════════════════════════
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const API_WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/demo';
-
-function waitForWsOpen(ws: WebSocket): Promise<void> {
-    return new Promise((resolve, reject) => {
-        if (ws.readyState === WebSocket.OPEN) { resolve(); return; }
-        ws.onopen = () => resolve();
-        ws.onerror = () => reject(new Error('WS open failed'));
-    });
-}
-
-function wsSend(ws: WebSocket, msg: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const reqId = msg.req_id || Date.now();
-        const toSend = { ...convertToNewFormat(msg), req_id: reqId };
-        const timeout = setTimeout(() => {
-            ws.removeEventListener('message', handler);
-            reject(new Error('WS response timeout'));
-        }, 30000);
-        const handler = (event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.req_id === reqId) {
-                    clearTimeout(timeout);
-                    ws.removeEventListener('message', handler);
-                    if (data.error) reject(data);
-                    else resolve(data);
-                }
-            } catch {}
-        };
-        ws.addEventListener('message', handler);
-        ws.send(JSON.stringify(toSend));
-    });
-}
-
-function waitForAuth(ws: WebSocket): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-            ws.removeEventListener('message', handler);
-            reject(new Error('Auth timeout'));
-        }, 15000);
-        const handler = (event: MessageEvent) => {
-            try {
-                const data = JSON.parse(event.data);
-                if (data.msg_type === 'authorize') {
-                    clearTimeout(timeout);
-                    ws.removeEventListener('message', handler);
-                    if (data.error) reject(data);
-                    else resolve(data);
-                }
-            } catch {}
-        };
-        ws.addEventListener('message', handler);
-    });
-}
+const LEGACY_WS_BASE = 'wss://ws.derivws.com/websockets/v3';
 
 async function buyOnFollowerAccount(
     followerToken: string,
@@ -147,45 +70,70 @@ async function buyOnFollowerAccount(
     const tag = followerToken.slice(-4);
     console.log(`[CopyTrade] Opening follower WS ...${tag}`);
 
-    const ws = new WebSocket(`${API_WS_URL}?app_id=${APP_ID}`);
-    try {
-        await waitForWsOpen(ws);
-        console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
+    const wsUrl = `${LEGACY_WS_BASE}?app_id=${APP_ID}&token=${followerToken}`;
+    const ws = new WebSocket(wsUrl);
 
-        // Authorize with follower's token
-        const authPromise = waitForAuth(ws);
-        ws.send(JSON.stringify({ authorize: followerToken, req_id: 0 }));
-        await authPromise;
-        console.log(`[CopyTrade] ...${tag} authorized`);
+    return new Promise((resolve, reject) => {
+        let done = false;
+        const cleanup = () => { done = true; try { ws.close(); } catch {} };
+        const timeout = setTimeout(() => { cleanup(); if (!done) reject(new Error('Follower buy timeout')); }, 30000);
 
-        // Get proposal
-        console.log(`[CopyTrade] ...${tag} getting proposal...`);
-        const proposalResult = await wsSend(ws, {
-            proposal: 1,
-            amount: stake,
-            basis: 'stake',
-            contract_type: contractParams.contract_type,
-            currency: contractParams.currency,
-            duration: contractParams.duration,
-            duration_unit: contractParams.duration_unit,
-            underlying_symbol: contractParams.underlying_symbol,
-            barrier: contractParams.barrier,
-            subscribe: 0,
-        });
-        const proposal = proposalResult.proposal;
-        if (!proposal) throw new Error('No proposal returned');
-        console.log(`[CopyTrade] ...${tag} proposal: ${proposal.id}, buying...`);
+        ws.onopen = () => {
+            console.log(`[CopyTrade] ...${tag} WS open, getting proposal...`);
+            ws.send(JSON.stringify({
+                proposal: 1,
+                amount: stake,
+                basis: 'stake',
+                contract_type: contractParams.contract_type,
+                currency: contractParams.currency,
+                duration: contractParams.duration,
+                duration_unit: contractParams.duration_unit,
+                underlying_symbol: contractParams.underlying_symbol,
+                barrier: contractParams.barrier,
+                subscribe: 0,
+                req_id: 1,
+            }));
+        };
 
-        // Buy
-        const buyResult = await wsSend(ws, {
-            buy: proposal.id,
-            price: proposal.ask_price,
-        });
-        console.log(`[CopyTrade] ...${tag} BUY SUCCESS:`, buyResult.buy?.contract_id);
-        return buyResult.buy;
-    } finally {
-        try { ws.close(); } catch {}
-    }
+        ws.onmessage = (event) => {
+            if (done) return;
+            try {
+                const data = JSON.parse(event.data);
+                if (data.error) {
+                    console.error(`[CopyTrade] ...${tag} error:`, data.error.message);
+                    cleanup();
+                    clearTimeout(timeout);
+                    reject(new Error(data.error.message));
+                    return;
+                }
+                if (data.req_id === 1 && data.proposal) {
+                    console.log(`[CopyTrade] ...${tag} proposal: ${data.proposal.id}, buying...`);
+                    ws.send(JSON.stringify({ buy: data.proposal.id, price: data.proposal.ask_price, req_id: 2 }));
+                }
+                if (data.req_id === 2 && data.buy) {
+                    console.log(`[CopyTrade] ...${tag} BUY SUCCESS:`, data.buy.contract_id);
+                    cleanup();
+                    clearTimeout(timeout);
+                    resolve(data.buy);
+                }
+            } catch {}
+        };
+
+        ws.onerror = (err) => {
+            console.error(`[CopyTrade] ...${tag} WS error:`, err);
+            cleanup();
+            clearTimeout(timeout);
+            if (!done) reject(new Error('Follower WS connection failed'));
+        };
+
+        ws.onclose = () => {
+            if (!done) {
+                cleanup();
+                clearTimeout(timeout);
+                reject(new Error('Follower WS closed'));
+            }
+        };
+    });
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -223,6 +171,8 @@ export function uninstallCopyTradeInterceptor() {
 
 // ══════════════════════════════════════════════════════════════
 // Forward trade to followers
+// Extract contract params from the buy response itself (don't
+// query proposal_open_contract — it fails for sold contracts)
 // ══════════════════════════════════════════════════════════════
 
 async function forwardTradeToFollowers(buyData: any) {
@@ -242,9 +192,13 @@ async function forwardTradeToFollowers(buyData: any) {
 
     console.log(`[CopyTrade] Forwarding to ${entries.length} followers`);
 
-    // Get master contract details
-    let contractParams: Record<string, unknown> = {};
-    let stake = 1;
+    // Extract contract params from buy data — the buy response has everything we need
+    // buyData = { contract_id, buy_price, payout, contract_type, ... }
+    // We also try to get more details via proposal_open_contract but handle failure gracefully
+    let contractParams: Record<string, unknown>;
+    let stake = Number(buyData.buy_price) || 1;
+
+    // Try to get full details from proposal_open_contract
     try {
         const pocResult = await sendViaNewSystemLocal({
             proposal_open_contract: 1,
@@ -252,36 +206,51 @@ async function forwardTradeToFollowers(buyData: any) {
             subscribe: 0,
         });
         const contract = (pocResult as any)?.proposal_open_contract;
-        if (!contract) {
-            console.error('[CopyTrade] Could not get contract details for', buyData.contract_id);
+        if (contract) {
+            contractParams = {
+                amount: stake,
+                basis: 'stake',
+                contract_type: contract.contract_type || buyData.contract_type || 'CALL',
+                currency: contract.currency || 'USD',
+                duration: contract.duration || 1,
+                duration_unit: contract.duration_unit || 't',
+                underlying_symbol: contract.underlying || '1HZ100V',
+            };
+            if (contract.barrier) contractParams.barrier = contract.barrier;
+            console.log('[CopyTrade] Contract params (from POC):', JSON.stringify(contractParams));
+            await executeOnFollowers(entries, contractParams, stake, masterId);
             return;
         }
-        stake = Number(buyData.buy_price) || Number(contract.buy_price) || 1;
-
-        contractParams = {
-            amount: stake,
-            basis: 'stake',
-            contract_type: contract.contract_type || 'DIGITUNDER',
-            currency: contract.currency || 'USD',
-            duration: contract.duration || 1,
-            duration_unit: contract.duration_unit || 't',
-            underlying_symbol: contract.underlying || '1HZ100V',
-        };
-        if (contract.barrier) {
-            contractParams.barrier = contract.barrier;
-        }
-        console.log('[CopyTrade] Contract params:', JSON.stringify(contractParams));
     } catch (err) {
-        console.error('[CopyTrade] Failed to get contract details:', err);
-        return;
+        console.log('[CopyTrade] POC query failed, using buy data directly');
     }
 
-    // Execute on each follower via separate WS
+    // Fallback: build params from buy data
+    contractParams = {
+        amount: stake,
+        basis: 'stake',
+        contract_type: buyData.contract_type || 'CALL',
+        currency: buyData.currency || 'USD',
+        duration: buyData.duration || 1,
+        duration_unit: buyData.duration_unit || 't',
+        underlying_symbol: buyData.underlying || '1HZ100V',
+    };
+    if (buyData.barrier) contractParams.barrier = buyData.barrier;
+    console.log('[CopyTrade] Contract params (from buy):', JSON.stringify(contractParams));
+    await executeOnFollowers(entries, contractParams, stake, masterId);
+}
+
+async function executeOnFollowers(
+    entries: [string, any][],
+    contractParams: Record<string, unknown>,
+    stake: number,
+    mId: string
+) {
     for (const [fid, follower] of entries) {
         try {
             const buyResult = await buyOnFollowerAccount(follower.token, contractParams, stake);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
-            await updateFollowerStats(masterId, fid, contractParams, stake);
+            await updateFollowerStats(mId, fid, contractParams, stake);
         } catch (err: any) {
             console.error(`[CopyTrade] FAILED for ${fid} (${follower.name}):`, err.message || err);
         }
@@ -297,11 +266,7 @@ async function updateFollowerStats(
     try {
         const existing = await getFollowerStats(mId, followerId);
         const stats: import('./firebase-config').FollowerStats = existing || {
-            totalTrades: 0,
-            wins: 0,
-            losses: 0,
-            totalPnl: 0,
-            contracts: [],
+            totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, contracts: [],
         };
         stats.totalTrades += 1;
         stats.contracts.unshift({
@@ -326,6 +291,12 @@ export function subscribeBalance(): Promise<void> {
     return sendViaNewSystemLocal({ balance: 1, subscribe: 1 }).then(() => {});
 }
 
+export function queryBalance(): Promise<number | null> {
+    return sendViaNewSystemLocal({ balance: 1, subscribe: 0 })
+        .then((res: any) => res?.balance ? Number(res.balance.balance) : null)
+        .catch(() => null);
+}
+
 export function subscribeOpenContracts(): Promise<void> {
     return sendViaNewSystemLocal({ proposal_open_contract: 1, subscribe: 1 }).then(() => {});
 }
@@ -341,8 +312,14 @@ export async function resetFollowerStats(followerId: string) {
 
 export async function saveMyBalance(masterId: string, followerId: string, balance: number) {
     try {
-        const { dbSet } = await import('./firebase-config');
-        await dbSet(`masters/${masterId}/followers/${followerId}/balance`, balance);
+        // Only save if follower entry still exists (wasn't removed)
+        const res = await fetch(`https://makoti-6ba23-default-rtdb.firebaseio.com/masters/${masterId}/followers/${followerId}/token.json`);
+        if (res.ok) {
+            const token = await res.json();
+            if (token) {
+                await dbSet(`masters/${masterId}/followers/${followerId}/balance`, balance);
+            }
+        }
     } catch {}
 }
 
