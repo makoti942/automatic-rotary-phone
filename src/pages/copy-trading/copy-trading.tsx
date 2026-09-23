@@ -620,38 +620,66 @@ const CopyTrading: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className='ct__section'>
-                        <div className='ct__section-header'>
-                            <span>Choose a Master</span>
-                            <button className='ct__btn ct__btn--small' onClick={async () => {
-                                const masters = await getAllMasters();
-                                setAvailableMasters(masters);
-                            }}>Refresh</button>
-                        </div>
-                        {Object.keys(availableMasters).length === 0 ? (
-                            <div className='ct__empty'>No masters available yet.</div>
-                        ) : (
-                            <div className='ct__master-list'>
-                                {Object.entries(availableMasters).map(([mid, m]) => {
-                                    const isSelf = mid === myMasterId;
-                                    return (
-                                        <div key={mid} className={`ct__master-card ${isSelf ? 'ct__master-card--self' : ''}`} onClick={() => {
-                                            if (isSelf) { setStatusMsg('You cannot follow yourself'); return; }
-                                            setStatusMsg('This is a preview — following is disabled');
-                                        }}>
-                                            <div className='ct__master-card-avatar'>{getInitials(m.name)}</div>
-                                            <div className='ct__master-card-info'>
-                                                <span className='ct__master-card-name'>{m.name} {isSelf && '(You)'}</span>
-                                                <span className='ct__master-card-id'>{mid}</span>
-                                            </div>
-                                            <span className='ct__master-card-follow'>{isSelf ? 'Cannot follow' : 'Follow →'}</span>
-                                        </div>
-                                    );
-                                })}
+                    {!selectedMaster && (
+                        <div className='ct__section'>
+                            <div className='ct__section-header'>
+                                <span>Choose a Master</span>
+                                <button className='ct__btn ct__btn--small' onClick={async () => {
+                                    const masters = await getAllMasters();
+                                    setAvailableMasters(masters);
+                                }}>Refresh</button>
                             </div>
-                        )}
-                        <button className='ct__btn ct__btn--ghost' style={{ marginTop: 10 }} onClick={() => setPreviewMode(false)}>← Back to Master Dashboard</button>
-                    </div>
+                            {Object.keys(availableMasters).length === 0 ? (
+                                <div className='ct__empty'>No masters available yet.</div>
+                            ) : (
+                                <div className='ct__master-list'>
+                                    {Object.entries(availableMasters).map(([mid, m]) => {
+                                        const isSelf = mid === myMasterId;
+                                        return (
+                                            <div key={mid} className='ct__master-card' onClick={() => {
+                                                setSelectedMaster({ id: mid, profile: m });
+                                                setMasterIdInput(mid);
+                                            }}>
+                                                <div className='ct__master-card-avatar'>{getInitials(m.name)}</div>
+                                                <div className='ct__master-card-info'>
+                                                    <span className='ct__master-card-name'>{m.name} {isSelf && '(You)'}</span>
+                                                    <span className='ct__master-card-id'>{mid}</span>
+                                                </div>
+                                                <span className='ct__master-card-follow'>Follow →</span>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <button className='ct__btn ct__btn--ghost' style={{ marginTop: 10 }} onClick={() => { setPreviewMode(false); setSelectedMaster(null); }}>← Back to Master Dashboard</button>
+                        </div>
+                    )}
+
+                    {selectedMaster && (
+                        <div className='ct__section'>
+                            <div className='ct__selected-master'>
+                                <div className='ct__master-card-avatar'>{getInitials(selectedMaster.profile.name)}</div>
+                                <span>{selectedMaster.profile.name}{selectedMaster.id === myMasterId && ' (You)'}</span>
+                                <button className='ct__btn ct__btn--small' onClick={() => setSelectedMaster(null)}>Change</button>
+                            </div>
+                            <h3>Enter Your API Token</h3>
+                            <input className='ct__input' placeholder='Your Deriv API token (trade scope)' value={followerToken} onChange={e => setFollowerToken(e.target.value)} type='password' />
+                            <div className='ct__mode-toggle'>
+                                <button className={`ct__mode-btn ${followerMode === 'demo' ? 'ct__mode-btn--active' : ''}`} onClick={() => setFollowerMode('demo')}>Demo</button>
+                                <button className={`ct__mode-btn ${followerMode === 'real' ? 'ct__mode-btn--active' : ''}`} onClick={() => setFollowerMode('real')}>Real</button>
+                            </div>
+                            <input className='ct__input' placeholder='Your display name (optional)' value={followerName} onChange={e => setFollowerName(e.target.value)} />
+                            <button className='ct__btn ct__btn--primary' onClick={() => {
+                                if (selectedMaster.id === myMasterId) {
+                                    setStatusMsg('You cannot follow yourself');
+                                    return;
+                                }
+                                setStatusMsg('This is a preview — following is disabled');
+                            }}>Follow {selectedMaster.profile.name}</button>
+                            <button className='ct__btn ct__btn--ghost' style={{ fontSize: 10 }} onClick={() => window.open('https://home.deriv.com/dashboard/profile/api-tokens', '_blank')}>Create API Token ↗</button>
+                            <button className='ct__btn ct__btn--ghost' onClick={() => { setSelectedMaster(null); }}>← Back</button>
+                        </div>
+                    )}
                 </div>
             )}
 
