@@ -52,11 +52,11 @@ import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
 import TradingViewComponent from '@/components/trading-view-chart/trading-view';
-import CopyTrading from '../copy-trading/copy-trading';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
 const Tutorial = lazy(() => import('../tutorials'));
+const CopyTrading = lazy(() => import('../copy-trading/copy-trading'));
 
 const AppWrapper = observer(() => {
     const { connectionStatus } = useApiBase();
@@ -505,7 +505,9 @@ const AppWrapper = observer(() => {
                                 }
                                 id='id-copy-trading'
                             >
-                                <CopyTrading />
+                                <Suspense fallback={<div style={{ padding: 12, color: '#999' }}>Loading...</div>}>
+                                    <CopyTrading />
+                                </Suspense>
                             </div>
                             <div
                                 label={

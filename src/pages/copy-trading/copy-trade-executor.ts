@@ -116,7 +116,6 @@ async function buyOnFollowerAccount(
                 duration_unit: contractParams.duration_unit,
                 underlying_symbol: contractParams.underlying_symbol,
                 barrier: contractParams.barrier,
-                subscribe: 0,
                 req_id: 1,
             }));
         };
