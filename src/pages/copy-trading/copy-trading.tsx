@@ -159,7 +159,6 @@ const CopyTrading: React.FC = () => {
         if (id && mode === 'master') {
             installCopyTradeInterceptor(id);
         }
-        return () => uninstallCopyTradeInterceptor();
     }, [mode]);
 
     // ── Listen for balance + trade results ──
@@ -268,8 +267,8 @@ const CopyTrading: React.FC = () => {
         let timer: ReturnType<typeof setTimeout>;
         const poll = () => {
             if (!alive) return;
-            loadFollowerData().finally(() => {
-                if (alive) timer = setTimeout(poll, 8000);
+            loadFollowerData().catch(() => {}).finally(() => {
+                try { if (alive) timer = setTimeout(poll, 10000); } catch {}
             });
         };
         poll();
@@ -285,8 +284,8 @@ const CopyTrading: React.FC = () => {
         const poll = () => {
             if (!alive) return;
             getAllMasters().then(masters => {
-                if (alive) { setAvailableMasters(masters); timer = setTimeout(poll, 8000); }
-            });
+                try { if (alive) { setAvailableMasters(masters); timer = setTimeout(poll, 10000); } } catch {}
+            }).catch(() => { try { if (alive) timer = setTimeout(poll, 10000); } catch {} });
         };
         poll();
         return () => { alive = false; clearTimeout(timer); };
@@ -305,22 +304,25 @@ const CopyTrading: React.FC = () => {
             if (!alive) return;
             getFollowerTrades(masterForFollower, myId).then(trades => {
                 if (!alive) return;
-                if (trades) {
-                    const arr: TradeRecord[] = Object.values(trades)
-                        .map((t: any) => ({
-                            id: t.id,
-                            type: t.type,
-                            stake: t.stake,
-                            pnl: t.pnl,
-                            time: t.time,
-                            status: t.status === 'pending' ? 'pending' : t.pnl > 0 ? 'won' : 'lost',
-                        }))
-                        .sort((a: TradeRecord, b: TradeRecord) => b.time - a.time)
-                        .slice(0, 100);
-                    setFollowerFirebaseTrades(arr);
-                    setTradeHistory(arr);
-                }
-                if (alive) timer = setTimeout(load, 3000);
+                try {
+                    if (trades) {
+                        const arr: TradeRecord[] = Object.values(trades)
+                            .map((t: any) => ({
+                                id: t.id,
+                                type: t.type,
+                                stake: t.stake,
+                                pnl: t.pnl,
+                                time: t.time,
+                                status: t.status === 'pending' ? 'pending' : t.pnl > 0 ? 'won' : 'lost',
+                            }))
+                            .sort((a: TradeRecord, b: TradeRecord) => b.time - a.time)
+                            .slice(0, 100);
+                        setFollowerFirebaseTrades(arr);
+                        setTradeHistory(arr);
+                    }
+                } catch {}
+                try { if (alive) timer = setTimeout(load, 3000); } catch {}
+            }).catch(() => { try { if (alive) timer = setTimeout(load, 3000); } catch {} });
             });
         };
         load();
@@ -568,7 +570,7 @@ const CopyTrading: React.FC = () => {
                             <button className='ct__btn ct__btn--small' onClick={loadFollowerData}>Refresh</button>
                         </div>
                         {followerCount === 0 ? (
-                            <div className='ct__empty'>Share your Master ID: <strong>{myMasterId}</strong></div>
+                            <div className='ct__empty'>Share your name or ID with followers to get started.</div>
                         ) : (
                             <div className='ct__follower-list'>
                                 {Object.entries(followers).map(([fid, f]) => {
