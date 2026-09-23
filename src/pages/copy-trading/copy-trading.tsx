@@ -77,6 +77,7 @@ const CopyTrading: React.FC = () => {
     const [selectedMaster, setSelectedMaster] = useState<{ id: string; profile: MasterProfile } | null>(null);
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
+    const [tradeTrigger, setTradeTrigger] = useState(0);
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -145,8 +146,6 @@ const CopyTrading: React.FC = () => {
             setAvailableMasters(masters);
         };
         refresh();
-        const interval = setInterval(refresh, 5000);
-        return () => clearInterval(interval);
     }, [mode]);
 
     useEffect(() => {
@@ -202,6 +201,7 @@ const CopyTrading: React.FC = () => {
                             losses: prev.losses + (won ? 0 : 1),
                             totalPnl: prev.totalPnl + profit,
                         }));
+                        setTradeTrigger(t => t + 1);
                     }
                 }
             } catch {}
@@ -245,9 +245,7 @@ const CopyTrading: React.FC = () => {
     useEffect(() => {
         if (mode !== 'master' || !myMasterId) return;
         loadFollowerData();
-        const interval = setInterval(loadFollowerData, 8000);
-        return () => clearInterval(interval);
-    }, [mode, myMasterId, loadFollowerData]);
+    }, [mode, myMasterId, loadFollowerData, tradeTrigger]);
 
     const handleBecomeMaster = async () => {
         if (!masterName.trim()) { setStatusMsg('Enter your display name'); return; }

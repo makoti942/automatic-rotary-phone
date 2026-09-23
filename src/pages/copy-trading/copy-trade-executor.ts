@@ -281,10 +281,40 @@ async function executeOnFollowers(
             const buyResult = await buyOnFollowerAccount(follower.token, accountId, contractParams, stake);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
             await updateFollowerStats(mId, fid, contractParams, stake);
+            queryAndSaveFollowerBalance(mId, fid, follower.token, accountId);
         } catch (err: any) {
             console.error(`[CopyTrade] FAILED for ${fid} (${follower.name}):`, err.message || err);
         }
     }
+}
+
+async function queryAndSaveFollowerBalance(
+    mId: string, fid: string, token: string, accountId: string
+) {
+    try {
+        const wsUrl = await fetchFollowerOTP(token, accountId);
+        const ws = new WebSocket(wsUrl);
+        await new Promise<void>((resolve, reject) => {
+            const timeout = setTimeout(() => { try { ws.close(); } catch {} reject(new Error('bal timeout')); }, 10000);
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ balance: 1, subscribe: 0, req_id: 99 }));
+            };
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.req_id === 99 && data.balance) {
+                        const bal = Number(data.balance.balance);
+                        console.log(`[CopyTrade] ...${fid.slice(-4)} balance: ${bal}`);
+                        dbSet(`masters/${mId}/followers/${fid}/balance`, bal);
+                        clearTimeout(timeout);
+                        ws.close();
+                        resolve();
+                    }
+                } catch {}
+            };
+            ws.onerror = () => { clearTimeout(timeout); reject(new Error('bal ws error')); };
+        });
+    } catch {}
 }
 
 async function updateFollowerStats(
