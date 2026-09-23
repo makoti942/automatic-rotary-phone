@@ -411,9 +411,6 @@ const CopyTrading: React.FC = () => {
                         <button className={`ct__mode-btn ${followerMode === 'real' ? 'ct__mode-btn--active' : ''}`} onClick={() => setFollowerMode('real')}>Real</button>
                     </div>
                     <input className='ct__input' placeholder='Your display name (optional)' value={followerName} onChange={e => setFollowerName(e.target.value)} />
-                    <p className='ct__setup-desc' style={{ margin: '4px 0', fontSize: 10 }}>
-                        Choose Demo or Real to match your token. Your account type determines where trades execute.
-                    </p>
                     <button className='ct__btn ct__btn--primary' onClick={handleFollow}>Follow {selectedMaster.profile.name}</button>
                     <button className='ct__btn ct__btn--ghost' onClick={() => { setSelectedMaster(null); setMode('none'); localStorage.removeItem('mw_copy_mode'); }}>Back</button>
                 </div>
@@ -466,11 +463,8 @@ const CopyTrading: React.FC = () => {
                                         <div key={fid} className='ct__follower'>
                                             <div className='ct__follower-avatar'>{getInitials(f.name || 'Follower')}</div>
                                             <div className='ct__follower-info'>
-                                            <span className='ct__follower-name'>{f.name || 'Follower'}</span>
+                                            <span className='ct__follower-name'>{f.name || 'Follower'}{fBal !== undefined && <span className='ct__follower-balance-inline'> · ${fBal.toFixed(2)}</span>}</span>
                                             <span className='ct__follower-id'>{f.account_id || fid}</span>
-                                                {fBal !== undefined && (
-                                                    <span className='ct__follower-balance'>Balance: ${fBal.toFixed(2)}</span>
-                                                )}
                                                 {fs && (
                                                     <span className='ct__follower-stats'>
                                                         {fs.totalTrades} trades · {fs.wins}W/{fs.losses}L ·
@@ -525,7 +519,6 @@ const CopyTrading: React.FC = () => {
                         <div className='ct__avatar ct__avatar--follower'>📋</div>
                         <div className='ct__header-info'>
                             <h3>Following Master</h3>
-                            <span className='ct__id'>Master ID: {masterIdInput}</span>
                         </div>
                     </div>
                     <div className='ct__follower-status'>
@@ -534,7 +527,10 @@ const CopyTrading: React.FC = () => {
                     </div>
 
                     <div className='ct__section'>
-                        <div className='ct__section-header'><span>Your Trade History</span></div>
+                        <div className='ct__section-header'>
+                            <span>Your Trade History</span>
+                            <button className='ct__btn ct__btn--small' onClick={handleClearStats}>Clear</button>
+                        </div>
                         {tradeHistory.length === 0 ? (
                             <div className='ct__empty'>No trades yet. Waiting for master to trade...</div>
                         ) : (
