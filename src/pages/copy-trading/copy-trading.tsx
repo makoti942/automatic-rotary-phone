@@ -82,6 +82,7 @@ const CopyTrading: React.FC = () => {
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
     const [tradeTrigger, setTradeTrigger] = useState(0);
     const [followerFirebaseTrades, setFollowerFirebaseTrades] = useState<TradeRecord[]>([]);
+    const [previewMode, setPreviewMode] = useState(false);
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -262,19 +263,32 @@ const CopyTrading: React.FC = () => {
     // ── Periodic polling: master follower list ──
     useEffect(() => {
         if (mode !== 'master' || !myMasterId) return;
-        const id = setInterval(() => { loadFollowerData(); }, 8000);
-        return () => clearInterval(id);
+        let alive = true;
+        let timer: ReturnType<typeof setTimeout>;
+        const poll = () => {
+            if (!alive) return;
+            loadFollowerData().finally(() => {
+                if (alive) timer = setTimeout(poll, 8000);
+            });
+        };
+        poll();
+        return () => { alive = false; clearTimeout(timer); };
     }, [mode, myMasterId, loadFollowerData]);
 
     // ── Periodic polling: available masters list ──
     useEffect(() => {
         if (localStorage.getItem('mw_copy_follower_master')) return;
         if (mode !== 'none' && mode !== 'follower') return;
-        const id = setInterval(async () => {
-            const masters = await getAllMasters();
-            setAvailableMasters(masters);
-        }, 8000);
-        return () => clearInterval(id);
+        let alive = true;
+        let timer: ReturnType<typeof setTimeout>;
+        const poll = () => {
+            if (!alive) return;
+            getAllMasters().then(masters => {
+                if (alive) { setAvailableMasters(masters); timer = setTimeout(poll, 8000); }
+            });
+        };
+        poll();
+        return () => { alive = false; clearTimeout(timer); };
     }, [mode]);
 
     // ── Follower: poll Firebase trades for real-time display ──
@@ -284,29 +298,39 @@ const CopyTrading: React.FC = () => {
         if (!masterForFollower) return;
         const myId = accountId.current;
         if (!myId) return;
-        const load = async () => {
-            const trades = await getFollowerTrades(masterForFollower, myId);
-            if (trades) {
-                const arr: TradeRecord[] = Object.values(trades)
-                    .map((t: any) => ({
-                        id: t.id,
-                        type: t.type,
-                        stake: t.stake,
-                        pnl: t.pnl,
-                        time: t.time,
-                        status: t.status === 'pending' ? 'pending' : t.pnl > 0 ? 'won' : 'lost',
-                    }))
-                    .sort((a: TradeRecord, b: TradeRecord) => b.time - a.time)
-                    .slice(0, 100);
-                setFollowerFirebaseTrades(arr);
-                // Also merge into local state for consistency
-                setTradeHistory(arr);
-            }
+        let alive = true;
+        let timer: ReturnType<typeof setTimeout>;
+        const load = () => {
+            if (!alive) return;
+            getFollowerTrades(masterForFollower, myId).then(trades => {
+                if (!alive) return;
+                if (trades) {
+                    const arr: TradeRecord[] = Object.values(trades)
+                        .map((t: any) => ({
+                            id: t.id,
+                            type: t.type,
+                            stake: t.stake,
+                            pnl: t.pnl,
+                            time: t.time,
+                            status: t.status === 'pending' ? 'pending' : t.pnl > 0 ? 'won' : 'lost',
+                        }))
+                        .sort((a: TradeRecord, b: TradeRecord) => b.time - a.time)
+                        .slice(0, 100);
+                    setFollowerFirebaseTrades(arr);
+                    setTradeHistory(arr);
+                }
+                if (alive) timer = setTimeout(load, 3000);
+            });
         };
         load();
-        const id = setInterval(load, 3000);
-        return () => clearInterval(id);
+        return () => { alive = false; clearTimeout(timer); };
     }, [mode]);
+
+    // ── Preview mode: load masters list ──
+    useEffect(() => {
+        if (!previewMode) return;
+        getAllMasters().then(masters => setAvailableMasters(masters));
+    }, [previewMode]);
 
     const handleBecomeMaster = async () => {
         if (!masterName.trim()) { setStatusMsg('Enter your display name'); return; }
@@ -391,12 +415,14 @@ const CopyTrading: React.FC = () => {
 
     return (
         <div className='ct'>
-            <div className='ct__balance'>
-                <span className='ct__balance-label'>Balance</span>
-                <span className='ct__balance-value'>
-                    {balance !== null ? `$${balance.toFixed(2)}` : '---'}
-                </span>
-            </div>
+            {mode !== 'follower' && (
+                <div className='ct__balance'>
+                    <span className='ct__balance-label'>Balance</span>
+                    <span className='ct__balance-value'>
+                        {balance !== null ? `$${balance.toFixed(2)}` : '---'}
+                    </span>
+                </div>
+            )}
 
             {statusMsg && (
                 <div className='ct__status' onClick={() => setStatusMsg('')}>{statusMsg}</div>
@@ -479,7 +505,7 @@ const CopyTrading: React.FC = () => {
                     </div>
                     <input className='ct__input' placeholder='Your display name (optional)' value={followerName} onChange={e => setFollowerName(e.target.value)} />
                     <button className='ct__btn ct__btn--primary' onClick={handleFollow}>Follow {selectedMaster.profile.name}</button>
-                    <button className='ct__btn ct__btn--ghost' style={{ fontSize: 10 }} onClick={() => window.open('https://app.derivws.com/account/api-token', '_blank')}>Create API Token ↗</button>
+                    <button className='ct__btn ct__btn--ghost' style={{ fontSize: 10 }} onClick={() => window.open('https://home.deriv.com/dashboard/profile/api-tokens', '_blank')}>Create API Token ↗</button>
                     <button className='ct__btn ct__btn--ghost' onClick={() => { setSelectedMaster(null); setMode('none'); localStorage.removeItem('mw_copy_mode'); }}>Back</button>
                 </div>
             )}
@@ -572,12 +598,60 @@ const CopyTrading: React.FC = () => {
                         )}
                     </div>
 
-                    <button className='ct__btn ct__btn--ghost' onClick={() => {
-                        setMode('none');
-                        setMyMasterId('');
-                        localStorage.removeItem('mw_copy_mode');
-                        localStorage.removeItem('mw_copy_master_id');
-                    }}>Stop Being Master</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <button className='ct__btn ct__btn--ghost' onClick={() => setPreviewMode(true)}>Preview as Follower</button>
+                        <button className='ct__btn ct__btn--ghost' onClick={() => {
+                            setMode('none');
+                            setMyMasterId('');
+                            localStorage.removeItem('mw_copy_mode');
+                            localStorage.removeItem('mw_copy_master_id');
+                        }}>Stop Being Master</button>
+                    </div>
+                </div>
+            )}
+
+            {mode === 'master' && myMasterId && previewMode && (
+                <div className='ct__dashboard' style={{ marginTop: 12 }}>
+                    <div className='ct__header'>
+                        <div className='ct__avatar'>👁</div>
+                        <div className='ct__header-info'>
+                            <h3>Follower Preview</h3>
+                            <span className='ct__id' style={{ fontSize: 9, opacity: 0.6 }}>This is how followers see the app</span>
+                        </div>
+                    </div>
+
+                    <div className='ct__section'>
+                        <div className='ct__section-header'>
+                            <span>Choose a Master</span>
+                            <button className='ct__btn ct__btn--small' onClick={async () => {
+                                const masters = await getAllMasters();
+                                setAvailableMasters(masters);
+                            }}>Refresh</button>
+                        </div>
+                        {Object.keys(availableMasters).length === 0 ? (
+                            <div className='ct__empty'>No masters available yet.</div>
+                        ) : (
+                            <div className='ct__master-list'>
+                                {Object.entries(availableMasters).map(([mid, m]) => {
+                                    const isSelf = mid === myMasterId;
+                                    return (
+                                        <div key={mid} className={`ct__master-card ${isSelf ? 'ct__master-card--self' : ''}`} onClick={() => {
+                                            if (isSelf) { setStatusMsg('You cannot follow yourself'); return; }
+                                            setStatusMsg('This is a preview — following is disabled');
+                                        }}>
+                                            <div className='ct__master-card-avatar'>{getInitials(m.name)}</div>
+                                            <div className='ct__master-card-info'>
+                                                <span className='ct__master-card-name'>{m.name} {isSelf && '(You)'}</span>
+                                                <span className='ct__master-card-id'>{mid}</span>
+                                            </div>
+                                            <span className='ct__master-card-follow'>{isSelf ? 'Cannot follow' : 'Follow →'}</span>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <button className='ct__btn ct__btn--ghost' style={{ marginTop: 10 }} onClick={() => setPreviewMode(false)}>← Back to Master Dashboard</button>
+                    </div>
                 </div>
             )}
 

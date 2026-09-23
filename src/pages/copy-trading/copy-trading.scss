@@ -406,6 +406,22 @@
             border-color: #fbbf24;
             transform: translateY(-1px);
         }
+
+        &--self {
+            border-color: rgba(251, 191, 36, 0.3);
+            background: rgba(251, 191, 36, 0.05);
+            cursor: default;
+
+            &:hover {
+                border-color: rgba(251, 191, 36, 0.3);
+                transform: none;
+            }
+
+            .ct__master-card-follow {
+                color: var(--text-less-prominent);
+                font-size: 9px;
+            }
+        }
     }
 
     &__master-card-avatar {
