@@ -345,3 +345,11 @@ export async function saveMyBalance(masterId: string, followerId: string, balanc
         await dbSet(`masters/${masterId}/followers/${followerId}/balance`, balance);
     } catch {}
 }
+
+export function hasContractBeenCounted(contractId: string): boolean {
+    return countedContractIds.has(contractId);
+}
+
+export function markContractCounted(contractId: string) {
+    countedContractIds.add(contractId);
+}
