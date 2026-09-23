@@ -76,6 +76,7 @@ const CopyTrading: React.FC = () => {
     const [selectedMaster, setSelectedMaster] = useState<{ id: string; profile: MasterProfile } | null>(null);
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
+    const removedFollowersRef = useRef<Set<string>>(new Set());
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -205,7 +206,14 @@ const CopyTrading: React.FC = () => {
         if (mode !== 'master' || !myMasterId) return;
         const f = await getFollowers(myMasterId);
         if (!f) return;
-        setFollowers(f);
+        // Filter out recently removed followers
+        const filtered: Record<string, FollowerEntry> = {};
+        for (const [fid, entry] of Object.entries(f)) {
+            if (!removedFollowersRef.current.has(fid)) {
+                filtered[fid] = entry;
+            }
+        }
+        setFollowers(filtered);
         const statsMap: Record<string, FollowerStats> = {};
         const balMap: Record<string, number> = {};
         for (const [fid, f] of Object.entries(f)) {
@@ -276,6 +284,7 @@ const CopyTrading: React.FC = () => {
     };
 
     const handleRemoveFollower = async (fid: string) => {
+        removedFollowersRef.current.add(fid);
         await removeFollower(myMasterId, fid);
         const updated = { ...followers };
         delete updated[fid];
