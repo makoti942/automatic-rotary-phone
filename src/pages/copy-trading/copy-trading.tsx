@@ -140,6 +140,17 @@ const CopyTrading: React.FC = () => {
     }, [loadMasterProfile, loadFollowerStatus]);
 
     useEffect(() => {
+        if (mode !== 'none') return;
+        const refresh = async () => {
+            const masters = await getAllMasters();
+            setAvailableMasters(masters);
+        };
+        refresh();
+        const interval = setInterval(refresh, 5000);
+        return () => clearInterval(interval);
+    }, [mode]);
+
+    useEffect(() => {
         const id = localStorage.getItem('mw_copy_master_id');
         if (id && mode === 'master') {
             installCopyTradeInterceptor(id);
