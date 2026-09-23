@@ -1,10 +1,4 @@
-import {
-    getFollowers,
-    getFollowerStats,
-    setFollowerStats,
-    clearFollowerStats,
-    type FollowerStats,
-} from './firebase-config';
+import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats } from './firebase-config';
 
 // ══════════════════════════════════════════════════════════════
 // INLINED from @/auth/NewDerivAuth — NEVER import that module
@@ -84,104 +78,118 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Per-follower WebSocket execution
-// Each follower gets their own WS connection with their token
+// Per-follower WebSocket — opens a SEPARATE WS for each follower
+// with their token, authorizes, gets proposal, buys.
+// Uses the SAME API endpoint as the main app.
 // ══════════════════════════════════════════════════════════════
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const WS_BASE = 'wss://ws.derivws.com/websockets/v3';
+const API_WS_URL = 'wss://api.derivws.com/trading/v1/options/ws/demo';
+
+function waitForWsOpen(ws: WebSocket): Promise<void> {
+    return new Promise((resolve, reject) => {
+        if (ws.readyState === WebSocket.OPEN) { resolve(); return; }
+        ws.onopen = () => resolve();
+        ws.onerror = () => reject(new Error('WS open failed'));
+    });
+}
+
+function wsSend(ws: WebSocket, msg: any): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const reqId = msg.req_id || Date.now();
+        const toSend = { ...convertToNewFormat(msg), req_id: reqId };
+        const timeout = setTimeout(() => {
+            ws.removeEventListener('message', handler);
+            reject(new Error('WS response timeout'));
+        }, 30000);
+        const handler = (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.req_id === reqId) {
+                    clearTimeout(timeout);
+                    ws.removeEventListener('message', handler);
+                    if (data.error) reject(data);
+                    else resolve(data);
+                }
+            } catch {}
+        };
+        ws.addEventListener('message', handler);
+        ws.send(JSON.stringify(toSend));
+    });
+}
+
+function waitForAuth(ws: WebSocket): Promise<any> {
+    return new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => {
+            ws.removeEventListener('message', handler);
+            reject(new Error('Auth timeout'));
+        }, 15000);
+        const handler = (event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.msg_type === 'authorize') {
+                    clearTimeout(timeout);
+                    ws.removeEventListener('message', handler);
+                    if (data.error) reject(data);
+                    else resolve(data);
+                }
+            } catch {}
+        };
+        ws.addEventListener('message', handler);
+    });
+}
 
 async function buyOnFollowerAccount(
     followerToken: string,
     contractParams: Record<string, unknown>,
     stake: number
 ): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const wsUrl = `${WS_BASE}?app_id=${APP_ID}&token=${followerToken}`;
-        console.log(`[CopyTrade] Opening follower WS for token ending ...${followerToken.slice(-4)}`);
-        const ws = new WebSocket(wsUrl);
-        let authorized = false;
-        let tradeComplete = false;
+    const tag = followerToken.slice(-4);
+    console.log(`[CopyTrade] Opening follower WS ...${tag}`);
 
-        const cleanup = () => {
-            try { ws.close(); } catch {}
-        };
+    const ws = new WebSocket(`${API_WS_URL}?app_id=${APP_ID}`);
+    try {
+        await waitForWsOpen(ws);
+        console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
 
-        const timeout = setTimeout(() => {
-            cleanup();
-            if (!tradeComplete) reject(new Error('Follower buy timeout'));
-        }, 30000);
+        // Authorize with follower's token
+        const authPromise = waitForAuth(ws);
+        ws.send(JSON.stringify({ authorize: followerToken, req_id: 0 }));
+        await authPromise;
+        console.log(`[CopyTrade] ...${tag} authorized`);
 
-        ws.onopen = () => {
-            console.log(`[CopyTrade] Follower WS open, getting proposal...`);
-            ws.send(JSON.stringify({
-                proposal: 1,
-                amount: stake,
-                basis: 'stake',
-                contract_type: contractParams.contract_type,
-                currency: contractParams.currency,
-                duration: contractParams.duration,
-                duration_unit: contractParams.duration_unit,
-                underlying_symbol: contractParams.underlying_symbol,
-                barrier: contractParams.barrier,
-                subscribe: 0,
-                req_id: 1,
-            }));
-        };
+        // Get proposal
+        console.log(`[CopyTrade] ...${tag} getting proposal...`);
+        const proposalResult = await wsSend(ws, {
+            proposal: 1,
+            amount: stake,
+            basis: 'stake',
+            contract_type: contractParams.contract_type,
+            currency: contractParams.currency,
+            duration: contractParams.duration,
+            duration_unit: contractParams.duration_unit,
+            underlying_symbol: contractParams.underlying_symbol,
+            barrier: contractParams.barrier,
+            subscribe: 0,
+        });
+        const proposal = proposalResult.proposal;
+        if (!proposal) throw new Error('No proposal returned');
+        console.log(`[CopyTrade] ...${tag} proposal: ${proposal.id}, buying...`);
 
-        ws.onmessage = (event) => {
-            try {
-                const data = JSON.parse(event.data);
-
-                // Handle proposal response
-                if (data.req_id === 1 && data.proposal) {
-                    console.log(`[CopyTrade] Got proposal: ${data.proposal.id}, buying...`);
-                    ws.send(JSON.stringify({
-                        buy: data.proposal.id,
-                        price: data.proposal.ask_price,
-                        req_id: 2,
-                    }));
-                }
-
-                // Handle buy response
-                if (data.req_id === 2) {
-                    if (data.error) {
-                        console.error(`[CopyTrade] Follower buy error:`, data.error.message);
-                        tradeComplete = true;
-                        clearTimeout(timeout);
-                        cleanup();
-                        reject(new Error(data.error.message));
-                    } else if (data.buy) {
-                        console.log(`[CopyTrade] Follower buy success:`, data.buy.contract_id);
-                        tradeComplete = true;
-                        clearTimeout(timeout);
-                        cleanup();
-                        resolve(data.buy);
-                    }
-                }
-            } catch {}
-        };
-
-        ws.onerror = (err) => {
-            console.error(`[CopyTrade] Follower WS error:`, err);
-            tradeComplete = true;
-            clearTimeout(timeout);
-            cleanup();
-            reject(new Error('Follower WS error'));
-        };
-
-        ws.onclose = () => {
-            if (!tradeComplete) {
-                tradeComplete = true;
-                clearTimeout(timeout);
-                reject(new Error('Follower WS closed unexpectedly'));
-            }
-        };
-    });
+        // Buy
+        const buyResult = await wsSend(ws, {
+            buy: proposal.id,
+            price: proposal.ask_price,
+        });
+        console.log(`[CopyTrade] ...${tag} BUY SUCCESS:`, buyResult.buy?.contract_id);
+        return buyResult.buy;
+    } finally {
+        try { ws.close(); } catch {}
+    }
 }
 
 // ══════════════════════════════════════════════════════════════
-// Global interceptor — listens for master's buy messages
+// Global interceptor
 // ══════════════════════════════════════════════════════════════
 
 let interceptorInstalled = false;
@@ -214,7 +222,7 @@ export function uninstallCopyTradeInterceptor() {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Forward trade to followers via per-follower WS
+// Forward trade to followers
 // ══════════════════════════════════════════════════════════════
 
 async function forwardTradeToFollowers(buyData: any) {
@@ -288,7 +296,7 @@ async function updateFollowerStats(
 ) {
     try {
         const existing = await getFollowerStats(mId, followerId);
-        const stats: FollowerStats = existing || {
+        const stats: import('./firebase-config').FollowerStats = existing || {
             totalTrades: 0,
             wins: 0,
             losses: 0,
@@ -311,7 +319,7 @@ async function updateFollowerStats(
 }
 
 // ══════════════════════════════════════════════════════════════
-// Public helpers used by copy-trading.tsx
+// Public helpers
 // ══════════════════════════════════════════════════════════════
 
 export function subscribeBalance(): Promise<void> {
@@ -329,14 +337,6 @@ export function onTradeMessage(cb: (data: any) => void): () => void {
 export async function resetFollowerStats(followerId: string) {
     if (!masterId) return;
     await clearFollowerStats(masterId, followerId);
-}
-
-export function hasContractBeenCounted(contractId: string): boolean {
-    return countedContractIds.has(contractId);
-}
-
-export function markContractCounted(contractId: string) {
-    countedContractIds.add(contractId);
 }
 
 export async function saveMyBalance(masterId: string, followerId: string, balance: number) {

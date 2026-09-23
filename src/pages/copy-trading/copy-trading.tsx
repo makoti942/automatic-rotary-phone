@@ -76,7 +76,6 @@ const CopyTrading: React.FC = () => {
     const [selectedMaster, setSelectedMaster] = useState<{ id: string; profile: MasterProfile } | null>(null);
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
-    const removedFollowersRef = useRef<Set<string>>(new Set());
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -207,9 +206,12 @@ const CopyTrading: React.FC = () => {
         const f = await getFollowers(myMasterId);
         if (!f) return;
         // Filter out recently removed followers
+        let removed: Set<string>;
+        try { removed = new Set(JSON.parse(localStorage.getItem('mw_copy_removed') || '[]')); }
+        catch { removed = new Set(); }
         const filtered: Record<string, FollowerEntry> = {};
         for (const [fid, entry] of Object.entries(f)) {
-            if (!removedFollowersRef.current.has(fid)) {
+            if (!removed.has(fid)) {
                 filtered[fid] = entry;
             }
         }
@@ -284,7 +286,13 @@ const CopyTrading: React.FC = () => {
     };
 
     const handleRemoveFollower = async (fid: string) => {
-        removedFollowersRef.current.add(fid);
+        // Add to localStorage removed set
+        let removed: Set<string>;
+        try { removed = new Set(JSON.parse(localStorage.getItem('mw_copy_removed') || '[]')); }
+        catch { removed = new Set(); }
+        removed.add(fid);
+        localStorage.setItem('mw_copy_removed', JSON.stringify([...removed]));
+
         await removeFollower(myMasterId, fid);
         const updated = { ...followers };
         delete updated[fid];
