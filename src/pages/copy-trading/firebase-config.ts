@@ -75,8 +75,12 @@ export async function getAllMasters(): Promise<Record<string, MasterProfile>> {
     if (!data) return {};
     const result: Record<string, MasterProfile> = {};
     for (const [key, value] of Object.entries(data)) {
-        if (value && typeof value === 'object' && (value as any).account_id && (value as any).name) {
-            result[key] = value as MasterProfile;
+        if (value && typeof value === 'object') {
+            const v = value as any;
+            // Masters have created_at but NOT token (followers have token)
+            if (v.account_id && v.name && v.created_at && !v.token) {
+                result[key] = v as MasterProfile;
+            }
         }
     }
     return result;
