@@ -162,83 +162,6 @@ async function buyOnFollowerAccount(
 }
 
 // ══════════════════════════════════════════════════════════════
-// buy_contract_for_multiple_accounts — ONE WS call for ALL followers
-// This is the FASTEST method: uses the master's WS to buy on all
-// follower accounts simultaneously (no OTP delay per follower)
-// ══════════════════════════════════════════════════════════════
-
-async function buyContractForMultipleAccounts(
-    proposalId: string,
-    followers: [string, any][]
-): Promise<boolean> {
-    const ws = (window as any)._newSystemWS;
-    if (!ws || ws.readyState !== WebSocket.OPEN) {
-        console.log('[CopyTrade] Master WS not open, falling back to OTP');
-        return false;
-    }
-    if (!proposalId) {
-        console.log('[CopyTrade] No proposal ID captured, falling back to OTP');
-        return false;
-    }
-
-    // Build tokens map: { accountId: token }
-    const tokens: Record<string, string> = {};
-    for (const [fid, f] of followers) {
-        if (f.token && f.account_id) {
-            tokens[f.account_id] = f.token;
-        }
-    }
-    if (Object.keys(tokens).length === 0) return false;
-
-    console.log(`[CopyTrade] buy_contract_for_multiple_accounts: proposal=${proposalId}, followers=${Object.keys(tokens).length}`);
-
-    return new Promise<boolean>((resolve) => {
-        let done = false;
-        const reqId = Date.now();
-        const cleanup = () => { done = true; window.removeEventListener('newSystemMessage', handler); };
-        const timeout = setTimeout(() => { cleanup(); resolve(false); }, 15000);
-
-        const handler = (event: Event) => {
-            if (done) return;
-            try {
-                const parsed = parseEventDetail((event as CustomEvent).detail);
-                if (!parsed) return;
-                if (parsed.req_id === reqId) {
-                    cleanup();
-                    clearTimeout(timeout);
-                    if (parsed.error) {
-                        console.error('[CopyTrade] buy_contract_for_multiple_accounts error:', parsed.error.message);
-                        resolve(false);
-                    } else if (parsed.buy_contract_for_multiple_accounts) {
-                        const result = parsed.buy_contract_for_multiple_accounts;
-                        console.log('[CopyTrade] MULTI-BUY SUCCESS:', JSON.stringify(result));
-                        // Save balances from results
-                        if (result.purchases) {
-                            for (const purchase of result.purchases) {
-                                // Find which follower this belongs to by contract_id
-                                if (purchase.balance != null) {
-                                    // We'll match by index to followers
-                                }
-                            }
-                        }
-                        resolve(true);
-                    }
-                }
-            } catch {}
-        };
-
-        window.addEventListener('newSystemMessage', handler);
-        ws.send(JSON.stringify({
-            buy_contract_for_multiple_accounts: 1,
-            proposal_id: proposalId,
-            price: 1, // Amount will be taken from the proposal
-            tokens,
-            req_id: reqId,
-        }));
-    });
-}
-
-// ══════════════════════════════════════════════════════════════
 // Global interceptor
 // ══════════════════════════════════════════════════════════════
 
@@ -248,7 +171,6 @@ let unsubs: (() => void)[] = [];
 let countedContractIds: Set<string> = new Set();
 let cachedFollowers: Record<string, any> = {};
 let lastProposalParams: Record<string, any> | null = null;
-let lastProposalId: string | null = null;
 
 export function refreshCachedFollowers(f: Record<string, any>) {
     cachedFollowers = f;
@@ -261,7 +183,6 @@ export function installCopyTradeInterceptor(mId: string) {
     countedContractIds = new Set();
     cachedFollowers = {};
     lastProposalParams = null;
-    lastProposalId = null;
     console.log('[CopyTrade] Interceptor installed for master:', mId);
 
     // Pre-cache followers from Firebase
@@ -270,24 +191,37 @@ export function installCopyTradeInterceptor(mId: string) {
     // Intercept ALL incoming WS messages to capture proposal params
     const unsub1 = onNewSystemMessageLocal((data: any) => {
         // Capture proposal responses — echo_req has the EXACT contract_type, barrier, etc.
+        // Only capture TRADE proposals (have amount + basis + contract_type), not tick/indicator requests
         if (data.msg_type === 'proposal' && data.proposal && data.proposal.id) {
             const req = data.echo_req || data.proposal;
-            // Flatten parameters if nested: { parameters: { contract_type: "..." } }
             const flat = (req.parameters && typeof req.parameters === 'object')
                 ? { ...req, ...req.parameters }
                 : req;
-            if (flat.contract_type) {
+            // Must have ALL trade fields — skip tick subscriptions, indicator requests, etc.
+            if (flat.contract_type && flat.amount != null && flat.basis) {
                 lastProposalParams = { ...flat };
-                lastProposalId = data.proposal.id;
                 delete lastProposalParams.req_id;
                 delete lastProposalParams.passthrough;
-                console.log('[CopyTrade] Captured proposal:', data.proposal.id, JSON.stringify(lastProposalParams));
+                console.log('[CopyTrade] Captured TRADE proposal:', flat.contract_type,
+                    '| barrier:', flat.barrier ?? 'none',
+                    '| id:', data.proposal.id);
             }
         }
-        // Detect buy
+        // Detect buy — guard against duplicate contract_ids
         if (data.msg_type === 'buy' && data.buy && data.buy.contract_id) {
-            console.log('[CopyTrade] Master trade detected:', data.buy.contract_id,
-                '| using params:', lastProposalParams?.contract_type || 'NONE');
+            const cid = String(data.buy.contract_id);
+            if (countedContractIds.has(cid)) {
+                console.log('[CopyTrade] Duplicate buy detected, skipping:', cid);
+                return;
+            }
+            countedContractIds.add(cid);
+            // Keep set size manageable
+            if (countedContractIds.size > 500) {
+                const arr = Array.from(countedContractIds);
+                countedContractIds = new Set(arr.slice(-200));
+            }
+            console.log('[CopyTrade] Master trade detected:', cid,
+                '| contract_type:', lastProposalParams?.contract_type || 'NONE');
             forwardTradeToFollowers(data.buy);
         }
     });
@@ -302,7 +236,6 @@ export function uninstallCopyTradeInterceptor() {
     countedContractIds = new Set();
     cachedFollowers = {};
     lastProposalParams = null;
-    lastProposalId = null;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -398,19 +331,7 @@ async function forwardTradeToFollowers(buyData: any) {
         console.log('[CopyTrade] Contract params (fallback):', JSON.stringify(contractParams));
     }
 
-    // Try buy_contract_for_multiple_accounts FIRST (single WS call = instant)
-    if (lastProposalId) {
-        console.log('[CopyTrade] Trying buy_contract_for_multiple_accounts...');
-        const multiOk = await buyContractForMultipleAccounts(lastProposalId, entries);
-        if (multiOk) {
-            console.log('[CopyTrade] Multi-buy succeeded! All followers bought simultaneously.');
-            lastProposalId = null;
-            return;
-        }
-        console.log('[CopyTrade] Multi-buy failed, falling back to OTP per-follower');
-    }
-
-    // Fallback: OTP per-follower
+    // OTP per-follower — one contract per follower, sequential
     await executeOnFollowers(entries, contractParams, stake, masterId);
 }
 
