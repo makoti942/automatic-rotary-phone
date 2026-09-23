@@ -533,9 +533,12 @@
     }
 
     &__follower-balance-inline {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 700;
         color: #4ade80;
+        margin-left: auto;
+        margin-right: 8px;
+        white-space: nowrap;
     }
 
     &__trade-list {

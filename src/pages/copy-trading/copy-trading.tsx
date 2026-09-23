@@ -580,7 +580,7 @@ const CopyTrading: React.FC = () => {
                                         <div key={fid} className='ct__follower'>
                                             <div className='ct__follower-avatar'>{getInitials(f.name || 'Follower')}</div>
                                             <div className='ct__follower-info'>
-                                            <span className='ct__follower-name'>{f.name || 'Follower'}{fBal !== undefined && <span className='ct__follower-balance-inline'> · ${fBal.toFixed(2)}</span>}</span>
+                                            <span className='ct__follower-name'>{f.name || 'Follower'}</span>
                                             <span className='ct__follower-id'>
                                                 {visibleFollowerIds.has(fid) ? (f.account_id || fid) : '••••••••'}
                                                 <span className='ct__eye' onClick={() => setVisibleFollowerIds(prev => {
@@ -600,6 +600,7 @@ const CopyTrading: React.FC = () => {
                                                     </span>
                                                 )}
                                             </div>
+                                            {fBal !== undefined && <span className='ct__follower-balance-inline'>${fBal.toFixed(2)}</span>}
                                             <button className='ct__btn ct__btn--danger' onClick={() => handleRemoveFollower(fid)}>Remove</button>
                                         </div>
                                     );
