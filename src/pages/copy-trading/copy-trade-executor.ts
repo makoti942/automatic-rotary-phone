@@ -72,6 +72,7 @@ async function fetchFollowerOTP(followerToken: string, accountId: string): Promi
         method: 'POST',
         headers: {
             Authorization: `Bearer ${followerToken}`,
+            'Deriv-App-ID': APP_ID,
         },
     });
     if (!res.ok) {
@@ -319,12 +320,6 @@ async function updateFollowerStats(
 
 export function subscribeBalance(): Promise<void> {
     return sendViaNewSystemLocal({ balance: 1, subscribe: 1 }).then(() => {});
-}
-
-export function queryBalance(): Promise<number | null> {
-    return sendViaNewSystemLocal({ balance: 1, subscribe: 0 })
-        .then((res: any) => res?.balance ? Number(res.balance.balance) : null)
-        .catch(() => null);
 }
 
 export function subscribeOpenContracts(): Promise<void> {

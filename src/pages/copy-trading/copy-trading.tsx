@@ -19,7 +19,6 @@ import {
     subscribeOpenContracts,
     onTradeMessage,
     saveMyBalance,
-    queryBalance,
     hasContractBeenCounted,
     markContractCounted,
 } from './copy-trade-executor';
@@ -211,22 +210,6 @@ const CopyTrading: React.FC = () => {
         subscribeBalance().catch(() => {});
         subscribeOpenContracts().catch(() => {});
         return () => unsub();
-    }, []);
-
-    // ── Poll balance every 3 seconds and push to Firebase ──
-    useEffect(() => {
-        const pollBalance = async () => {
-            const bal = await queryBalance();
-            if (bal === null) return;
-            setBalance(bal);
-            const mid = localStorage.getItem('mw_copy_master_id');
-            const followingMaster = localStorage.getItem('mw_copy_follower_master');
-            if (mid) saveMyBalance(mid, accountId.current, bal);
-            if (followingMaster) saveMyBalance(followingMaster, accountId.current, bal);
-        };
-        pollBalance();
-        const interval = setInterval(pollBalance, 3000);
-        return () => clearInterval(interval);
     }, []);
 
     // ── Load per-follower stats + balances for master ──
