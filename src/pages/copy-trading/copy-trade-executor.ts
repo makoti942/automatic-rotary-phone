@@ -56,35 +56,15 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
 }
 
 // ══════════════════════════════════════════════════════════════
-// Per-follower trade via OTP flow (Deriv-approved)
-// 1. POST /accounts/{accountId}/otp with follower token
-// 2. Get one-time WebSocket URL
-// 3. Connect → proposal → buy
+// Per-follower trade via DIRECT TOKEN AUTH (fast, instant)
+// 1. Open WS to Deriv
+// 2. Authorize with follower's API token
+// 3. Send proposal → buy
+// No OTP, no REST call — direct WebSocket trading
 // ══════════════════════════════════════════════════════════════
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const API_BASE = 'https://api.derivws.com/trading/v1';
-
-async function fetchFollowerOTP(followerToken: string, accountId: string): Promise<string> {
-    const endpoint = `${API_BASE}/options/accounts/${accountId}/otp`;
-    console.log(`[CopyTrade] Fetching OTP for account ${accountId}...`);
-    const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-            Authorization: `Bearer ${followerToken}`,
-            'Deriv-App-ID': APP_ID,
-        },
-    });
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`OTP fetch failed: ${res.status} ${text}`);
-    }
-    const json = await res.json();
-    const wsUrl = json?.data?.url;
-    if (!wsUrl) throw new Error('No WebSocket URL in OTP response');
-    console.log(`[CopyTrade] OTP received for ${accountId}`);
-    return wsUrl;
-}
+const WS_URL = `wss://api.derivws.com/trading/v1/websockets/v3?app_id=${APP_ID}`;
 
 async function buyOnFollowerAccount(
     followerToken: string,
@@ -93,11 +73,7 @@ async function buyOnFollowerAccount(
     stake: number
 ): Promise<any> {
     const tag = accountId.slice(-4);
-
-    const wsUrl = await fetchFollowerOTP(followerToken, accountId);
-    console.log(`[CopyTrade] Connecting follower WS ...${tag} via OTP`);
-
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(WS_URL);
 
     return new Promise((resolve, reject) => {
         let done = false;
@@ -105,19 +81,8 @@ async function buyOnFollowerAccount(
         const timeout = setTimeout(() => { cleanup(); if (!done) reject(new Error('Follower buy timeout')); }, 30000);
 
         ws.onopen = () => {
-            console.log(`[CopyTrade] ...${tag} WS open, sending proposal...`);
-            ws.send(JSON.stringify({
-                proposal: 1,
-                amount: stake,
-                basis: 'stake',
-                contract_type: contractParams.contract_type,
-                currency: contractParams.currency,
-                duration: contractParams.duration,
-                duration_unit: contractParams.duration_unit,
-                underlying_symbol: contractParams.underlying_symbol,
-                barrier: contractParams.barrier,
-                req_id: 1,
-            }));
+            console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
+            ws.send(JSON.stringify({ authorize: followerToken }));
         };
 
         ws.onmessage = (event) => {
@@ -131,10 +96,30 @@ async function buyOnFollowerAccount(
                     reject(new Error(data.error.message));
                     return;
                 }
+                // Step 1: Authorized → send proposal
+                if (data.authorize) {
+                    console.log(`[CopyTrade] ...${tag} authorized, sending proposal: ${contractParams.contract_type}...`);
+                    ws.send(JSON.stringify({
+                        proposal: 1,
+                        amount: stake,
+                        basis: 'stake',
+                        contract_type: contractParams.contract_type,
+                        currency: contractParams.currency,
+                        duration: contractParams.duration,
+                        duration_unit: contractParams.duration_unit,
+                        underlying_symbol: contractParams.underlying_symbol,
+                        barrier: contractParams.barrier,
+                        req_id: 1,
+                    }));
+                    return;
+                }
+                // Step 2: Proposal received → buy
                 if (data.req_id === 1 && data.proposal) {
                     console.log(`[CopyTrade] ...${tag} proposal: ${data.proposal.id}, buying...`);
                     ws.send(JSON.stringify({ buy: data.proposal.id, price: data.proposal.ask_price, req_id: 2 }));
+                    return;
                 }
+                // Step 3: Buy success → resolve
                 if (data.req_id === 2 && data.buy) {
                     console.log(`[CopyTrade] ...${tag} BUY SUCCESS:`, data.buy.contract_id);
                     cleanup();
@@ -396,16 +381,18 @@ async function queryAndSaveFollowerBalance(
     mId: string, fid: string, token: string, accountId: string
 ) {
     try {
-        const wsUrl = await fetchFollowerOTP(token, accountId);
-        const ws = new WebSocket(wsUrl);
+        const ws = new WebSocket(WS_URL);
         await new Promise<void>((resolve, reject) => {
             const timeout = setTimeout(() => { try { ws.close(); } catch {} reject(new Error('bal timeout')); }, 10000);
             ws.onopen = () => {
-                ws.send(JSON.stringify({ balance: 1, subscribe: 0, req_id: 99 }));
+                ws.send(JSON.stringify({ authorize: token }));
             };
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
+                    if (data.authorize) {
+                        ws.send(JSON.stringify({ balance: 1, subscribe: 0, req_id: 99 }));
+                    }
                     if (data.req_id === 99 && data.balance) {
                         const bal = Number(data.balance.balance);
                         console.log(`[CopyTrade] ...${fid.slice(-4)} balance: ${bal}`);
@@ -413,6 +400,11 @@ async function queryAndSaveFollowerBalance(
                         clearTimeout(timeout);
                         ws.close();
                         resolve();
+                    }
+                    if (data.error) {
+                        clearTimeout(timeout);
+                        ws.close();
+                        reject(new Error(data.error.message));
                     }
                 } catch {}
             };
