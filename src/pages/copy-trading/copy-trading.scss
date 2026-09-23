@@ -5,6 +5,10 @@
     color: var(--text-general);
     font-family: inherit;
 
+    @media (min-width: 768px) {
+        padding: 20px 40px;
+    }
+
     &__preview-banner {
         display: flex;
         align-items: center;

@@ -87,7 +87,7 @@ const AppWrapper = observer(() => {
         [key: string]: string;
     };
     const { clear } = summary_card;
-    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE } = DBOT_TABS;
+    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING } = DBOT_TABS;
     const init_render = React.useRef(true);
     const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'tutorial'];
     const { isDesktop } = useDevice();
@@ -372,7 +372,7 @@ const AppWrapper = observer(() => {
     // [/AI]
     return (
         <React.Fragment>
-            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS })}>
+            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
                 <div
                     className={classNames('main__container', {
                         'main__container--active': active_tour && active_tab === DASHBOARD && !isDesktop,
@@ -541,7 +541,7 @@ const AppWrapper = observer(() => {
                     </div>
                 </div>
             </div>
-            {active_tab !== MANUAL_TRADE && (
+            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && (
                 <DesktopWrapper>
                     <div className='main__run-strategy-wrapper'>
                         <RunStrategy />
@@ -551,7 +551,7 @@ const AppWrapper = observer(() => {
                     <TradingViewModal />
                 </DesktopWrapper>
             )}
-            {active_tab !== MANUAL_TRADE && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
+            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
             <Dialog
                 cancel_button_text={cancel_button_text || localize('Cancel')}
                 className='dc-dialog__wrapper--fixed'
