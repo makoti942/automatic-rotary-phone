@@ -24,6 +24,7 @@ import {
     saveMyBalance,
     hasContractBeenCounted,
     markContractCounted,
+    refreshCachedFollowers,
 } from './copy-trade-executor';
 import './copy-trading.scss';
 
@@ -242,15 +243,14 @@ const CopyTrading: React.FC = () => {
             }
         }
         setFollowers(filtered);
+        refreshCachedFollowers(filtered);
         const statsMap: Record<string, FollowerStats> = {};
         const balMap: Record<string, number> = {};
         for (const [fid, f] of Object.entries(f)) {
             const s = await getFollowerStats(myMasterId, fid);
             if (s) statsMap[fid] = s;
-            // Read balance from follower entry
-            if (typeof f.balance === 'number') {
-                balMap[fid] = f.balance;
-            }
+            // Balance: always set (default 0 if missing)
+            balMap[fid] = typeof f.balance === 'number' ? f.balance : 0;
         }
         setFollowerStatsMap(statsMap);
         setFollowerBalances(balMap);

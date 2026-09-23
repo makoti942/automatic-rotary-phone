@@ -169,13 +169,22 @@ let interceptorInstalled = false;
 let masterId: string | null = null;
 let unsubs: (() => void)[] = [];
 let countedContractIds: Set<string> = new Set();
+let cachedFollowers: Record<string, any> = {};
+
+export function refreshCachedFollowers(f: Record<string, any>) {
+    cachedFollowers = f;
+}
 
 export function installCopyTradeInterceptor(mId: string) {
     if (interceptorInstalled) return;
     interceptorInstalled = true;
     masterId = mId;
     countedContractIds = new Set();
+    cachedFollowers = {};
     console.log('[CopyTrade] Interceptor installed for master:', mId);
+
+    // Pre-cache followers from Firebase
+    getFollowers(mId).then(f => { if (f) cachedFollowers = f; }).catch(() => {});
 
     const unsub1 = onNewSystemMessageLocal((data: any) => {
         if (data.msg_type === 'buy' && data.buy && data.buy.contract_id) {
@@ -203,7 +212,10 @@ export function uninstallCopyTradeInterceptor() {
 async function forwardTradeToFollowers(buyData: any) {
     if (!masterId) return;
 
-    const followers = await getFollowers(masterId);
+    // Use cached followers (instant) — refresh in background
+    let followers = cachedFollowers;
+    getFollowers(masterId).then(f => { if (f) cachedFollowers = f; }).catch(() => {});
+
     if (!followers || Object.keys(followers).length === 0) {
         console.log('[CopyTrade] No followers found');
         return;
@@ -307,9 +319,12 @@ async function executeOnFollowers(
                 status: 'pending',
             });
 
-            // Get balance from buy response (no extra OTP call!)
+            // Get balance from buy response OR query via OTP
             if (buyResult.balance != null) {
                 dbSet(`masters/${mId}/followers/${fid}/balance`, Number(buyResult.balance));
+            } else {
+                // Fallback: query balance via OTP (fire-and-forget)
+                queryAndSaveFollowerBalance(mId, fid, follower.token, accountId);
             }
 
             updateFollowerStats(mId, fid, contractParams, stake);
