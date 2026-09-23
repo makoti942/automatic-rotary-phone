@@ -18,6 +18,7 @@ import {
     subscribeBalance,
     subscribeOpenContracts,
     onTradeMessage,
+    updateMyBalanceToFirebase,
 } from './copy-trade-executor';
 import './copy-trading.scss';
 
@@ -56,9 +57,9 @@ const CopyTrading: React.FC = () => {
     const [availableMasters, setAvailableMasters] = useState<Record<string, MasterProfile>>({});
     const [selectedMaster, setSelectedMaster] = useState<{ id: string; profile: MasterProfile } | null>(null);
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
+    const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
     const accountId = useRef(getAccountId());
 
-    // ── Load master profile from Firebase ──
     const loadMasterProfile = useCallback(async () => {
         const id = localStorage.getItem('mw_copy_master_id');
         if (!id) return;
@@ -73,7 +74,6 @@ const CopyTrading: React.FC = () => {
         }
     }, []);
 
-    // ── Load follower status ──
     const loadFollowerStatus = useCallback(async () => {
         const id = localStorage.getItem('mw_copy_follower_master');
         if (!id) {
@@ -91,7 +91,6 @@ const CopyTrading: React.FC = () => {
         loadFollowerStatus();
     }, [loadMasterProfile, loadFollowerStatus]);
 
-    // ── Install global interceptor for master ──
     useEffect(() => {
         const id = localStorage.getItem('mw_copy_master_id');
         if (id && mode === 'master') {
@@ -100,14 +99,15 @@ const CopyTrading: React.FC = () => {
         return () => uninstallCopyTradeInterceptor();
     }, [mode]);
 
-    // ── Listen for balance + track ALL trades via proposal_open_contract ──
+    // ── Listen for balance + trade results ──
     useEffect(() => {
-        const unsub = onTradeMessage((detail: any) => {
+        const unsub = onTradeMessage((data: any) => {
             try {
-                const data = typeof detail === 'string' ? JSON.parse(detail) : detail;
-
                 if (data.msg_type === 'balance' && data.balance) {
-                    setBalance(Number(data.balance.balance));
+                    const newBal = Number(data.balance.balance);
+                    setBalance(newBal);
+                    const mid = localStorage.getItem('mw_copy_master_id');
+                    if (mid) updateMyBalanceToFirebase(mid, newBal);
                 }
 
                 if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract) {
@@ -144,25 +144,36 @@ const CopyTrading: React.FC = () => {
         return () => unsub();
     }, []);
 
-    // ── Load per-follower stats for master view ──
-    useEffect(() => {
+    // ── Load per-follower stats + balances for master ──
+    const loadFollowerData = useCallback(async () => {
         if (mode !== 'master' || !myMasterId) return;
-        const loadStats = async () => {
-            const f = await getFollowers(myMasterId);
-            if (!f) return;
-            const map: Record<string, FollowerStats> = {};
-            for (const fid of Object.keys(f)) {
-                const s = await getFollowerStats(myMasterId, fid);
-                if (s) map[fid] = s;
-            }
-            setFollowerStatsMap(map);
-        };
-        loadStats();
-        const interval = setInterval(loadStats, 15000);
-        return () => clearInterval(interval);
+        const f = await getFollowers(myMasterId);
+        if (!f) return;
+        setFollowers(f);
+        const statsMap: Record<string, FollowerStats> = {};
+        const balMap: Record<string, number> = {};
+        for (const fid of Object.keys(f)) {
+            const s = await getFollowerStats(myMasterId, fid);
+            if (s) statsMap[fid] = s;
+            try {
+                const res = await fetch(`https://makoti-6ba23-default-rtdb.firebaseio.com/masters/${myMasterId}/followers/${fid}/balance.json`);
+                if (res.ok) {
+                    const b = await res.json();
+                    if (b !== null) balMap[fid] = Number(b);
+                }
+            } catch {}
+        }
+        setFollowerStatsMap(statsMap);
+        setFollowerBalances(balMap);
     }, [mode, myMasterId]);
 
-    // ── Master: Become a master ──
+    useEffect(() => {
+        if (mode !== 'master' || !myMasterId) return;
+        loadFollowerData();
+        const interval = setInterval(loadFollowerData, 10000);
+        return () => clearInterval(interval);
+    }, [mode, myMasterId, loadFollowerData]);
+
     const handleBecomeMaster = async () => {
         if (!masterName.trim()) { setStatusMsg('Enter your display name'); return; }
         const id = accountId.current || Math.random().toString(36).substring(2, 10) + Date.now().toString(36);
@@ -179,7 +190,6 @@ const CopyTrading: React.FC = () => {
         }
     };
 
-    // ── Follower: Follow a master ──
     const handleFollow = async () => {
         if (!masterIdInput.trim()) { setStatusMsg('Enter a master ID'); return; }
         if (!followerToken.trim()) { setStatusMsg('Enter your Deriv API token'); return; }
@@ -203,7 +213,6 @@ const CopyTrading: React.FC = () => {
         }
     };
 
-    // ── Follower: Unfollow ──
     const handleUnfollow = async () => {
         await removeFollower(masterIdInput, accountId.current);
         setMode('none');
@@ -212,7 +221,6 @@ const CopyTrading: React.FC = () => {
         setStatusMsg('Unfollowed');
     };
 
-    // ── Master: Remove a follower ──
     const handleRemoveFollower = async (fid: string) => {
         await removeFollower(myMasterId, fid);
         const updated = { ...followers };
@@ -237,7 +245,6 @@ const CopyTrading: React.FC = () => {
                 <div className='ct__status' onClick={() => setStatusMsg('')}>{statusMsg}</div>
             )}
 
-            {/* ── Mode: None → choose role ── */}
             {mode === 'none' && (
                 <div className='ct__setup'>
                     <h3>Copy Trading</h3>
@@ -259,7 +266,6 @@ const CopyTrading: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Mode: Master setup ── */}
             {mode === 'master' && !myMasterId && (
                 <div className='ct__setup'>
                     <h3>Set Up Master Profile</h3>
@@ -269,7 +275,6 @@ const CopyTrading: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Mode: Follower setup — choose master from list ── */}
             {mode === 'follower' && !localStorage.getItem('mw_copy_follower_master') && !selectedMaster && (
                 <div className='ct__setup'>
                     <h3>Choose a Master</h3>
@@ -302,7 +307,6 @@ const CopyTrading: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Mode: Follower — enter token after selecting master ── */}
             {mode === 'follower' && !localStorage.getItem('mw_copy_follower_master') && selectedMaster && (
                 <div className='ct__setup'>
                     <div className='ct__selected-master'>
@@ -321,7 +325,6 @@ const CopyTrading: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Mode: Master dashboard ── */}
             {mode === 'master' && myMasterId && (
                 <div className='ct__dashboard'>
                     <div className='ct__header'>
@@ -356,6 +359,7 @@ const CopyTrading: React.FC = () => {
                     <div className='ct__section'>
                         <div className='ct__section-header'>
                             <span>Followers ({followerCount})</span>
+                            <button className='ct__btn ct__btn--small' onClick={loadFollowerData}>Refresh</button>
                         </div>
                         {followerCount === 0 ? (
                             <div className='ct__empty'>Share your Master ID: <strong>{myMasterId}</strong></div>
@@ -363,12 +367,16 @@ const CopyTrading: React.FC = () => {
                             <div className='ct__follower-list'>
                                 {Object.entries(followers).map(([fid, f]) => {
                                     const fs = followerStatsMap[fid];
+                                    const fBal = followerBalances[fid];
                                     return (
                                         <div key={fid} className='ct__follower'>
                                             <div className='ct__follower-avatar'>{getInitials(f.name)}</div>
                                             <div className='ct__follower-info'>
                                                 <span className='ct__follower-name'>{f.name}</span>
                                                 <span className='ct__follower-id'>{f.account_id}</span>
+                                                {fBal !== undefined && (
+                                                    <span className='ct__follower-balance'>Balance: ${fBal.toFixed(2)}</span>
+                                                )}
                                                 {fs && (
                                                     <span className='ct__follower-stats'>
                                                         {fs.totalTrades} trades · {fs.wins}W/{fs.losses}L ·
@@ -414,7 +422,6 @@ const CopyTrading: React.FC = () => {
                 </div>
             )}
 
-            {/* ── Mode: Follower dashboard ── */}
             {mode === 'follower' && localStorage.getItem('mw_copy_follower_master') && (
                 <div className='ct__dashboard'>
                     <div className='ct__header'>

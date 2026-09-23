@@ -21,7 +21,7 @@ async function dbGet(path: string) {
     return res.json();
 }
 
-async function dbSet(path: string, data: unknown) {
+export async function dbSet(path: string, data: unknown) {
     const res = await fetch(`${DB_URL}/${path}.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
