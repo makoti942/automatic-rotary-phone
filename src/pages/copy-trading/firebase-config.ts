@@ -130,3 +130,39 @@ export async function clearFollowerStats(
     const empty: FollowerStats = { totalTrades: 0, wins: 0, losses: 0, totalPnl: 0, contracts: [] };
     return setFollowerStats(masterId, followerId, empty);
 }
+
+// ── Per-follower trade records (for real-time display) ──────────
+export async function pushFollowerTrade(
+    masterId: string,
+    followerId: string,
+    trade: { id: string; type: string; stake: number; pnl: number; time: number; status: string }
+): Promise<boolean> {
+    const ok = await dbSet(`masters/${masterId}/followers/${followerId}/trades/${trade.id}`, trade);
+    return ok;
+}
+
+export async function getFollowerTrades(
+    masterId: string,
+    followerId: string
+): Promise<Record<string, { id: string; type: string; stake: number; pnl: number; time: number; status: string }> | null> {
+    return dbGet(`masters/${masterId}/followers/${followerId}/trades`);
+}
+
+export async function updateFollowerTrade(
+    masterId: string,
+    followerId: string,
+    tradeId: string,
+    updates: { pnl: number; status: string }
+): Promise<boolean> {
+    const a = await dbSet(`masters/${masterId}/followers/${followerId}/trades/${tradeId}/pnl`, updates.pnl);
+    const b = await dbSet(`masters/${masterId}/followers/${followerId}/trades/${tradeId}/status`, updates.status);
+    return a && b;
+}
+
+export async function clearFollowerTrades(
+    masterId: string,
+    followerId: string
+): Promise<boolean> {
+    const res = await fetch(`${DB_URL}/masters/${masterId}/followers/${followerId}/trades.json`, { method: 'DELETE' });
+    return res.ok;
+}

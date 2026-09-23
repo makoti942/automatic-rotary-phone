@@ -1,4 +1,4 @@
-import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats, dbSet } from './firebase-config';
+import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats, dbSet, pushFollowerTrade } from './firebase-config';
 
 // ══════════════════════════════════════════════════════════════
 // INLINED from @/auth/NewDerivAuth — NEVER import that module
@@ -281,6 +281,14 @@ async function executeOnFollowers(
             const buyResult = await buyOnFollowerAccount(follower.token, accountId, contractParams, stake);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
             await updateFollowerStats(mId, fid, contractParams, stake);
+            pushFollowerTrade(mId, fid, {
+                id: buyResult.contract_id,
+                type: String(contractParams.contract_type || 'UNKNOWN'),
+                stake,
+                pnl: 0,
+                time: Date.now(),
+                status: 'pending',
+            });
             queryAndSaveFollowerBalance(mId, fid, follower.token, accountId);
         } catch (err: any) {
             console.error(`[CopyTrade] FAILED for ${fid} (${follower.name}):`, err.message || err);

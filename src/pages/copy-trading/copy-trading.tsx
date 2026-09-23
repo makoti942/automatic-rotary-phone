@@ -7,6 +7,9 @@ import {
     getFollowers,
     getAllMasters,
     getFollowerStats,
+    getFollowerTrades,
+    clearFollowerTrades,
+    updateFollowerTrade,
     type MasterProfile,
     type FollowerEntry,
     type FollowerStats,
@@ -78,6 +81,7 @@ const CopyTrading: React.FC = () => {
     const [followerStatsMap, setFollowerStatsMap] = useState<Record<string, FollowerStats>>({});
     const [followerBalances, setFollowerBalances] = useState<Record<string, number>>({});
     const [tradeTrigger, setTradeTrigger] = useState(0);
+    const [followerFirebaseTrades, setFollowerFirebaseTrades] = useState<TradeRecord[]>([]);
     const accountId = useRef(getAccountId());
 
     // Persist tradeHistory to localStorage
@@ -202,6 +206,14 @@ const CopyTrading: React.FC = () => {
                             totalPnl: prev.totalPnl + profit,
                         }));
                         setTradeTrigger(t => t + 1);
+                        // Update Firebase trade record if follower
+                        const followerMaster = localStorage.getItem('mw_copy_follower_master');
+                        if (followerMaster) {
+                            updateFollowerTrade(followerMaster, accountId.current, poc.contract_id, {
+                                pnl: profit,
+                                status: won ? 'won' : 'lost',
+                            });
+                        }
                     }
                 }
             } catch {}
@@ -246,6 +258,55 @@ const CopyTrading: React.FC = () => {
         if (mode !== 'master' || !myMasterId) return;
         loadFollowerData();
     }, [mode, myMasterId, loadFollowerData, tradeTrigger]);
+
+    // ── Periodic polling: master follower list ──
+    useEffect(() => {
+        if (mode !== 'master' || !myMasterId) return;
+        const id = setInterval(() => { loadFollowerData(); }, 8000);
+        return () => clearInterval(id);
+    }, [mode, myMasterId, loadFollowerData]);
+
+    // ── Periodic polling: available masters list ──
+    useEffect(() => {
+        if (localStorage.getItem('mw_copy_follower_master')) return;
+        if (mode !== 'none' && mode !== 'follower') return;
+        const id = setInterval(async () => {
+            const masters = await getAllMasters();
+            setAvailableMasters(masters);
+        }, 8000);
+        return () => clearInterval(id);
+    }, [mode]);
+
+    // ── Follower: poll Firebase trades for real-time display ──
+    useEffect(() => {
+        if (mode !== 'follower') return;
+        const masterForFollower = localStorage.getItem('mw_copy_follower_master');
+        if (!masterForFollower) return;
+        const myId = accountId.current;
+        if (!myId) return;
+        const load = async () => {
+            const trades = await getFollowerTrades(masterForFollower, myId);
+            if (trades) {
+                const arr: TradeRecord[] = Object.values(trades)
+                    .map((t: any) => ({
+                        id: t.id,
+                        type: t.type,
+                        stake: t.stake,
+                        pnl: t.pnl,
+                        time: t.time,
+                        status: t.status === 'pending' ? 'pending' : t.pnl > 0 ? 'won' : 'lost',
+                    }))
+                    .sort((a: TradeRecord, b: TradeRecord) => b.time - a.time)
+                    .slice(0, 100);
+                setFollowerFirebaseTrades(arr);
+                // Also merge into local state for consistency
+                setTradeHistory(arr);
+            }
+        };
+        load();
+        const id = setInterval(load, 3000);
+        return () => clearInterval(id);
+    }, [mode]);
 
     const handleBecomeMaster = async () => {
         if (!masterName.trim()) { setStatusMsg('Enter your display name'); return; }
@@ -313,9 +374,15 @@ const CopyTrading: React.FC = () => {
 
     const handleClearStats = () => {
         setTradeHistory([]);
+        setFollowerFirebaseTrades([]);
         setStats({ totalTrades: 0, wins: 0, losses: 0, totalPnl: 0 });
         localStorage.removeItem(STORAGE_KEY_TRADES);
         localStorage.removeItem(STORAGE_KEY_STATS);
+        // Also clear Firebase trades for followers
+        const followerMaster = localStorage.getItem('mw_copy_follower_master');
+        if (followerMaster) {
+            clearFollowerTrades(followerMaster, accountId.current);
+        }
         setStatusMsg('Stats cleared');
     };
 
@@ -412,6 +479,7 @@ const CopyTrading: React.FC = () => {
                     </div>
                     <input className='ct__input' placeholder='Your display name (optional)' value={followerName} onChange={e => setFollowerName(e.target.value)} />
                     <button className='ct__btn ct__btn--primary' onClick={handleFollow}>Follow {selectedMaster.profile.name}</button>
+                    <button className='ct__btn ct__btn--ghost' style={{ fontSize: 10 }} onClick={() => window.open('https://app.derivws.com/account/api-token', '_blank')}>Create API Token ↗</button>
                     <button className='ct__btn ct__btn--ghost' onClick={() => { setSelectedMaster(null); setMode('none'); localStorage.removeItem('mw_copy_mode'); }}>Back</button>
                 </div>
             )}
@@ -531,16 +599,16 @@ const CopyTrading: React.FC = () => {
                             <span>Your Trade History</span>
                             <button className='ct__btn ct__btn--small' onClick={handleClearStats}>Clear</button>
                         </div>
-                        {tradeHistory.length === 0 ? (
+                        {(followerFirebaseTrades.length > 0 ? followerFirebaseTrades : tradeHistory).length === 0 ? (
                             <div className='ct__empty'>No trades yet. Waiting for master to trade...</div>
                         ) : (
                             <div className='ct__trade-list'>
-                                {tradeHistory.slice(0, 20).map(t => (
+                                {(followerFirebaseTrades.length > 0 ? followerFirebaseTrades : tradeHistory).slice(0, 20).map(t => (
                                     <div key={t.id} className={`ct__trade ct__trade--${t.status}`}>
                                         <span className='ct__trade-type'>{t.type}</span>
                                         <span className='ct__trade-stake'>${t.stake.toFixed(2)}</span>
                                         <span className={`ct__trade-pnl ct__trade-pnl--${t.status}`}>
-                                            {t.pnl >= 0 ? '+' : ''}${t.pnl.toFixed(2)}
+                                            {t.status === 'pending' ? '...' : `${t.pnl >= 0 ? '+' : ''}$${t.pnl.toFixed(2)}`}
                                         </span>
                                     </div>
                                 ))}
