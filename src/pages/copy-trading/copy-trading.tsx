@@ -88,16 +88,34 @@ const CopyTrading: React.FC = () => {
     }, [stats]);
 
     const loadMasterProfile = useCallback(async () => {
-        const id = localStorage.getItem('mw_copy_master_id');
-        if (!id) return;
-        const profile = await getMaster(id);
-        if (profile) {
-            setMyMasterId(id);
-            setMasterName(profile.name);
-            setMode('master');
-            localStorage.setItem('mw_copy_mode', 'master');
-            const f = await getFollowers(id);
-            if (f) setFollowers(f);
+        // First try localStorage (same device)
+        const savedId = localStorage.getItem('mw_copy_master_id');
+        if (savedId) {
+            const profile = await getMaster(savedId);
+            if (profile) {
+                setMyMasterId(savedId);
+                setMasterName(profile.name);
+                setMode('master');
+                localStorage.setItem('mw_copy_mode', 'master');
+                const f = await getFollowers(savedId);
+                if (f) setFollowers(f);
+                return;
+            }
+        }
+        // Fallback: check if current Deriv account is a master in Firebase (cross-device)
+        const myDerivId = accountId.current;
+        if (myDerivId) {
+            const profile = await getMaster(myDerivId);
+            if (profile) {
+                setMyMasterId(myDerivId);
+                setMasterName(profile.name);
+                setMode('master');
+                localStorage.setItem('mw_copy_mode', 'master');
+                localStorage.setItem('mw_copy_master_id', myDerivId);
+                const f = await getFollowers(myDerivId);
+                if (f) setFollowers(f);
+                return;
+            }
         }
     }, []);
 
