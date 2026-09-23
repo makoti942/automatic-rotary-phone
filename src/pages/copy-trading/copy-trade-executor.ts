@@ -156,14 +156,13 @@ let unsubs: (() => void)[] = [];
 let countedContractIds: Set<string> = new Set();
 let cachedFollowers: Record<string, any> = {};
 let lastProposalParams: Record<string, any> | null = null;
-let origWsSend: ((data: string) => void) | null = null;
+let origProtoSend: ((data: string | ArrayBuffer | Blob) => void) | null = null;
 
 export function refreshCachedFollowers(f: Record<string, any>) {
     cachedFollowers = f;
 }
 
 function extractProposalParams(msg: any): Record<string, unknown> | null {
-    // Flatten: params may be top-level or inside "parameters" object
     const raw = msg;
     const p = (raw.parameters && typeof raw.parameters === 'object')
         ? { ...raw, ...raw.parameters }
@@ -183,14 +182,20 @@ function extractProposalParams(msg: any): Record<string, unknown> | null {
     return params;
 }
 
-// Buy ONE follower: open WS → auth → proposal → buy (all in one connection)
+// Buy ONE follower: open WS → auth → proposal → buy
 async function buyOnFollower(
     follower: any,
     contractParams: Record<string, unknown>,
     stake: number
 ): Promise<{ contractId: string; balance?: number } | null> {
     const tag = follower.account_id?.slice(-4) || '?';
-    const ws = new WebSocket(WS_URL);
+    let ws: WebSocket;
+    try {
+        ws = new WebSocket(WS_URL);
+    } catch (e) {
+        console.error(`[CopyTrade] ...${tag} WS creation failed:`, e);
+        return null;
+    }
 
     return new Promise((resolve) => {
         let done = false;
@@ -198,6 +203,7 @@ async function buyOnFollower(
         const timeout = setTimeout(() => { cleanup(); resolve(null); }, 20000);
 
         ws.onopen = () => {
+            console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
             ws.send(JSON.stringify({ authorize: follower.token }));
         };
 
@@ -211,6 +217,7 @@ async function buyOnFollower(
                     return;
                 }
                 if (data.authorize) {
+                    console.log(`[CopyTrade] ...${tag} auth OK, sending proposal: ${contractParams.contract_type}...`);
                     ws.send(JSON.stringify({
                         proposal: 1,
                         amount: stake,
@@ -226,7 +233,7 @@ async function buyOnFollower(
                     return;
                 }
                 if (data.req_id === 1 && data.proposal) {
-                    console.log(`[CopyTrade] ...${tag} proposal ${data.proposal.id}, buying ${contractParams.contract_type}...`);
+                    console.log(`[CopyTrade] ...${tag} proposal ${data.proposal.id}, buying...`);
                     ws.send(JSON.stringify({ buy: data.proposal.id, price: data.proposal.ask_price, req_id: 2 }));
                     return;
                 }
@@ -238,7 +245,10 @@ async function buyOnFollower(
             } catch {}
         };
 
-        ws.onerror = () => { cleanup(); clearTimeout(timeout); resolve(null); };
+        ws.onerror = (err) => {
+            console.error(`[CopyTrade] ...${tag} WS error:`, err);
+            cleanup(); clearTimeout(timeout); resolve(null);
+        };
         ws.onclose = () => { if (!done) { cleanup(); clearTimeout(timeout); resolve(null); } };
     });
 }
@@ -254,37 +264,31 @@ export function installCopyTradeInterceptor(mId: string) {
 
     getFollowers(mId).then(f => { if (f) cachedFollowers = f; }).catch(() => {});
 
-    // Monkey-patch master WS.send to capture OUTGOING proposal requests
-    // The bot's proposals don't fire newSystemMessage events, so we intercept
-    // them at the send() level. This gives us the exact contract params BEFORE
-    // the buy happens — zero delay.
+    // Patch WebSocket.prototype.send to intercept ALL outgoing messages
+    // This catches proposals from ANY WebSocket (bot's internal WS, _newSystemWS, etc.)
     try {
-        const patchWs = () => {
-            const ws = (window as any)._newSystemWS;
-            if (!ws || origWsSend) return;
-            origWsSend = ws.send.bind(ws);
-            ws.send = (raw: string) => {
-                try {
-                    const msg = JSON.parse(raw);
+        const Proto = (WebSocket as any).prototype;
+        origProtoSend = Proto.send;
+        Proto.send = function (data: string | ArrayBuffer | Blob) {
+            try {
+                if (typeof data === 'string') {
+                    const msg = JSON.parse(data);
                     if (msg.proposal === 1) {
                         const params = extractProposalParams(msg);
                         if (params) {
                             lastProposalParams = params;
-                            console.log('[CopyTrade] Intercepted proposal:', params.contract_type,
+                            console.log('[CopyTrade] Intercepted PROPOSAL:', params.contract_type,
                                 '| barrier:', (params as any).barrier ?? 'none');
                         }
                     }
-                } catch {}
-                origWsSend!(raw);
-            };
+                }
+            } catch {}
+            return origProtoSend!.call(this, data);
         };
-        patchWs();
-        // Also retry every 2s in case _newSystemWS isn't ready yet
-        const retryInterval = setInterval(() => {
-            if (interceptorInstalled) patchWs();
-            else clearInterval(retryInterval);
-        }, 2000);
-    } catch {}
+        console.log('[CopyTrade] WebSocket.prototype.send patched');
+    } catch (e) {
+        console.error('[CopyTrade] Failed to patch WebSocket.prototype.send:', e);
+    }
 
     const unsub1 = onNewSystemMessageLocal((data: any) => {
         if (data.msg_type !== 'buy' || !data.buy || !data.buy.contract_id) return;
@@ -298,75 +302,63 @@ export function installCopyTradeInterceptor(mId: string) {
         }
 
         const stake = Number(data.buy.buy_price) || 1;
-        console.log('[CopyTrade] Master BUY:', cid, '| stake:', stake);
+        console.log('[CopyTrade] Master BUY:', cid, '| stake:', stake,
+            '| captured params:', lastProposalParams?.contract_type || 'NONE');
 
         const entries = Object.entries(cachedFollowers).filter(([, f]) => f.token);
         if (entries.length === 0) { console.log('[CopyTrade] No followers'); return; }
 
-        // Use captured proposal params (from monkey-patch) OR fall back to POC
-        const useParams = async (): Promise<Record<string, unknown> | null> => {
-            // Fast path: use intercepted proposal params (instant)
-            if (lastProposalParams) {
-                console.log('[CopyTrade] Using intercepted proposal params');
-                return { ...lastProposalParams, amount: stake };
-            }
-            // Slow path: query POC
-            console.log('[CopyTrade] No intercepted params, querying POC...');
-            try {
-                const res = await sendViaNewSystemLocal({
-                    proposal_open_contract: 1,
-                    contract_id: cid,
-                    subscribe: 0,
-                });
-                const c = res?.proposal_open_contract;
-                if (!c) return null;
-                return {
-                    contract_type: c.contract_type || 'CALL',
-                    currency: c.currency || 'USD',
-                    duration: c.duration || 1,
-                    duration_unit: c.duration_unit || 't',
-                    underlying_symbol: c.underlying || '1HZ100V',
-                    barrier: c.barrier,
-                    barrier2: c.barrier2,
-                    amount: stake,
-                };
-            } catch { return null; }
-        };
-
+        // Use intercepted proposal params (instant) or fall back to POC
         (async () => {
-            const contractParams = await useParams();
+            let contractParams: Record<string, unknown> | null = null;
+
+            if (lastProposalParams) {
+                contractParams = { ...lastProposalParams, amount: stake };
+                console.log('[CopyTrade] Using intercepted params:', contractParams.contract_type);
+            } else {
+                console.log('[CopyTrade] No intercepted params, querying POC...');
+                try {
+                    const res = await sendViaNewSystemLocal({
+                        proposal_open_contract: 1, contract_id: cid, subscribe: 0,
+                    });
+                    const c = res?.proposal_open_contract;
+                    if (c && c.contract_type && c.contract_type !== 'CALL' && c.contract_type !== 'PUT') {
+                        contractParams = {
+                            contract_type: c.contract_type,
+                            currency: c.currency || 'USD',
+                            duration: c.duration || 1,
+                            duration_unit: c.duration_unit || 't',
+                            underlying_symbol: c.underlying || '1HZ100V',
+                            barrier: c.barrier, barrier2: c.barrier2, amount: stake,
+                        };
+                    }
+                } catch {}
+            }
+
             if (!contractParams) {
-                console.log('[CopyTrade] Could not determine contract params');
+                console.log('[CopyTrade] Could not determine contract params — followers skipped');
                 return;
             }
 
             console.log(`[CopyTrade] Contract: ${contractParams.contract_type} | barrier: ${(contractParams as any).barrier ?? 'none'} | ${entries.length} followers`);
 
-            // Push pending trades
             const tradeTime = Date.now();
             for (const [fid] of entries) {
                 pushFollowerTrade(mId, fid, {
                     id: `pending_${tradeTime}_${fid}`,
                     type: String(contractParams.contract_type),
-                    stake,
-                    pnl: 0,
-                    time: tradeTime,
-                    status: 'pending',
+                    stake, pnl: 0, time: tradeTime, status: 'pending',
                 });
             }
 
-            // Buy all followers simultaneously
             await Promise.all(entries.map(async ([fid, follower]) => {
                 try {
-                    const result = await buyOnFollower(follower, contractParams, stake);
+                    const result = await buyOnFollower(follower, contractParams!, stake);
                     if (result) {
                         pushFollowerTrade(mId, fid, {
                             id: result.contractId,
-                            type: String(contractParams.contract_type),
-                            stake,
-                            pnl: 0,
-                            time: tradeTime,
-                            status: 'pending',
+                            type: String(contractParams!.contract_type),
+                            stake, pnl: 0, time: tradeTime, status: 'pending',
                         });
                         if (result.balance != null) {
                             dbSet(`masters/${mId}/followers/${fid}/balance`, Number(result.balance));
@@ -389,12 +381,13 @@ export function uninstallCopyTradeInterceptor() {
     countedContractIds = new Set();
     cachedFollowers = {};
     lastProposalParams = null;
-    // Restore original send
+    // Restore WebSocket.prototype.send
     try {
-        const ws = (window as any)._newSystemWS;
-        if (ws && origWsSend) { ws.send = origWsSend; }
+        if (origProtoSend) {
+            (WebSocket as any).prototype.send = origProtoSend;
+        }
     } catch {}
-    origWsSend = null;
+    origProtoSend = null;
 }
 
 // ══════════════════════════════════════════════════════════════
