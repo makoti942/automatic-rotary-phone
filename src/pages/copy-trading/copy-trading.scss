@@ -115,6 +115,34 @@
             outline: none;
             border-color: #fbbf24;
         }
+    }
+
+    &__mode-toggle {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 8px;
+        background: var(--general-section-2);
+        border-radius: 6px;
+        padding: 3px;
+    }
+
+    &__mode-btn {
+        flex: 1;
+        padding: 6px 0;
+        border: none;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--text-less-prominent);
+        font-size: 11px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.15s;
+
+        &--active {
+            background: #fbbf24;
+            color: #000;
+        }
+    }
 
         &--small {
             width: 80px;

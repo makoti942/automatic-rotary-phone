@@ -60,17 +60,19 @@ function sendViaNewSystemLocal(msg: any): Promise<any> {
 // ══════════════════════════════════════════════════════════════
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const LEGACY_WS_BASE = 'wss://ws.derivws.com/websockets/v3';
+const WS_DEMO = 'wss://api.derivws.com/trading/v1/options/ws/demo';
+const WS_REAL = 'wss://api.derivws.com/trading/v1/options/ws';
 
 async function buyOnFollowerAccount(
     followerToken: string,
     contractParams: Record<string, unknown>,
-    stake: number
+    stake: number,
+    isDemo: boolean
 ): Promise<any> {
     const tag = followerToken.slice(-4);
-    console.log(`[CopyTrade] Opening follower WS ...${tag}`);
-
-    const wsUrl = `${LEGACY_WS_BASE}?app_id=${APP_ID}&token=${followerToken}`;
+    const wsBase = isDemo ? WS_DEMO : WS_REAL;
+    const wsUrl = `${wsBase}?app_id=${APP_ID}&token=${followerToken}`;
+    console.log(`[CopyTrade] Opening follower WS ...${tag} (${isDemo ? 'DEMO' : 'REAL'})`);
     const ws = new WebSocket(wsUrl);
 
     return new Promise((resolve, reject) => {
@@ -248,7 +250,8 @@ async function executeOnFollowers(
 ) {
     for (const [fid, follower] of entries) {
         try {
-            const buyResult = await buyOnFollowerAccount(follower.token, contractParams, stake);
+            const isDemo = follower.is_demo !== false;
+            const buyResult = await buyOnFollowerAccount(follower.token, contractParams, stake, isDemo);
             console.log(`[CopyTrade] SUCCESS for ${fid} (${follower.name}):`, buyResult.contract_id);
             await updateFollowerStats(mId, fid, contractParams, stake);
         } catch (err: any) {

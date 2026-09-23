@@ -68,6 +68,7 @@ const CopyTrading: React.FC = () => {
     const [myMasterId, setMyMasterId] = useState('');
     const [followerToken, setFollowerToken] = useState('');
     const [followerName, setFollowerName] = useState('');
+    const [followerMode, setFollowerMode] = useState<'demo' | 'real'>('demo');
     const [followers, setFollowers] = useState<Record<string, FollowerEntry>>({});
     const [stats, setStats] = useState(loadPersistedStats);
     const [statusMsg, setStatusMsg] = useState('');
@@ -282,6 +283,7 @@ const CopyTrading: React.FC = () => {
             account_id: followerId,
             created_at: Date.now(),
             balance: 0,
+            is_demo: followerMode === 'demo',
         };
         const ok = await addFollower(masterIdInput.trim(), followerId, entry);
         if (ok) {
@@ -412,9 +414,13 @@ const CopyTrading: React.FC = () => {
                     </div>
                     <h3>Enter Your API Token</h3>
                     <input className='ct__input' placeholder='Your Deriv API token (trade scope)' value={followerToken} onChange={e => setFollowerToken(e.target.value)} type='password' />
+                    <div className='ct__mode-toggle'>
+                        <button className={`ct__mode-btn ${followerMode === 'demo' ? 'ct__mode-btn--active' : ''}`} onClick={() => setFollowerMode('demo')}>Demo</button>
+                        <button className={`ct__mode-btn ${followerMode === 'real' ? 'ct__mode-btn--active' : ''}`} onClick={() => setFollowerMode('real')}>Real</button>
+                    </div>
                     <input className='ct__input' placeholder='Your display name (optional)' value={followerName} onChange={e => setFollowerName(e.target.value)} />
                     <p className='ct__setup-desc' style={{ margin: '4px 0', fontSize: 10 }}>
-                        Works with demo or real tokens. Master trades demo → your real account gets the same trade.
+                        Choose Demo or Real to match your token. Your account type determines where trades execute.
                     </p>
                     <button className='ct__btn ct__btn--primary' onClick={handleFollow}>Follow {selectedMaster.profile.name}</button>
                     <button className='ct__btn ct__btn--ghost' onClick={() => { setSelectedMaster(null); setMode('none'); localStorage.removeItem('mw_copy_mode'); }}>Back</button>

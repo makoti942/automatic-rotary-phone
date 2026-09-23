@@ -48,6 +48,7 @@ export interface FollowerEntry {
     account_id: string;
     created_at: number;
     balance?: number;
+    is_demo?: boolean;
 }
 
 export interface FollowerStats {
