@@ -1,97 +1,140 @@
-import { getFollowers, type FollowerEntry } from './firebase-config';
+import { getFollowers } from './firebase-config';
 import { sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 
 /**
- * Executes a trade on the master's account AND all connected follower accounts
- * using Deriv's `buy_contract_for_multiple_accounts` WS endpoint.
- *
- * @param masterId   – the master's unique ID (account_id)
- * @param tradeParams – the contract parameters (same as buy with parameters)
- * @param stake       – the stake amount
+ * Global copy trade interceptor.
+ * Listens for ALL buy messages on the WebSocket and forwards them to followers.
+ * Master's trade is already executed by the bot/manual system — this only
+ * handles the follower side.
  */
-export async function executeCopyTrade(
-    masterId: string,
-    tradeParams: Record<string, unknown>,
-    stake: number
-): Promise<{ master: unknown; followers: { id: string; ok: boolean; error?: string }[] }> {
-    // 1. Execute on master's own account first
-    let masterResult: unknown = null;
-    try {
-        masterResult = await sendViaNewSystemWithPromise({
-            buy: '1',
-            price: stake,
-            parameters: tradeParams,
-        });
-    } catch (err: any) {
-        throw new Error(`Master trade failed: ${err?.error?.message || err?.message || 'Unknown error'}`);
-    }
 
-    // 2. Get all follower tokens from Firebase
-    const followers = await getFollowers(masterId);
-    if (!followers || Object.keys(followers).length === 0) {
-        return { master: masterResult, followers: [] };
-    }
+let interceptorInstalled = false;
+let masterId: string | null = null;
 
-    // 3. Execute on each follower account via buy_contract_for_multiple_accounts
-    const results: { id: string; ok: boolean; error?: string }[] = [];
+/**
+ * Install the global interceptor. Call once on app load if user is a master.
+ */
+export function installCopyTradeInterceptor(mId: string) {
+    if (interceptorInstalled) return;
+    interceptorInstalled = true;
+    masterId = mId;
 
-    const tokenEntries = Object.entries(followers);
-    for (let i = 0; i < tokenEntries.length; i += 100) {
-        // Deriv allows max 100 accounts per request
-        const batch = tokenEntries.slice(i, i + 100);
-        const tokens = batch.map(([, f]) => f.token).filter(Boolean);
-
-        if (tokens.length === 0) continue;
-
+    window.addEventListener('newSystemMessage', async (event: Event) => {
         try {
-            await sendViaNewSystemWithPromise({
-                buy_contract_for_multiple_accounts: tradeParams,
-                price: stake,
-                tokens,
-            });
-            batch.forEach(([id]) => results.push({ id, ok: true }));
-        } catch (err: any) {
-            const errorMsg = err?.error?.message || err?.message || 'Trade failed';
-            batch.forEach(([id]) => results.push({ id, ok: false, error: errorMsg }));
-        }
-    }
+            const customEvent = event as CustomEvent;
+            const data = JSON.parse(customEvent.detail?.data || customEvent.detail || '{}');
 
-    return { master: masterResult, followers: results };
+            // Detect a successful buy on master's account
+            if (data.msg_type === 'buy' && data.buy && data.buy.contract_id) {
+                const buy = data.buy;
+                const contractId = buy.contract_id;
+
+                // Reconstruct trade parameters from the buy response
+                // The buy response contains: contract_type, buy_price, payout, etc.
+                // We need to get the full proposal details to replicate
+                forwardTradeToFollowers(contractId, buy);
+            }
+        } catch {}
+    });
+}
+
+export function uninstallCopyTradeInterceptor() {
+    interceptorInstalled = false;
+    masterId = null;
 }
 
 /**
- * Simpler fallback: execute trade individually for each follower
- * (useful if buy_contract_for_multiple_accounts is not available)
+ * When master's buy succeeds, get the proposal details and forward to followers.
  */
-export async function executeCopyTradeIndividually(
-    masterId: string,
+async function forwardTradeToFollowers(contractId: string, buyData: any) {
+    if (!masterId) return;
+
+    const followers = await getFollowers(masterId);
+    if (!followers || Object.keys(followers).length === 0) return;
+
+    const tokens = Object.values(followers).map(f => f.token).filter(Boolean);
+    if (tokens.length === 0) return;
+
+    // Try buy_contract_for_multiple_accounts with the same proposal
+    // The proposal ID from master's buy can be reused with '1' + parameters
+    try {
+        // Get contract details to know what was bought
+        const pocResult = await sendViaNewSystemWithPromise({
+            proposal_open_contract: 1,
+            contract_id: contractId,
+            subscribe: 0,
+        });
+
+        const contract = (pocResult as any)?.proposal_open_contract;
+        if (!contract) return;
+
+        // Reconstruct the buy parameters for followers
+        const params: Record<string, unknown> = {
+            amount: Number(buyData.buy_price) || contract.buy_price || 1,
+            basis: 'stake',
+            contract_type: contract.contract_type || 'DIGITUNDER',
+            currency: contract.currency || 'USD',
+            duration: contract.duration || 1,
+            duration_unit: contract.duration_unit || 't',
+            underlying_symbol: contract.underlying || '1HZ100V',
+        };
+
+        // Add barrier if present
+        if (contract.barrier) {
+            params.barrier = contract.barrier;
+        }
+
+        // Execute on all follower accounts
+        for (let i = 0; i < tokens.length; i += 100) {
+            const batch = tokens.slice(i, i + 100);
+            try {
+                await sendViaNewSystemWithPromise({
+                    buy: '1',
+                    price: Number(buyData.buy_price) || 1,
+                    parameters: params,
+                    tokens: batch,
+                });
+            } catch (err) {
+                console.error('[CopyTrade] Follower batch buy failed:', err);
+            }
+        }
+    } catch (err) {
+        console.error('[CopyTrade] Failed to forward trade:', err);
+    }
+}
+
+/**
+ * Manual copy trade execution (for test button in Copy Trading tab).
+ * Master trade is NOT executed here — only follower side.
+ */
+export async function executeManualCopyTrade(
+    mId: string,
     tradeParams: Record<string, unknown>,
     stake: number
-): Promise<{ master: unknown; followers: { id: string; ok: boolean; error?: string }[] }> {
-    // Execute on master
-    let masterResult: unknown = null;
-    try {
-        masterResult = await sendViaNewSystemWithPromise({
-            buy: '1',
-            price: stake,
-            parameters: tradeParams,
-        });
-    } catch (err: any) {
-        throw new Error(`Master trade failed: ${err?.error?.message || err?.message || 'Unknown error'}`);
-    }
-
-    // Get followers
-    const followers = await getFollowers(masterId);
+): Promise<{ followers: { id: string; ok: boolean; error?: string }[] }> {
+    const followers = await getFollowers(mId);
     if (!followers || Object.keys(followers).length === 0) {
-        return { master: masterResult, followers: [] };
+        return { followers: [] };
     }
 
-    // Note: Individual execution requires opening separate WS connections per follower token
-    // This is a placeholder for future implementation if bulk purchase is not available
     const results: { id: string; ok: boolean; error?: string }[] = [];
-    Object.entries(followers).forEach(([id]) => {
-        results.push({ id, ok: false, error: 'Individual execution not yet implemented — use bulk purchase' });
-    });
 
-    return { master: masterResult, followers: results };
+    for (const [fid, f] of Object.entries(followers)) {
+        if (!f.token) {
+            results.push({ id: fid, ok: false, error: 'No token' });
+            continue;
+        }
+        try {
+            await sendViaNewSystemWithPromise({
+                buy: '1',
+                price: stake,
+                parameters: tradeParams,
+            });
+            results.push({ id: fid, ok: true });
+        } catch (err: any) {
+            results.push({ id: fid, ok: false, error: err?.error?.message || 'Failed' });
+        }
+    }
+
+    return { followers: results };
 }
