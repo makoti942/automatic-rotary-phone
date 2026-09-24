@@ -1,4 +1,3 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node';
 import puppeteer from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 
@@ -9,7 +8,7 @@ interface ExtractedBot {
   size: number;
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -21,51 +20,67 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let browser;
   try {
+    console.log('Launching browser...');
     browser = await puppeteer.launch({
-      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins'],
+      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox'],
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
     });
+    console.log('Browser launched');
 
     const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(30000);
-    page.setDefaultTimeout(30000);
+    page.setDefaultNavigationTimeout(20000);
+    page.setDefaultTimeout(20000);
 
     const bots: ExtractedBot[] = [];
     const seenXml = new Set<string>();
+    const xmlRequests: string[] = [];
 
-    await page.goto(url, { waitUntil: 'networkidle2' });
+    // Capture ALL network responses
+    page.on('response', response => {
+      const responseUrl = response.url();
+      if (responseUrl.includes('.xml') && !xmlRequests.includes(responseUrl)) {
+        xmlRequests.push(responseUrl);
+        console.log('Found XML request:', responseUrl);
+      }
+    });
 
-    // Wait for any dynamic content
+    console.log('Navigating to:', url);
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+
+    // Wait for dynamic content
     await new Promise(r => setTimeout(r, 3000));
 
-    // Find all bot links in the rendered DOM
+    // Find bot links in DOM
     const botLinks = await page.evaluate(() => {
       const links: string[] = [];
       document.querySelectorAll('a[href*=".xml"], a[href*="/xml/"]').forEach(a => {
         const href = a.getAttribute('href');
         if (href) {
-          try {
-            links.push(new URL(href, window.location.href).href);
-          } catch {}
+          try { links.push(new URL(href, window.location.href).href); } catch {}
         }
       });
       return links;
     });
+    console.log('Bot links found:', botLinks.length);
 
-    // Also find bot cards/buttons that might trigger loads
+    // Add DOM links to xmlRequests
+    for (const link of botLinks) if (!xmlRequests.includes(link)) xmlRequests.push(link);
+
+    // Click potential bot triggers
     const botTriggers = await page.evaluate(() => {
       const triggers: { selector: string; text: string }[] = [];
-      document.querySelectorAll('button, a, [role="button"], .bot-card, [class*="bot"]').forEach(el => {
+      document.querySelectorAll('button, a, [role="button"], .bot-card, [class*="bot"], [class*="strategy"]').forEach(el => {
         const text = el.textContent?.trim() || '';
         if (text.length > 2 && text.length < 100) {
-          triggers.push({ selector: getSelector(el), text });
+          const selector = el.id ? `#${el.id}` : (el.className ? `.${el.className.split(' ')[0]}` : '');
+          if (selector) triggers.push({ selector, text });
         }
       });
-      return triggers.slice(0, 20);
+      return triggers.slice(0, 15);
     });
+    console.log('Triggers to click:', botTriggers.length);
 
-    // Try clicking potential bot triggers to load dynamic content
     for (const trigger of botTriggers) {
       try {
         await page.click(trigger.selector, { delay: 100 });
@@ -73,33 +88,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch {}
     }
 
-    // Scan network requests for .xml files
-    const xmlRequests: string[] = [];
-    page.on('response', response => {
-      const url = response.url();
-      if (url.includes('.xml') && !xmlRequests.includes(url)) {
-        xmlRequests.push(url);
-      }
-    });
-
-    // Reload and capture network
-    await page.reload({ waitUntil: 'networkidle2' });
-    await new Promise(r => setTimeout(r, 3000));
-
     // Fetch each discovered .xml
     for (const xmlUrl of xmlRequests) {
       try {
-        const response = await page.goto(xmlUrl, { waitUntil: 'networkidle2' });
-        const content = await response.text();
-        if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
-          seenXml.add(content);
-          const name = xmlUrl.split('/').pop()?.replace('.xml', '').replace(/[_-]/g, ' ') || 'Unknown Bot';
-          bots.push({ name, xml: content.trim(), source: xmlUrl, size: content.length });
+        const response = await page.goto(xmlUrl, { waitUntil: 'networkidle2', timeout: 10000 });
+        if (response.ok()) {
+          const content = await response.text();
+          if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
+            seenXml.add(content);
+            const name = xmlUrl.split('/').pop()?.replace('.xml', '').replace(/[_-]/g, ' ') || 'Unknown Bot';
+            bots.push({ name, xml: content.trim(), source: xmlUrl, size: content.length });
+            console.log('Extracted:', name);
+          }
         }
-      } catch {}
+      } catch (e) { console.log('Failed to fetch', xmlUrl, e); }
     }
 
-    // Also extract embedded XML from page content
+    // Extract embedded XML from page
     const pageContent = await page.content();
     const embeddedBots = extractEmbeddedXml(pageContent, url);
     for (const bot of embeddedBots) {
@@ -109,29 +114,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    // Try common .xml paths
+    // Try common paths as fallback
     const baseUrl = new URL(url).origin;
-    const commonPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/'];
-    const commonNames = [
-      'Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
-      'UNDER_6', 'UNDER6', 'UNDER_6_BOT', 'UNDER6_BOT',
-      'OVER_1', 'OVER1', 'Market_Killer', 'O_U_KILLER',
-      'HIGH_LOW', 'EVEN_ODD_KILLER', 'DIFFERS_AUTO',
-      'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
-      'Entry_Digit', 'STARTER_BOT', 'FREE_BOT'
-    ];
+    const commonPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/'];
+    const commonNames = ['Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'UNDER_6', 'UNDER6', 'UNDER_6_BOT', 'OVER_1', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter', 'Entry_Digit', 'STARTER_BOT'];
 
     for (const path of commonPaths) {
       for (const name of commonNames) {
         const tryUrl = `${baseUrl}${path}${name}.xml`;
         if (xmlRequests.includes(tryUrl)) continue;
         try {
-          const response = await page.goto(tryUrl, { waitUntil: 'networkidle2', timeout: 10000 });
+          const response = await page.goto(tryUrl, { waitUntil: 'networkidle2', timeout: 8000 });
           if (response.ok()) {
             const content = await response.text();
             if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
               seenXml.add(content);
               bots.push({ name: name.replace(/_/g, ' '), xml: content.trim(), source: tryUrl, size: content.length });
+              console.log('Extracted from common:', name);
             }
           }
         } catch {}
@@ -139,12 +138,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     await browser.close();
-
+    console.log('Done, bots found:', bots.length);
     return res.json({ bots, count: bots.length });
 
   } catch (error: any) {
-    if (browser) await browser.close();
     console.error('Deep extract error:', error);
+    if (browser) { try { await browser.close(); } catch {} }
     return res.status(500).json({ error: error.message || 'Extraction failed' });
   }
 }
@@ -159,12 +158,7 @@ function extractEmbeddedXml(html: string, sourceUrl: string): ExtractedBot[] {
     if (xmlEnd === -1) { pos = xmlStart + 4; continue; }
 
     let xml = html.substring(xmlStart, xmlEnd + 6);
-    xml = xml
-      .replace(/</g, '<')
-      .replace(/>/g, '>')
-      .replace(/"/g, '"')
-      .replace(/'/g, "'")
-      .replace(/&/g, '&');
+    xml = xml.replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"').replace(/'/g, "'").replace(/&/g, '&');
 
     if (xml.length > 100 && xml.includes('<block')) {
       const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
@@ -175,18 +169,4 @@ function extractEmbeddedXml(html: string, sourceUrl: string): ExtractedBot[] {
     pos = xmlEnd + 6;
   }
   return bots;
-}
-
-function getSelector(el: Element): string {
-  if (el.id) return `#${el.id}`;
-  if (el.className) return `.${el.className.split(' ')[0]}`;
-  const path: string[] = [];
-  while (el.parentElement) {
-    const siblings = Array.from(el.parentElement.children).filter(c => c.tagName === el.tagName);
-    const index = siblings.indexOf(el) + 1;
-    path.unshift(`${el.tagName.toLowerCase()}:nth-child(${index})`);
-    el = el.parentElement;
-    if (path.length > 3) break;
-  }
-  return path.join(' > ');
 }
