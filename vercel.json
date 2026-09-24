@@ -1,5 +1,6 @@
 {
-  "buildCommand": "pnpm install --no-frozen-lockfile && npm run build",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "env": {
     "NEXT_PUBLIC_DERIV_APP_ID": "🔒",
