@@ -177,7 +177,21 @@ async function handler(req, res) {
 
     console.log('=== RESULT:', bots.length, 'valid bots ===');
     for (const b of bots) console.log(`  ${b.name} (${b.size} bytes)`);
-    return res.json({ bots, count: bots.length });
+
+    const spaShells = [];
+    for (const url of fetchedUrls) {
+      try {
+        const content = await safeFetch(url, 3000);
+        if (content && content.length > 4000 && content.length < 8000 && content.includes('<!DOCTYPE html')) {
+          spaShells.push(url);
+        }
+      } catch {}
+    }
+    if (spaShells.length > 0) {
+      console.log('NOTE: Some paths returned SPA HTML shell (bots may not exist as files):', spaShells.length);
+    }
+
+    return res.json({ bots, count: bots.length, spaShells: spaShells.length });
 
   } catch (error) {
     console.error('ERROR:', error.message);

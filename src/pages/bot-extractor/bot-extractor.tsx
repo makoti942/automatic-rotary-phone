@@ -282,7 +282,7 @@ const BotExtractor = () => {
             setProgress('');
 
             if (allBots.length === 0) {
-                setError('No bots found. The site may use a non-standard format.');
+                setError('No bots found. This site either does not serve .xml bot files, or bots are stored in a database/localStorage. Only sites with actual .xml files in /xml/ or /bots/ paths can be extracted.');
             }
         } catch (err: any) {
             setError(`Extraction failed: ${err.message}`);
@@ -341,6 +341,9 @@ const BotExtractor = () => {
 
             const data = await res.json();
             addLog(`Deep extract complete: ${data.count} bot(s) found`);
+            if (data.spaShells > 0) {
+                addLog(`Note: ${data.spaShells} path(s) returned SPA HTML (bots may not exist as .xml files on server)`);
+            }
 
             const allBots: ExtractedBot[] = data.bots.map((bot: any, i: number) => ({
                 name: bot.name || `Bot ${i + 1}`,
@@ -355,7 +358,7 @@ const BotExtractor = () => {
             addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
 
             if (allBots.length === 0) {
-                setError('No bots found. The site may not have accessible .xml bots.');
+                setError('No bots found. The site either does not serve .xml bot files, or uses a different storage method (database/localStorage). Only sites with actual .xml files in accessible paths can be extracted.');
             }
         } catch (err: any) {
             setError(`Deep extraction failed: ${err.message}`);
