@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { useStore } from '@deriv/stores';
+import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import './bot-extractor.scss';
 
