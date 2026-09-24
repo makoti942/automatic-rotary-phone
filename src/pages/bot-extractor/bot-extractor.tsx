@@ -384,32 +384,6 @@ const BotExtractor = () => {
                     addLog(`XML files: ${xmlsWithBots.length} loaded successfully`);
                 }
             }
-                    } catch {}
-                }
-
-                if (xmlFileRefs.size > 0) {
-                    addLog(`Found ${xmlFileRefs.size} .xml file ref(s) in JS — fetching...`);
-                    const xmlResults = await Promise.allSettled(
-                        [...xmlFileRefs].map(async (xmlUrl) => {
-                            try {
-                                visitedUrls.add(xmlUrl);
-                                const content = await fetchWithProxy(xmlUrl);
-                                if (content && content.includes('<block')) {
-                                    const name = decodeURIComponent(xmlUrl.split('/').pop()?.replace('.xml', '') || 'XML Bot');
-                                    addBot({ name, xml: content.trim(), source: xmlUrl, size: content.length });
-                                    return { url: xmlUrl, found: 1 };
-                                }
-                                return { url: xmlUrl, found: 0 };
-                            } catch {
-                                return { url: xmlUrl, found: 0 };
-                            }
-                        })
-                    );
-                    const xmlsWithBots = xmlResults
-                        .filter((r): r is PromiseFulfilledResult<{ url: string; found: number }> => r.status === 'fulfilled' && r.value.found > 0);
-                    addLog(`XML files: ${xmlsWithBots.length} loaded successfully`);
-                }
-            }
 
             // Phase 2: Check common bot paths
             setProgress('Scanning common bot directories...');
