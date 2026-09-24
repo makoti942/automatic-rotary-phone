@@ -57,6 +57,7 @@ import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
 const Tutorial = lazy(() => import('../tutorials'));
 const CopyTrading = lazy(() => import('../copy-trading/copy-trading'));
+const BotExtractor = lazy(() => import('../bot-extractor/bot-extractor'));
 
 const AppWrapper = observer(() => {
     const { connectionStatus } = useApiBase();
@@ -87,9 +88,9 @@ const AppWrapper = observer(() => {
         [key: string]: string;
     };
     const { clear } = summary_card;
-    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING } = DBOT_TABS;
+    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING, BOT_EXTRACTOR } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'bot_extractor', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -524,6 +525,23 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
+                                        <LabelPairedArrowRightCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Bot Extractor' />
+                                    </>
+                                }
+                                id='id-bot-extractor'
+                            >
+                                <Suspense fallback={<div style={{ padding: 12, color: '#999' }}>Loading...</div>}>
+                                    <BotExtractor />
+                                </Suspense>
+                            </div>
+                            <div
+                                label={
+                                    <>
                                         <LegacyGuide1pxIcon
                                             height='16px'
                                             width='16px'
@@ -553,7 +571,7 @@ const AppWrapper = observer(() => {
                     </div>
                 </div>
             </div>
-            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && (
+            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && active_tab !== BOT_EXTRACTOR && (
                 <DesktopWrapper>
                     <div className='main__run-strategy-wrapper'>
                         <RunStrategy />
@@ -563,7 +581,7 @@ const AppWrapper = observer(() => {
                     <TradingViewModal />
                 </DesktopWrapper>
             )}
-            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
+            {active_tab !== MANUAL_TRADE && active_tab !== COPY_TRADING && active_tab !== BOT_EXTRACTOR && <MobileWrapper>{!is_open && <RunPanel />}</MobileWrapper>}
             <Dialog
                 cancel_button_text={cancel_button_text || localize('Cancel')}
                 className='dc-dialog__wrapper--fixed'
