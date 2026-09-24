@@ -248,7 +248,7 @@ const BotExtractor = () => {
                 } catch {}
             }
 
-            const botPageHints = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade', 'xml'];
+            const botPageHints = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade', 'xml', 'bot', 'dashboard', 'workspace', 'editor', 'builder', 'create'];
             for (const hint of botPageHints) {
                 for (const suffix of ['', '/', '.html']) {
                     internalPages.add(`${baseUrl}/${hint}${suffix}`);
@@ -284,22 +284,24 @@ const BotExtractor = () => {
             addLog('\n--- Step 4: Probing common bot names ---');
             setProgress('Probing common bot paths...');
             const commonNames = [
-                'STARTER_BOT', 'POVERTY_KILLER', 'POVERTY_KILLER_V2.1',
-                'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
-                'THE CMV PRO', 'UNDER BLAST PRO',
-                'OVER1_R32 PRO', 'OVER2_R43 PRO',
-                'UNDER8_R67 PRO', 'UNDER7_R56 PRO',
-                'MAKOTIV3RISE_FALL', 'MAKOTIRISE_FALLV4',
-                'FREE BOT WITH MARTINGALE',
-                'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY',
-                'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
-                'Martingale', 'Dalembert', 'Oscar_Grinde',
-                'Fibonacci', 'Paroli', 'Anti_Martingale',
+                'Martingale', 'Dalembert', 'Oscar_Grinde', 'Fibonacci', 'Paroli',
+                'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
+                'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
+                'Under_5', 'Under_6', 'Under_7', 'Under_8',
+                'Over_1', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+                'Even_Odd', 'Differs', 'Digits', 'Matches',
+                'Market_Killer', 'Entry_Digit', 'Digit_Hunter',
+                'Multi_Killer', 'AI_Analyst', 'Recovery', 'Starter',
+                'Killer', 'Sniper', 'Hunter', 'Blaster', 'Turbo',
+                'Premium', 'Advanced', 'Basic', 'Pro', 'Elite',
             ];
             for (const name of commonNames) {
                 discoveredFiles.add(`${name}.xml`);
                 const lower = name.toLowerCase();
                 if (lower !== name) discoveredFiles.add(`${lower}.xml`);
+                const upper = name.toUpperCase();
+                if (upper !== name) discoveredFiles.add(`${upper}.xml`);
+                discoveredFiles.add(`${name.replace(/ /g, '_')}.xml`);
             }
             addLog(`Total candidate files: ${discoveredFiles.size}`);
 

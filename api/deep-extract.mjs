@@ -63,16 +63,16 @@ async function handler(req, res) {
       } catch {}
     }
 
-    const botPagePatterns = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade'];
+    const botPagePatterns = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade', 'xml', 'bot', 'dashboard', 'workspace', 'editor', 'builder', 'create'];
     for (const pattern of botPagePatterns) {
-      for (const suffix of ['', '/', '.html']) {
+      for (const suffix of ['', '/', '.html', '?page=1']) {
         internalPages.add(`${baseUrl}/${pattern}${suffix}`);
       }
     }
 
     console.log('Phase 2 - Crawling', internalPages.size, 'pages...');
 
-    const pageArray = [...internalPages].slice(0, 15);
+    const pageArray = [...internalPages].slice(0, 25);
     await Promise.allSettled(
       pageArray.map(async (pageUrl) => {
         if (checkedUrls.has(pageUrl)) return;
@@ -116,31 +116,35 @@ async function handler(req, res) {
     console.log('Phase 3 - After fetch:', bots.length, 'bots');
 
     const probeNames = [
-      'STARTER_BOT.xml', 'POVERTY_KILLER.xml', 'POVERTY_KILLER_V2.1.xml',
-      'BEST_RISE_FALL.xml', 'MAKOTI_AUTOMATED_RISE_FALL.xml',
-      'THE CMV PRO.xml', 'UNDER BLAST PRO.xml',
-      'OVER1_R32 PRO.xml', 'OVER2_R43 PRO.xml',
-      'UNDER8_R67 PRO.xml', 'UNDER7_R56 PRO.xml',
-      'MAKOTIV3RISE_FALL.xml', 'MAKOTIRISE_FALLV4.xml',
-      'FREE BOT WITH MARTINGALE.xml',
-      'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
-      'NEW_BOT_WITH_ENTRY_POINT.xml',
-      'SPLIT_MARTINGALE_BOT_PREMIUM.xml',
-      'Martingale.xml', 'Dalembert.xml', 'Oscar_Grinde.xml',
-      'Fibonacci.xml', 'Paroli.xml', 'Anti_Martingale.xml',
+      'Martingale', 'Dalembert', 'Oscar_Grinde', 'Fibonacci', 'Paroli',
+      'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
+      'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
+      'Under_5', 'Under_6', 'Under_7', 'Under_8',
+      'Over_1', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+      'Even_Odd', 'Differs', 'Digits', 'Matches', 'Differs_Auto',
+      'Market_Killer', 'O_U_Killer', 'High_Low', 'Entry_Digit',
+      'Digit_Hunter', 'Multi_Killer', 'AI_Analyst', 'Recovery',
+      'Premium', 'Advanced', 'Basic', 'Pro', 'Elite', 'Smart', 'Auto',
+      'Starter', 'Killer', 'Sniper', 'Hunter', 'Blaster', 'Turbo',
+      'RNG', 'Static', 'Dynamic', 'Matrix', 'Sentinel', 'Viper',
+      'Thunder', 'Lightning', 'Storm', 'Falcon', 'Eagle', 'Wolf',
+      'Dragon', 'Phoenix', 'Titan', 'Alpha', 'Omega', 'Sigma',
     ];
 
     const probePromises = [];
     for (const basePath of ['/xml/', '/bots/']) {
-      for (const filename of probeNames) {
-        let tryUrl;
-        try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
-        probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
-        const lower = filename.toLowerCase();
-        if (lower !== filename) {
-          let tryUrlLower;
-          try { tryUrlLower = new URL(basePath + lower, baseUrl).href; } catch { continue; }
-          probePromises.push(fetchAndValidate(tryUrlLower, lower, bots, seenContent));
+      for (const name of probeNames) {
+        const variants = [
+          `${name}.xml`,
+          `${name.toLowerCase()}.xml`,
+          `${name.toUpperCase()}.xml`,
+          `${name.replace(/ /g, '_')}.xml`,
+          `${name.replace(/ /g, '-')}.xml`,
+        ];
+        for (const filename of variants) {
+          let tryUrl;
+          try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
+          probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
         }
       }
     }
