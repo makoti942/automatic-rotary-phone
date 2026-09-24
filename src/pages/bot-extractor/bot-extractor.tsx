@@ -226,6 +226,50 @@ function extractNameFromXml(xml: string): string | null {
     return null;
 }
 
+function scanCurrentPageDOM(): { name: string; xml: string; source: string; size: number; fetchUrl: string }[] {
+    const results: { name: string; xml: string; source: string; size: number }[] = [];
+    const seen = new Set<string>();
+
+    const buttons = document.querySelectorAll('button[data-bot], button[data-xml], button[data-id], button[data-url], button[onclick*="load" i], a[href*="load" i], a[href*="import" i], a[href*="bot" i]');
+    for (const btn of buttons) {
+        const url = btn.getAttribute('data-bot') || btn.getAttribute('data-xml') || btn.getAttribute('data-id') || btn.getAttribute('data-url') || btn.getAttribute('href') || btn.getAttribute('onclick')?.match(/["']([^"']*load[^"']*)["']/i)?.[1];
+        if (url) {
+            try {
+                const full = new URL(url, window.location.origin).href;
+                if (full.startsWith(window.location.origin)) {
+                    results.push({ name: btn.textContent?.trim() || 'Button Bot', xml: '', source: 'dom-button:' + full, size: 0, fetchUrl: full });
+                }
+            } catch {}
+        }
+    }
+
+    const selects = document.querySelectorAll('select[name*="bot" i], select[id*="bot" i]');
+    for (const sel of selects) {
+        for (const opt of sel.options) {
+            if (opt.value) {
+                try {
+                    const full = new URL(opt.value, window.location.origin).href;
+                    if (full.startsWith(window.location.origin)) {
+                        results.push({ name: opt.textContent?.trim() || 'Select Bot', xml: '', source: 'dom-select:' + full, size: 0, fetchUrl: full });
+                    }
+                } catch {}
+            }
+        }
+    }
+
+    const links = document.querySelectorAll('a[href$=".xml"], a[href*="/bot/"], a[href*="/api/bot"]');
+    for (const link of links) {
+        try {
+            const full = new URL(link.href, window.location.origin).href;
+            if (full.startsWith(window.location.origin)) {
+                results.push({ name: link.textContent?.trim() || 'Link Bot', xml: '', source: 'dom-link:' + full, size: 0, fetchUrl: full });
+            }
+        } catch {}
+    }
+
+    return results;
+}
+
 const BotExtractor = () => {
     const { dashboard, load_modal } = useStore();
     const { setActiveTab } = dashboard;
@@ -621,6 +665,62 @@ const BotExtractor = () => {
         }
     }, [url]);
 
+    const extractFromCurrentPage = useCallback(async () => {
+        setIsExtracting(true);
+        setError('');
+        setExtractedBots([]);
+        setScanLog([]);
+
+        const addLog = (msg: string) => setScanLog(prev => [...prev, msg]);
+        const seenContent = new Set<string>();
+
+        addLog('--- Extract from Current Page (DOM mode) ---');
+        setProgress('Scanning current page DOM...');
+
+        try {
+            const domBots = scanCurrentPageDOM();
+            addLog(`Found ${domBots.length} load buttons/links in DOM`);
+
+            const allBots: ExtractedBot[] = [];
+            for (const bot of domBots) {
+                if (bot.fetchUrl) {
+                    addLog(`Fetching: ${bot.name} from ${bot.fetchUrl}`);
+                    try {
+                        const res = await fetch(bot.fetchUrl, { credentials: 'include' });
+                        if (res.ok) {
+                            const xml = await res.text();
+                            if (xml && isValidDerivBotXml(xml)) {
+                                const name = extractNameFromXml(xml) || bot.name;
+                                if (!seenContent.has(xml)) {
+                                    seenContent.add(xml);
+                                    allBots.push({ name, xml: xml.trim(), source: bot.source, size: xml.length, fromTab: 'Current Page' });
+                                    addLog(`  ✅ ${name} (${(xml.length / 1024).toFixed(1)} KB)`);
+                                }
+                            } else {
+                                addLog(`  ❌ Not valid bot XML`);
+                            }
+                        }
+                    } catch (e) {
+                        addLog(`  ❌ Fetch failed`);
+                    }
+                }
+            }
+
+            setExtractedBots(allBots);
+            setProgress('');
+            addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted from current page ===`);
+
+            if (allBots.length === 0) {
+                setError('No bots found on current page. Make sure you are on a Deriv bot site with a bot library visible.');
+            }
+        } catch (err: any) {
+            setError(`Current page extraction failed: ${err.message}`);
+            setProgress('');
+        } finally {
+            setIsExtracting(false);
+        }
+    }, []);
+
     return (
         <div className='bot-extractor'>
             <div className='bot-extractor__header'>
@@ -662,6 +762,14 @@ const BotExtractor = () => {
                         ) : (
                             'Deep Extract'
                         )}
+                    </button>
+                    <button
+                        className='bot-extractor__btn bot-extractor__btn--current'
+                        onClick={extractFromCurrentPage}
+                        disabled={isExtracting || isDeepExtracting}
+                        title='Run extractor on this page (must be on a Deriv bot site)'
+                    >
+                        Run on This Page
                     </button>
                 </div>
                 {progress && <div className='bot-extractor__progress'>{progress}</div>}
