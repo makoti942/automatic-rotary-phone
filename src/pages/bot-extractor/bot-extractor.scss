@@ -225,6 +225,50 @@
         margin-top: 8px;
         color: var(--text-general--low);
     }
+
+    &__log {
+        margin-top: 10px;
+        background: var(--general-section-1);
+        border-radius: 8px;
+        border: 1px solid var(--text-general--low);
+        overflow: hidden;
+    }
+
+    &__log-title {
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--text-general);
+        cursor: pointer;
+        user-select: none;
+
+        &:hover {
+            background: var(--general-section-2);
+        }
+    }
+
+    &__log-content {
+        max-height: 200px;
+        overflow-y: auto;
+        padding: 0 12px 8px;
+        font-size: 11px;
+        font-family: monospace;
+        color: var(--text-general);
+
+        &--collapsed {
+            display: none;
+        }
+    }
+
+    &__log-entry {
+        padding: 2px 0;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+        line-height: 1.4;
+
+        &:last-child {
+            border-bottom: none;
+        }
+    }
 }
 
 @keyframes be-spin {
