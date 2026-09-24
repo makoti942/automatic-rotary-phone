@@ -1,5 +1,5 @@
-const puppeteer = require('puppeteer-core');
-const chromium = require('@sparticuz/chromium');
+import puppeteer from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 
 async function handler(req, res) {
   console.log('=== HANDLER START ===');
@@ -184,4 +184,4 @@ function extractEmbeddedXml(html, sourceUrl) {
   return bots;
 }
 
-module.exports = handler;
+export default handler;
