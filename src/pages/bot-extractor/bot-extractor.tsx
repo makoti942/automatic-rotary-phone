@@ -284,20 +284,22 @@ const BotExtractor = () => {
             addLog('\n--- Step 4: Probing common bot names ---');
             setProgress('Probing common bot paths...');
             const commonNames = [
-                'STARTER_BOT', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
+                'STARTER_BOT', 'POVERTY_KILLER', 'POVERTY_KILLER_V2.1',
+                'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
+                'THE CMV PRO', 'UNDER BLAST PRO',
+                'OVER1_R32 PRO', 'OVER2_R43 PRO',
+                'UNDER8_R67 PRO', 'UNDER7_R56 PRO',
+                'MAKOTIV3RISE_FALL', 'MAKOTIRISE_FALLV4',
+                'FREE BOT WITH MARTINGALE',
+                'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY',
                 'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
-                'Poverty_Killer', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW',
-                'UNDER_6', 'UNDER6', 'OVER_1', 'EVEN_ODD_KILLER',
-                'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
-                'Entry_Digit', 'Martingale', 'Dalembert', 'Oscar_Grinde',
-                'Fibonacci', 'Paroli', 'Anti_Martingale', 'Rise_Fall',
-                'Both_Sides', 'Accumulators', 'Recovery', 'Premium',
-                'Advanced', 'Basic', 'Pro', 'Elite', 'Smart', 'Auto',
-                'Under_5', 'Under_7', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+                'Martingale', 'Dalembert', 'Oscar_Grinde',
+                'Fibonacci', 'Paroli', 'Anti_Martingale',
             ];
             for (const name of commonNames) {
                 discoveredFiles.add(`${name}.xml`);
-                discoveredFiles.add(`${name.toLowerCase()}.xml`);
+                const lower = name.toLowerCase();
+                if (lower !== name) discoveredFiles.add(`${lower}.xml`);
             }
             addLog(`Total candidate files: ${discoveredFiles.size}`);
 

@@ -116,24 +116,31 @@ async function handler(req, res) {
     console.log('Phase 3 - After fetch:', bots.length, 'bots');
 
     const probeNames = [
-      'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'STARTER_BOT', 'Poverty_Killer',
-      'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'UNDER_6', 'OVER_1',
-      'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
-      'Entry_Digit', 'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
-      'Martingale', 'Dalembert', 'Oscar_Grinde', 'Oscar', 'Fibonacci', 'Paroli',
-      'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
-      'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
-      'Under_5', 'Under_7', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+      'STARTER_BOT.xml', 'POVERTY_KILLER.xml', 'POVERTY_KILLER_V2.1.xml',
+      'BEST_RISE_FALL.xml', 'MAKOTI_AUTOMATED_RISE_FALL.xml',
+      'THE CMV PRO.xml', 'UNDER BLAST PRO.xml',
+      'OVER1_R32 PRO.xml', 'OVER2_R43 PRO.xml',
+      'UNDER8_R67 PRO.xml', 'UNDER7_R56 PRO.xml',
+      'MAKOTIV3RISE_FALL.xml', 'MAKOTIRISE_FALLV4.xml',
+      'FREE BOT WITH MARTINGALE.xml',
+      'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
+      'NEW_BOT_WITH_ENTRY_POINT.xml',
+      'SPLIT_MARTINGALE_BOT_PREMIUM.xml',
+      'Martingale.xml', 'Dalembert.xml', 'Oscar_Grinde.xml',
+      'Fibonacci.xml', 'Paroli.xml', 'Anti_Martingale.xml',
     ];
 
     const probePromises = [];
     for (const basePath of ['/xml/', '/bots/']) {
-      for (const name of probeNames) {
-        const candidates = [`${name}.xml`, `${name.toLowerCase()}.xml`];
-        for (const filename of candidates) {
-          let tryUrl;
-          try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
-          probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
+      for (const filename of probeNames) {
+        let tryUrl;
+        try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
+        probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
+        const lower = filename.toLowerCase();
+        if (lower !== filename) {
+          let tryUrlLower;
+          try { tryUrlLower = new URL(basePath + lower, baseUrl).href; } catch { continue; }
+          probePromises.push(fetchAndValidate(tryUrlLower, lower, bots, seenContent));
         }
       }
     }
