@@ -1,5 +1,5 @@
 async function handler(req, res) {
-  console.log('=== DEEP EXTRACT v4 ===');
+  console.log('=== DEEP EXTRACT v5 ===');
 
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
@@ -16,6 +16,7 @@ async function handler(req, res) {
     const bots = [];
     const seenContent = new Set();
     const fetchedUrls = new Set();
+    const checkedUrls = new Set();
 
     console.log('Target:', url);
 
@@ -24,86 +25,156 @@ async function handler(req, res) {
 
     const discoveredFiles = new Set();
 
-    discoverXmlFilesFromHtml(html, baseUrl, discoveredFiles);
-
     const scriptSrcRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
     const scriptSrcs = [];
     let m;
     while ((m = scriptSrcRegex.exec(html)) !== null) {
       try { scriptSrcs.push(new URL(m[1], baseUrl).href); } catch {}
     }
-    console.log('Scanning', scriptSrcs.length, 'JS files for .xml references...');
 
     for (const scriptUrl of scriptSrcs) {
       if (fetchedUrls.has(scriptUrl)) continue;
       fetchedUrls.add(scriptUrl);
       try {
-        const jsContent = await safeFetch(scriptUrl, 12000);
-        if (jsContent) {
-          discoverXmlFilesFromJs(jsContent, baseUrl, discoveredFiles);
-        }
+        const js = await safeFetch(scriptUrl, 10000);
+        if (js) discoverXmlFiles(js, discoveredFiles);
       } catch {}
     }
 
-    console.log('Discovered .xml files:', discoveredFiles.size, [...discoveredFiles]);
+    discoverXmlFiles(html, discoveredFiles);
+    console.log('Phase 1 - JS scan:', discoveredFiles.size, 'files:', [...discoveredFiles]);
 
-    const paths = ['/xml/', '/bots/', '/assets/xml/', '/public/xml/', '/static/xml/', '/bot/', '/'];
+    const internalPages = new Set();
+    const linkRegex = /href=["']([^"'#][^"']*?)["']/gi;
+    let lm;
+    while ((lm = linkRegex.exec(html)) !== null) {
+      try {
+        const full = new URL(lm[1], baseUrl).href;
+        if (full.startsWith(baseUrl)) internalPages.add(full);
+      } catch {}
+    }
+
+    const botPagePatterns = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade'];
+    for (const pattern of botPagePatterns) {
+      for (const suffix of ['', '/', '.html']) {
+        internalPages.add(`${baseUrl}/${pattern}${suffix}`);
+      }
+    }
+
+    console.log('Phase 2 - Crawling', internalPages.size, 'internal pages...');
+
+    const pageArray = [...internalPages].slice(0, 30);
+    const pageResults = await Promise.allSettled(
+      pageArray.map(async (pageUrl) => {
+        if (checkedUrls.has(pageUrl)) return;
+        checkedUrls.add(pageUrl);
+        try {
+          const pageHtml = await safeFetch(pageUrl, 6000);
+          if (!pageHtml) return;
+          discoverXmlFiles(pageHtml, discoveredFiles);
+
+          const subLinkRegex = /href=["']([^"'#][^"']*?)["']/gi;
+          let slm;
+          while ((slm = subLinkRegex.exec(pageHtml)) !== null) {
+            try {
+              const subFull = new URL(slm[1], pageUrl).href;
+              if (subFull.startsWith(baseUrl) && subFull.endsWith('.xml') && !checkedUrls.has(subFull)) {
+                checkedUrls.add(subFull);
+                discoveredFiles.add(subFull.split('/').pop());
+              }
+            } catch {}
+          }
+        } catch {}
+      })
+    );
+    console.log('Phase 2 - After crawl:', discoveredFiles.size, 'files');
+
+    const allPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
+    const fetchPromises = [];
 
     for (const filename of discoveredFiles) {
-      for (const basePath of paths) {
+      for (const basePath of allPaths) {
         let fileUrl;
         try { fileUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
         if (fetchedUrls.has(fileUrl)) continue;
         fetchedUrls.add(fileUrl);
-
-        try {
-          const content = await safeFetch(fileUrl, 8000);
-          if (!content) continue;
-
-          if (isValidDerivBotXml(content) && !seenContent.has(content)) {
-            seenContent.add(content);
-            const name = extractBotName(filename, content);
-            bots.push({ name, xml: content.trim(), source: fileUrl, size: content.length });
-            console.log('FOUND:', name, `(${content.length} bytes)`, fileUrl);
-          } else if (content.includes('<html') || content.includes('<!DOCTYPE')) {
-            console.log('SPA shell returned for:', fileUrl);
-          }
-        } catch {}
+        fetchPromises.push(fetchAndValidate(fileUrl, filename, bots, seenContent));
       }
     }
 
-    const commonBots = [
-      'STARTER_BOT', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
-      'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
-      'Poverty_Killer', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW',
-      'UNDER_6', 'UNDER6', 'OVER_1', 'EVEN_ODD_KILLER',
-      'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
-      'Entry_Digit', 'Martingale', 'Dalembert', 'Oscar_Grinde',
-      'Fibonacci', 'Paroli', 'Anti_Martingale',
+    console.log('Phase 3 - Fetching', fetchPromises.length, 'discovered file URLs...');
+    await Promise.allSettled(fetchPromises);
+    console.log('Phase 3 - After fetch:', bots.length, 'valid bots');
+
+    const probeNames = [
+      'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'STARTER_BOT', 'Poverty_Killer',
+      'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'UNDER_6', 'OVER_1',
+      'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
+      'Entry_Digit', 'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
+      'Martingale', 'Dalembert', 'Oscar_Grinde', 'Oscar', 'Fibonacci', 'Paroli',
+      'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
+      'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
+      'Under_5', 'Under_7', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+      'RNG', 'Static', 'Dynamic', 'Smart', 'Auto',
+      'Recovery', 'Premium', 'Advanced', 'Basic', 'Pro', 'Elite',
     ];
+
+    const probePromises = [];
     for (const basePath of ['/xml/', '/bots/']) {
-      for (const name of commonBots) {
-        const candidates = [
-          `${name}.xml`,
-          `${name.toLowerCase()}.xml`,
-          `${name.replace(/ /g, '_')}.xml`,
-        ];
+      for (const name of probeNames) {
+        const candidates = [`${name}.xml`, `${name.toLowerCase()}.xml`];
         for (const filename of candidates) {
           const tryUrl = `${baseUrl}${basePath}${filename}`;
           if (fetchedUrls.has(tryUrl)) continue;
           fetchedUrls.add(tryUrl);
-          try {
-            const content = await safeFetch(tryUrl, 5000);
-            if (content && isValidDerivBotXml(content) && !seenContent.has(content)) {
-              seenContent.add(content);
-              const cleanName = name.replace(/_/g, ' ');
-              bots.push({ name: cleanName, xml: content.trim(), source: tryUrl, size: content.length });
-              console.log('COMMON HIT:', cleanName, tryUrl);
-            }
-          } catch {}
+          probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
         }
       }
     }
+
+    console.log('Phase 4 - Probing', probePromises.length, 'common names...');
+    await Promise.allSettled(probePromises);
+    console.log('Phase 4 - After probe:', bots.length, 'valid bots');
+
+    const dirPromises = [];
+    for (const dir of ['/xml/', '/bots/']) {
+      const dirUrl = `${baseUrl}${dir}`;
+      if (!fetchedUrls.has(dirUrl)) {
+        fetchedUrls.add(dirUrl);
+        dirPromises.push((async () => {
+          try {
+            const dirContent = await safeFetch(dirUrl, 5000);
+            if (dirContent) {
+              const fileLinks = dirContent.match(/href=["']([^"']+\.xml)["']/gi);
+              if (fileLinks) {
+                for (const fl of fileLinks) {
+                  const fname = fl.match(/href=["']([^"']+\.xml)["']/i)?.[1];
+                  if (fname) discoveredFiles.add(fname.split('/').pop());
+                }
+              }
+            }
+          } catch {}
+        })());
+      }
+    }
+    await Promise.allSettled(dirPromises);
+    console.log('Phase 5 - After dir listing:', discoveredFiles.size, 'total files');
+
+    const finalFetchPromises = [];
+    for (const filename of discoveredFiles) {
+      for (const basePath of ['/xml/', '/bots/']) {
+        let fileUrl;
+        try { fileUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
+        if (fetchedUrls.has(fileUrl)) continue;
+        fetchedUrls.add(fileUrl);
+        finalFetchPromises.push(fetchAndValidate(fileUrl, filename, bots, seenContent));
+      }
+    }
+    if (finalFetchPromises.length > 0) {
+      await Promise.allSettled(finalFetchPromises);
+    }
+
+    bots.sort((a, b) => b.size - a.size);
 
     console.log('=== RESULT:', bots.length, 'valid bots ===');
     for (const b of bots) console.log(`  ${b.name} (${b.size} bytes)`);
@@ -115,80 +186,49 @@ async function handler(req, res) {
   }
 }
 
-function discoverXmlFilesFromHtml(html, baseUrl, discovered) {
+async function fetchAndValidate(fileUrl, filename, bots, seenContent) {
+  try {
+    const content = await safeFetch(fileUrl, 6000);
+    if (!content) return;
+    if (content.includes('<!DOCTYPE html') || content.includes('<html')) return;
+    if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return;
+
+    if (isValidDerivBotXml(content) && !seenContent.has(content)) {
+      seenContent.add(content);
+      const name = filename.replace('.xml', '').replace(/[_-]/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\b\w/g, c => c.toUpperCase());
+      bots.push({ name, xml: content.trim(), source: fileUrl, size: content.length });
+      console.log('FOUND:', name, `(${content.length} bytes)`);
+    }
+  } catch {}
+}
+
+function discoverXmlFiles(content, discovered) {
   const patterns = [
-    /href=["']([^"']*\.xml)["']/gi,
-    /src=["']([^"']*\.xml)["']/gi,
-    /["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g,
+    /["']([A-Za-z][A-Za-z0-9_ .-]+\.xml)["']/g,
+    /\/([A-Za-z][A-Za-z0-9_ .-]+\.xml)/g,
   ];
 
   for (const regex of patterns) {
     let match;
-    while ((match = regex.exec(html)) !== null) {
-      let filename = match[1];
-      if (!filename || !filename.endsWith('.xml')) continue;
+    while ((match = regex.exec(content)) !== null) {
+      let filename = match[1] || match[0];
+      if (!filename.endsWith('.xml')) continue;
       if (filename.length < 5 || filename.length > 80) continue;
-
-      if (filename.startsWith('http')) {
-        try {
-          const u = new URL(filename);
-          filename = u.pathname.split('/').pop();
-        } catch { continue; }
-      } else {
-        filename = filename.replace(/^\/+/, '');
-      }
-
-      if (filename.includes('node_modules') || filename.includes('.chunk') || filename.includes('.bundle')) continue;
+      filename = filename.replace(/^["'\/]+/, '').replace(/["']+$/, '');
+      if (filename.includes('blockly') || filename.includes('node_modules')) continue;
       discovered.add(filename);
     }
   }
-}
-
-function discoverXmlFilesFromJs(jsContent, baseUrl, discovered) {
-  const xmlFilePattern = /["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g;
-  let match;
-  while ((match = xmlFilePattern.exec(jsContent)) !== null) {
-    const filename = match[1];
-    if (filename.length < 5 || filename.length > 80) continue;
-    if (filename.includes('node_modules') || filename.includes('.chunk') || filename.includes('.bundle')) continue;
-
-    const lower = filename.toLowerCase();
-    if (lower.includes('error') || lower.includes('module') || lower.includes('not_found')) continue;
-
-    discovered.add(filename);
-    discovered.add(lower);
-  }
 
   const arrayPattern = /\[([^[\]]*\.xml[^[\]]*)\]/g;
-  while ((match = arrayPattern.exec(jsContent)) !== null) {
+  while ((match = arrayPattern.exec(content)) !== null) {
     const block = match[1];
     const items = block.match(/["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g);
     if (items && items.length >= 2) {
       for (const item of items) {
-        const name = item.replace(/["']/g, '');
-        discovered.add(name);
-        discovered.add(name.toLowerCase());
-      }
-    }
-  }
-
-  const xmlRefPatterns = [
-    /fetch\s*\(\s*["']([^"']*\.xml)["']/gi,
-    /\.get\s*\(\s*["']([^"']*\.xml)["']/gi,
-    /import\s*\(\s*["']([^"']*\.xml)["']/gi,
-    /require\s*\(\s*["']([^"']*\.xml)["']/gi,
-    /loadFile\s*\(\s*["']([^"']*\.xml)["']/gi,
-  ];
-
-  for (const regex of xmlRefPatterns) {
-    while ((match = regex.exec(jsContent)) !== null) {
-      let path = match[1];
-      if (path && path.endsWith('.xml')) {
-        const parts = path.split('/');
-        const filename = parts[parts.length - 1];
-        if (filename.length >= 5 && filename.length <= 80) {
-          discovered.add(filename);
-        }
+        discovered.add(item.replace(/["']/g, ''));
       }
     }
   }
@@ -200,10 +240,6 @@ function isValidDerivBotXml(content) {
   if (trimmed.length < 200) return false;
   if (trimmed.length > 500000) return false;
 
-  if (trimmed.includes('<!DOCTYPE html') || trimmed.includes('<html')) return false;
-  if (trimmed.includes('MODULE_NOT_FOUND') || trimmed.includes('Cannot find module')) return false;
-  if (trimmed.includes('error') && trimmed.includes('Error:')) return false;
-
   if (!trimmed.startsWith('<xml') && !trimmed.startsWith('<?xml')) return false;
   if (!trimmed.includes('<block')) return false;
   if (!trimmed.includes('type="')) return false;
@@ -211,25 +247,7 @@ function isValidDerivBotXml(content) {
   const blockCount = (trimmed.match(/<block /g) || []).length;
   if (blockCount < 2) return false;
 
-  const tagOpen = (trimmed.match(/<block[\s>]/g) || []).length;
-  const tagClose = (trimmed.match(/<\/block>/g) || []).length;
-  if (tagClose === 0 && tagOpen > 3) return false;
-
-  const hasXmlClosing = trimmed.endsWith('</xml>');
-  if (!hasXmlClosing && blockCount > 3) return false;
-
   return true;
-}
-
-function extractBotName(filename, content) {
-  let name = filename.replace('.xml', '');
-
-  const prettyName = name
-    .replace(/_/g, ' ')
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    .replace(/\b\w/g, c => c.toUpperCase());
-
-  return prettyName;
 }
 
 async function safeFetch(url, timeout = 8000) {
@@ -247,7 +265,7 @@ async function safeFetch(url, timeout = 8000) {
     clearTimeout(timer);
     if (!resp.ok) return null;
     const ct = resp.headers.get('content-type') || '';
-    if (ct.includes('image') || ct.includes('video') || ct.includes('audio') || ct.includes('font')) return null;
+    if (ct.includes('image') || ct.includes('video') || ct.includes('font')) return null;
     return await resp.text();
   } catch { return null; }
 }

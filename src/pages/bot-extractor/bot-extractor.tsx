@@ -34,10 +34,6 @@ function isValidDerivBot(content: string): boolean {
     if (!trimmed.includes('type="')) return false;
     const blockCount = (trimmed.match(/<block /g) || []).length;
     if (blockCount < 2) return false;
-    const tagClose = (trimmed.match(/<\/block>/g) || []).length;
-    if (tagClose === 0 && blockCount > 3) return false;
-    const hasXmlClosing = trimmed.endsWith('</xml>');
-    if (!hasXmlClosing && blockCount > 3) return false;
     return true;
 }
 
@@ -88,139 +84,197 @@ const BotExtractor = () => {
 
         const allBots: ExtractedBot[] = [];
         const visited = new Set<string>();
+        const seenContent = new Set<string>();
+        const discoveredFiles = new Set<string>();
 
         const isSameDomain = (u: string, base: string) => { try { return new URL(u).hostname === new URL(base).hostname; } catch { return false; } };
+
+        const fetchTextSafe = async (fUrl: string, timeout = 15000): Promise<string | null> => {
+            for (const proxyFn of CORS_PROXIES) {
+                try {
+                    const proxyUrl = proxyFn(fUrl);
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeout);
+                    const res = await fetch(proxyUrl, { signal: controller.signal });
+                    clearTimeout(timer);
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (text && text.length > 50) return text;
+                    }
+                } catch {}
+            }
+            return null;
+        };
+
+        const discoverXml = (content: string) => {
+            const patterns = [
+                /["']([A-Za-z][A-Za-z0-9_ .-]+\.xml)["']/g,
+                /\/([A-Za-z][A-Za-z0-9_ .-]+\.xml)/g,
+            ];
+            for (const regex of patterns) {
+                let m;
+                while ((m = regex.exec(content)) !== null) {
+                    let fname = m[1] || m[0];
+                    if (!fname.endsWith('.xml') || fname.length < 5 || fname.length > 80) continue;
+                    fname = fname.replace(/^["'\/]+/, '').replace(/["']+$/, '');
+                    if (fname.includes('blockly') || fname.includes('node_modules')) continue;
+                    discoveredFiles.add(fname);
+                }
+            }
+            const arr = /\[([^[\]]*\.xml[^[\]]*)\]/g;
+            let am;
+            while ((am = arr.exec(content)) !== null) {
+                const items = am[1].match(/["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g);
+                if (items && items.length >= 2) {
+                    for (const item of items) discoveredFiles.add(item.replace(/["']/g, ''));
+                }
+            }
+        };
 
         try {
             const baseUrl = new URL(targetUrl).origin;
 
-            // ===== STEP 1: Fetch main page, find JS bundles =====
             addLog('--- Step 1: Fetching main page ---');
             setProgress('Fetching main page...');
-            const mainHtml = await fetchText(targetUrl);
-            const mainDoc = new DOMParser().parseFromString(mainHtml, 'text/html');
+            const mainHtml = await fetchTextSafe(targetUrl);
+            if (!mainHtml) throw new Error('Failed to fetch main page');
+            discoverXml(mainHtml);
+            addLog(`Main page scanned, ${discoveredFiles.size} .xml files found`);
 
-            // Find all JS bundles
+            addLog('\n--- Step 2: Scanning JS bundles ---');
+            setProgress('Scanning JavaScript bundles...');
             const jsUrls: string[] = [];
-            mainDoc.querySelectorAll('script[src]').forEach(s => {
-                const src = s.getAttribute('src');
-                if (src && src.includes('.js')) {
-                    try { jsUrls.push(new URL(src, targetUrl).href); } catch {}
-                }
-            });
+            const jsRegex = /<script[^>]+src=["']([^"']+\.js)["'][^>]*>/gi;
+            let jm;
+            while ((jm = jsRegex.exec(mainHtml)) !== null) {
+                try { jsUrls.push(new URL(jm[1], targetUrl).href); } catch {}
+            }
             addLog(`Found ${jsUrls.length} JS bundle(s)`);
 
-            // ===== STEP 2: Scan JS for bot filenames =====
-            addLog('\n--- Step 2: Scanning JS for bot filenames ---');
-            setProgress('Scanning JavaScript for bot filenames...');
+            const jsResults = await Promise.allSettled(jsUrls.map(async (jsUrl) => {
+                const js = await fetchTextSafe(jsUrl, 12000);
+                if (js) {
+                    discoverXml(js);
+                    const short = jsUrl.split('/').pop() || '';
+                    addLog(`  ${short}: ${[...discoveredFiles].length} files so far`);
+                }
+            }));
+            addLog(`After JS scan: ${discoveredFiles.size} .xml files`);
 
-            const discoveredXmlFiles = new Set<string>();
-
-            for (const jsUrl of jsUrls) {
+            addLog('\n--- Step 3: Crawling internal pages ---');
+            setProgress('Crawling pages for .xml references...');
+            const internalPages = new Set<string>();
+            const linkRegex = /href=["']([^"'#][^"']*?)["']/gi;
+            let lm;
+            while ((lm = linkRegex.exec(mainHtml)) !== null) {
                 try {
-                    const jsContent = await fetchText(jsUrl);
-                    const shortName = jsUrl.split('/').pop() || jsUrl;
-                    addLog(`Scanning: ${shortName} (${(jsContent.length / 1024).toFixed(0)} KB)`);
+                    const full = new URL(lm[1], targetUrl).href;
+                    if (isSameDomain(full, baseUrl)) internalPages.add(full);
+                } catch {}
+            }
 
-                    // Pattern 1: Find arrays of .xml filenames (like getXmlFiles())
-                    // Looks for: ['FILE1.xml', 'FILE2.xml', ...] or ["FILE1.xml", ...]
-                    const arrayPattern = /(?:return\s*)?\[([\s\S]*?)\]/g;
-                    let arrayMatch;
-                    while ((arrayMatch = arrayPattern.exec(jsContent)) !== null) {
-                        const arrayContent = arrayMatch[1];
-                        const xmlFiles = [...arrayContent.matchAll(/['"`]([a-zA-Z0-9_ .\-]+\.xml)['"`]/gi)];
-                        if (xmlFiles.length >= 2) {
-                            addLog(`  Found array with ${xmlFiles.length} .xml files:`);
-                            for (const m of xmlFiles) {
-                                discoveredXmlFiles.add(m[1]);
-                                addLog(`    ${m[1]}`);
-                            }
-                        }
-                    }
-
-                    // Pattern 2: Find .xml filenames in string literals
-                    const singleXml = [...jsContent.matchAll(/['"`]([a-zA-Z0-9_ .\-]+\.xml)['"`]/gi)];
-                    for (const m of singleXml) {
-                        const fileName = m[1];
-                        if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$') && !fileName.includes('window.') && !fileName.toLowerCase().includes('error') && !fileName.toLowerCase().includes('not_found') && !fileName.toLowerCase().includes('module_not_found')) {
-                            discoveredXmlFiles.add(fileName);
-                        }
-                    }
-                } catch {
-                    addLog(`  ⚠️ Failed to scan bundle`);
+            const botPageHints = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade', 'xml'];
+            for (const hint of botPageHints) {
+                for (const suffix of ['', '/', '.html']) {
+                    internalPages.add(`${baseUrl}/${hint}${suffix}`);
                 }
             }
 
-            addLog(`\nDiscovered ${discoveredXmlFiles.size} .xml filename(s) from JS`);
+            const pages = [...internalPages].slice(0, 25);
+            addLog(`Checking ${pages.length} pages...`);
 
-            // ===== STEP 3: Fetch each .xml file =====
-            addLog('\n--- Step 3: Fetching .xml files ---');
-            setProgress(`Fetching ${discoveredXmlFiles.size} .xml file(s)...`);
-
-            for (const fileName of discoveredXmlFiles) {
-                for (const dir of COMMON_XML_DIRS) {
-                    const tryUrl = `${baseUrl}${dir}${fileName}`;
-                    if (!visited.has(tryUrl)) {
-                        visited.add(tryUrl);
-                        try {
-                            const content = await fetchText(tryUrl);
-                            if (content && isValidDerivBot(content)) {
-                                const botName = fileName.replace('.xml', '').replace(/[_-]/g, ' ')
-                                    .replace(/([a-z])([A-Z])/g, '$1 $2')
-                                    .replace(/\b\w/g, c => c.toUpperCase());
-                                allBots.push({
-                                    name: botName,
-                                    xml: content.trim(),
-                                    source: tryUrl,
-                                    size: content.length,
-                                    fromTab: dir,
-                                });
-                                addLog(`  ✅ ${botName} from ${dir} (${(content.length / 1024).toFixed(1)} KB)`);
-                                break;
-                            }
-                        } catch {}
-                    }
-                }
-            }
-
-            // ===== STEP 4: Scan linked pages for .xml links =====
-            addLog('\n--- Step 4: Checking linked pages for .xml links ---');
-            setProgress('Checking linked pages...');
-            const pageLinks: string[] = [];
-            mainDoc.querySelectorAll('a[href]').forEach(a => {
-                const href = a.getAttribute('href');
-                if (href && !href.match(/\.(png|jpg|gif|svg|css|js|ico|woff|ttf)/i)) {
-                    try {
-                        const full = new URL(href, targetUrl).href;
-                        if (isSameDomain(full, baseUrl) && !visited.has(full) && !full.includes('#')) {
-                            pageLinks.push(full);
-                        }
-                    } catch {}
-                }
-            });
-
-            await Promise.allSettled(
-                pageLinks.slice(0, 20).map(async (link) => {
-                    try {
-                        const pageHtml = await fetchText(link);
-                        const pageDoc = new DOMParser().parseFromString(pageHtml, 'text/html');
-                        pageDoc.querySelectorAll('a[href*=".xml"]').forEach(el => {
-                            const href = el.getAttribute('href');
+            await Promise.allSettled(pages.map(async (pageUrl) => {
+                const pageHtml = await fetchTextSafe(pageUrl, 8000);
+                if (pageHtml) {
+                    discoverXml(pageHtml);
+                    const subLinks = pageHtml.match(/href=["']([^"'#]+\.xml)["']/gi);
+                    if (subLinks) {
+                        for (const sl of subLinks) {
+                            const href = sl.match(/href=["']([^"']+)["']/i)?.[1];
                             if (href) {
                                 try {
-                                    const full = new URL(href, link).href;
-                                    if (!visited.has(full) && isSameDomain(full, baseUrl)) {
-                                        visited.add(full);
-                                        // Will fetch below
+                                    const full = new URL(href, pageUrl).href;
+                                    if (isSameDomain(full, baseUrl)) {
+                                        const fname = full.split('/').pop();
+                                        if (fname && fname.endsWith('.xml')) discoveredFiles.add(fname);
                                     }
                                 } catch {}
                             }
-                        });
-                    } catch {}
-                })
-            );
+                        }
+                    }
+                }
+            }));
+            addLog(`After page crawl: ${discoveredFiles.size} .xml files`);
 
-            // ===== DONE =====
+            addLog('\n--- Step 4: Probing common bot names ---');
+            setProgress('Probing common bot paths...');
+            const commonNames = [
+                'STARTER_BOT', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
+                'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
+                'Poverty_Killer', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW',
+                'UNDER_6', 'UNDER6', 'OVER_1', 'EVEN_ODD_KILLER',
+                'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter',
+                'Entry_Digit', 'Martingale', 'Dalembert', 'Oscar_Grinde',
+                'Fibonacci', 'Paroli', 'Anti_Martingale', 'Rise_Fall',
+                'Both_Sides', 'Accumulators', 'Recovery', 'Premium',
+                'Advanced', 'Basic', 'Pro', 'Elite', 'Smart', 'Auto',
+                'Under_5', 'Under_7', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
+            ];
+            for (const name of commonNames) {
+                discoveredFiles.add(`${name}.xml`);
+                discoveredFiles.add(`${name.toLowerCase()}.xml`);
+            }
+            addLog(`Total candidate files: ${discoveredFiles.size}`);
+
+            addLog('\n--- Step 5: Fetching .xml files ---');
+            setProgress(`Fetching ${discoveredFiles.size} candidate files...`);
+
+            const dirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
+            const fetchQueue: { url: string; name: string }[] = [];
+
+            for (const fname of discoveredFiles) {
+                for (const dir of dirs) {
+                    const tryUrl = `${baseUrl}${dir}${fname}`;
+                    if (!visited.has(tryUrl)) {
+                        visited.add(tryUrl);
+                        fetchQueue.push({ url: tryUrl, name: fname });
+                    }
+                }
+            }
+
+            addLog(`Testing ${fetchQueue.length} URLs...`);
+            let fetched = 0;
+            const batchSize = 10;
+            for (let i = 0; i < fetchQueue.length; i += batchSize) {
+                const batch = fetchQueue.slice(i, i + batchSize);
+                const results = await Promise.allSettled(batch.map(async ({ url: fUrl, name }) => {
+                    const content = await fetchTextSafe(fUrl, 6000);
+                    fetched++;
+                    if (!content) return;
+                    if (content.includes('<!DOCTYPE html') || content.includes('<html')) return;
+                    if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return;
+
+                    if (isValidDerivBot(content) && !seenContent.has(content)) {
+                        seenContent.add(content);
+                        const botName = name.replace('.xml', '').replace(/[_-]/g, ' ')
+                            .replace(/([a-z])([A-Z])/g, '$1 $2')
+                            .replace(/\b\w/g, c => c.toUpperCase());
+                        allBots.push({
+                            name: botName,
+                            xml: content.trim(),
+                            source: fUrl,
+                            size: content.length,
+                            fromTab: 'Extract',
+                        });
+                        addLog(`  ✅ ${botName} (${(content.length / 1024).toFixed(1)} KB)`);
+                    }
+                }));
+
+                if (fetched % 30 === 0) {
+                    setProgress(`Fetched ${fetched}/${fetchQueue.length}, found ${allBots.length} bots...`);
+                }
+            }
+
             addLog(`\n=== COMPLETE ===`);
             addLog(`Total bots found: ${allBots.length}`);
 
@@ -236,7 +290,7 @@ const BotExtractor = () => {
         } finally {
             setIsExtracting(false);
         }
-    }, [url, fetchText, addLog]);
+    }, [url, addLog]);
 
     const loadBotToBuilder = useCallback(async (bot: ExtractedBot) => {
         if (!bot.xml) return;
