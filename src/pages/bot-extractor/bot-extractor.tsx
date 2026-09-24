@@ -171,6 +171,61 @@ function guessNameFromContext(jsContent: string, position: number, xml: string):
     return `Bot ${Math.floor(position / 100)}`;
 }
 
+function extractLoadBotUrls(html: string, baseUrl: string): string[] {
+    const urls = new Set<string>();
+    const patterns = [
+        /<button[^>]*data-(?:bot|id|xml|url)=["']([^"']+)["']/gi,
+        /<button[^>]*onclick=["']([^"']*load[^"']*)["']/gi,
+        /<a[^>]*href=["']([^"']*load[^"']*)["']/gi,
+    ];
+    for (const regex of patterns) {
+        let match;
+        while ((match = regex.exec(html)) !== null) {
+            const val = match[1] || match[0];
+            try {
+                const url = new URL(val, baseUrl).href;
+                if (url.startsWith(baseUrl) && (url.includes('.xml') || url.includes('/api/') || url.includes('/bot/') || url.includes('/load'))) {
+                    urls.add(url);
+                }
+            } catch {}
+        }
+    }
+    const dataAttrRegex = /data-(?:bot|xml|id|url)=["']([^"']+\.xml)["']/gi;
+    let match;
+    while ((match = dataAttrRegex.exec(html)) !== null) {
+        try {
+            const url = new URL(match[1], baseUrl).href;
+            if (url.startsWith(baseUrl)) urls.add(url);
+        } catch {}
+    }
+    const selectRegex = /<select[^>]*name=["'][^"']*bot[^"']*["'][^>]*>([\s\S]*?)<\/select>/gi;
+    while ((match = selectRegex.exec(html)) !== null) {
+        const options = match[1].match(/<option[^>]*value=["']([^"']+)["']/gi);
+        if (options) {
+            for (const opt of options) {
+                const valMatch = opt.match(/value=["']([^"']+)["']/i);
+                if (valMatch) {
+                    try {
+                        const url = new URL(valMatch[1], baseUrl).href;
+                        if (url.startsWith(baseUrl)) urls.add(url);
+                    } catch {}
+                }
+            }
+        }
+    }
+    return [...urls];
+}
+
+function extractNameFromXml(xml: string): string | null {
+    const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
+    if (nameFromField) return nameFromField[1].trim();
+    const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
+    if (nameFromMutation) return nameFromMutation[1].trim();
+    const nameFromTitle = xml.match(/<title[^>]*>([^<]{2,50})<\/title>/i);
+    if (nameFromTitle && !nameFromTitle[1].match(/^\d+$/)) return nameFromTitle[1].trim();
+    return null;
+}
+
 const BotExtractor = () => {
     const { dashboard, load_modal } = useStore();
     const { setActiveTab } = dashboard;
@@ -322,8 +377,10 @@ const BotExtractor = () => {
             const pages = [...internalPages].slice(0, 25);
             addLog(`Checking ${pages.length} pages...`);
             const crawledJsUrls = new Set<string>();
+            const checkedPages = new Set<string>([targetUrl, ...pages]);
 
             await Promise.allSettled(pages.map(async (pageUrl) => {
+                checkedPages.add(pageUrl);
                 const pageHtml = await fetchTextSafe(pageUrl, 8000);
                 if (pageHtml) {
                     discoverXml(pageHtml);
@@ -354,7 +411,36 @@ const BotExtractor = () => {
             }));
             addLog(`After page crawl: ${discoveredFiles.size} .xml files, ${crawledJsUrls.size} new JS files`);
 
-            addLog('\n--- Step 3b: Scanning crawled JS files for embedded XML ---');
+            addLog('\n--- Step 3b: Detecting Load Bot buttons ---');
+            setProgress('Finding Load Bot buttons...');
+            const loadBotUrls = new Set<string>();
+            for (const pageUrl of checkedPages) {
+                try {
+                    const pageHtml = await fetchTextSafe(pageUrl, 4000);
+                    if (pageHtml) {
+                        const urls = extractLoadBotUrls(pageHtml, baseUrl);
+                        for (const u of urls) loadBotUrls.add(u);
+                    }
+                } catch {}
+            }
+            addLog(`Found ${loadBotUrls.size} Load Bot URLs`);
+
+            for (const loadUrl of loadBotUrls) {
+                try {
+                    const xml = await fetchTextSafe(loadUrl, 8000);
+                    if (xml && isValidDerivBotXml(xml)) {
+                        const name = extractNameFromXml(xml) || loadUrl.split('/').pop()?.replace('.xml', '') || 'Loaded Bot';
+                        if (!seenContent.has(xml)) {
+                            seenContent.add(xml);
+                            allBots.push({ name, xml: xml.trim(), source: 'load-button:' + loadUrl, size: xml.length, fromTab: 'Load Bot' });
+                            addLog(`  Load Bot: ${name} (${(xml.length / 1024).toFixed(1)} KB)`);
+                        }
+                    }
+                } catch {}
+            }
+            addLog(`After Load Buttons: ${allBots.length} bots`);
+
+            addLog('\n--- Step 3c: Scanning crawled JS files for embedded XML ---');
             setProgress('Scanning crawled JS files...');
             const crawledJsResults = await Promise.allSettled([...crawledJsUrls].map(async (jsUrl) => {
                 const js = await fetchTextSafe(jsUrl, 10000);
