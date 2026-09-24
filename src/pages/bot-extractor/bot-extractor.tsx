@@ -266,14 +266,6 @@ const BotExtractor = () => {
                 <div className='bot-extractor__results'>
                     <div className='bot-extractor__results-header'>
                         <h3>Extracted Bots ({extractedBots.length})</h3>
-                        <button
-                            className='bot-extractor__btn bot-extractor__btn--load-all'
-                            onClick={() => extractedBots.forEach(bot => {
-                                if (!loadedBots.has(bot.source)) loadBotToBuilder(bot);
-                            })}
-                        >
-                            Load All to Builder
-                        </button>
                     </div>
 
                     <div className='bot-extractor__bot-list'>
