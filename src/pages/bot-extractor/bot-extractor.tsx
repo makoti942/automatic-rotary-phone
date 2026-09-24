@@ -289,7 +289,7 @@ const BotExtractor = () => {
                                     .replace(/\\"/g, '"').replace(/\\'/g, "'")
                                     .replace(/\\\//g, '/');
 
-                                if (xml.length > 100 && xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                if (xml.length > 100 && xml.includes('<block') && !allBots.some(b => b.xml === xml)) {
                                     const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
                                     addBot({
                                         name: nameMatch?.[1] || `JS Bot ${allBots.length + 1}`,
@@ -321,7 +321,7 @@ const BotExtractor = () => {
                                         .replace(/\\"/g, '"').replace(/\\'/g, "'")
                                         .replace(/\\\//g, '/');
 
-                                    if (xml.length > 100 && xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                    if (xml.length > 100 && xml.includes('<block') && !allBots.some(b => b.xml === xml)) {
                                         addBot({
                                             name: `JS Bot ${allBots.length + 1}`,
                                             xml, source: jsUrl, size: xml.length,
