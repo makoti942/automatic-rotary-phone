@@ -37,6 +37,76 @@ function isValidDerivBot(content: string): boolean {
     return true;
 }
 
+function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenContent: Set<string>): { name: string; xml: string; source: string; size: number }[] {
+    const results: { name: string; xml: string; source: string; size: number }[] = [];
+    const escapePatterns = [
+        { open: '\\u003cxml', close: '\\u003c/xml\\u003e', esc: true },
+        { open: '\\u003Cxml', close: '\\u003C/xml\\u003E', esc: true },
+        { open: '\\x3cxml', close: '\\x3c/xml\\x3e', esc: true },
+        { open: '<xml', close: '</xml>', esc: false },
+    ];
+
+    for (const { open, close, esc } of escapePatterns) {
+        let pos = 0;
+        while (pos < jsContent.length) {
+            const start = jsContent.indexOf(open, pos);
+            if (start === -1) break;
+            const end = jsContent.indexOf(close, start + open.length);
+            if (end === -1) { pos = start + open.length; continue; }
+
+            let xml = jsContent.substring(start, end + close.length);
+            if (esc) {
+                xml = xml
+                    .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
+                    .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
+                    .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
+                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                    .replace(/\\"/g, '"').replace(/\\'/g, "'");
+            }
+
+            if (xml.length > 500 && xml.includes('<block') && !seenContent.has(xml)) {
+                const blockCount = (xml.match(/<block /g) || []).length;
+                if (xml.trimStart().startsWith('<xml') && xml.includes('type="') && blockCount >= 3) {
+                    const name = guessNameFromContext(jsContent, start, xml);
+                    seenContent.add(xml);
+                    results.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
+                }
+            }
+            pos = end + close.length;
+        }
+    }
+    return results;
+}
+
+function guessNameFromContext(jsContent: string, position: number, xml: string): string {
+    const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
+    if (nameFromField) return nameFromField[1].trim();
+    const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
+    if (nameFromMutation) return nameFromMutation[1].trim();
+
+    const contextBefore = jsContent.substring(Math.max(0, position - 500), position);
+    const varMatch = contextBefore.match(/(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["'`][^"'`]*$/g);
+    if (varMatch) {
+        const last = varMatch[varMatch.length - 1];
+        const name = last.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '').trim();
+        if (name.length > 2 && name.length < 60) return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+    }
+    const propMatch = contextBefore.match(/([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*["'`][^"'`]*$/g);
+    if (propMatch) {
+        const last = propMatch[propMatch.length - 1];
+        const name = last.replace(/\s*:.*$/, '').trim();
+        if (name.length > 2 && name.length < 60 && !['return', 'const', 'let', 'var', 'function'].includes(name)) {
+            return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+        }
+    }
+    const fileMatch = contextBefore.match(/["']([A-Za-z][A-Za-z0-9_-]+)\.xml["']/g);
+    if (fileMatch) {
+        const last = fileMatch[fileMatch.length - 1].replace(/["']/g, '').replace('.xml', '');
+        return last.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
+    }
+    return `Bot ${Math.floor(position / 100)}`;
+}
+
 const BotExtractor = () => {
     const { dashboard, load_modal } = useStore();
     const { setActiveTab } = dashboard;
@@ -155,11 +225,16 @@ const BotExtractor = () => {
                 const js = await fetchTextSafe(jsUrl, 12000);
                 if (js) {
                     discoverXml(js);
+                    const embedded = extractEmbeddedBotsFromJs(js, jsUrl, seenContent);
+                    for (const bot of embedded) {
+                        allBots.push({ ...bot, fromTab: 'Embedded JS' });
+                        addLog(`  Embedded: ${bot.name} (${(bot.size / 1024).toFixed(1)} KB)`);
+                    }
                     const short = jsUrl.split('/').pop() || '';
                     addLog(`  ${short}: ${[...discoveredFiles].length} files so far`);
                 }
             }));
-            addLog(`After JS scan: ${discoveredFiles.size} .xml files`);
+            addLog(`After JS scan: ${discoveredFiles.size} .xml files, ${allBots.length} embedded bots`);
 
             addLog('\n--- Step 3: Crawling internal pages ---');
             setProgress('Crawling pages for .xml references...');
