@@ -210,8 +210,8 @@ function discoverXmlFiles(content, discovered) {
     /\/([A-Za-z][A-Za-z0-9_ .-]+\.xml)/g,
   ];
 
+  let match;
   for (const regex of patterns) {
-    let match;
     while ((match = regex.exec(content)) !== null) {
       let filename = match[1] || match[0];
       if (!filename.endsWith('.xml')) continue;
