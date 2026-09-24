@@ -264,16 +264,19 @@ function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
           .replace(/\\"/g, '"').replace(/\\'/g, "'");
       }
 
-      if (xml.length > 500 && xml.includes('<block') && !seenContent.has(xml)) {
+      if (xml.length > 1000 && xml.includes('<block') && !seenContent.has(xml)) {
         const blockCount = (xml.match(/<block /g) || []).length;
-        const hasType = xml.includes('type="');
         const startsXml = xml.trimStart().startsWith('<xml');
+        const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
+        const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
+        const hasVar = xml.includes('<variable');
+        const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript') || xml.includes('function(');
 
-        if (startsXml && hasType && blockCount >= 3) {
+        if (startsXml && hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
           const name = extractNameFromContext(jsContent, start, xml);
           seenContent.add(xml);
           bots.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-          console.log('Embedded bot:', name, `(${xml.length} bytes)`);
+          console.log('Embedded bot:', name, `(${xml.length} bytes, ${blockCount} blocks)`);
         }
       }
       pos = end + close.length;
@@ -345,13 +348,16 @@ function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
         .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
         .replace(/\\"/g, '"').replace(/\\'/g, "'");
 
-      if (xml.length > 500 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
+      if (xml.length > 1000 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
         const blockCount = (xml.match(/<block /g) || []).length;
-        if (blockCount >= 3) {
+        const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
+        const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
+        const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript') || xml.includes('function(');
+        if (hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
           const name = extractNameFromContext(jsContent, xmlStart, xml);
           seenContent.add(xml);
           bots.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-          console.log('Embedded bot (keyword):', name, `(${xml.length} bytes)`);
+          console.log('Embedded bot (keyword):', name, `(${xml.length} bytes, ${blockCount} blocks)`);
         }
       }
       keywordPos = xmlEnd;
