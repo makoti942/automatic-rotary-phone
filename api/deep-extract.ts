@@ -20,17 +20,21 @@ export default async function handler(req: any, res: any) {
 
   let browser;
   try {
-    console.log('Launching browser...');
+    console.log('=== DEEP EXTRACT START ===');
+    console.log('URL:', url);
+    console.log('Chromium path:', await chromium.executablePath());
+    console.log('Chromium args:', chromium.args);
+
     browser = await puppeteer.launch({
-      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox'],
+      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
     });
-    console.log('Browser launched');
+    console.log('Browser launched successfully');
 
     const page = await browser.newPage();
-    page.setDefaultNavigationTimeout(20000);
-    page.setDefaultTimeout(20000);
+    page.setDefaultNavigationTimeout(15000);
+    page.setDefaultTimeout(15000);
 
     const bots: ExtractedBot[] = [];
     const seenXml = new Set<string>();
@@ -46,10 +50,12 @@ export default async function handler(req: any, res: any) {
     });
 
     console.log('Navigating to:', url);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
+    await page.goto(url, { waitUntil: 'networkidle2', timeout: 15000 });
+    console.log('Page loaded');
 
     // Wait for dynamic content
-    await new Promise(r => setTimeout(r, 3000));
+    await new Promise(r => setTimeout(r, 2000));
+    console.log('Waited for dynamic content');
 
     // Find bot links in DOM
     const botLinks = await page.evaluate(() => {
@@ -62,7 +68,7 @@ export default async function handler(req: any, res: any) {
       });
       return links;
     });
-    console.log('Bot links found:', botLinks.length);
+    console.log('Bot links found:', botLinks.length, botLinks);
 
     // Add DOM links to xmlRequests
     for (const link of botLinks) if (!xmlRequests.includes(link)) xmlRequests.push(link);
@@ -77,28 +83,29 @@ export default async function handler(req: any, res: any) {
           if (selector) triggers.push({ selector, text });
         }
       });
-      return triggers.slice(0, 15);
+      return triggers.slice(0, 10);
     });
-    console.log('Triggers to click:', botTriggers.length);
+    console.log('Triggers to click:', botTriggers.length, botTriggers);
 
     for (const trigger of botTriggers) {
       try {
         await page.click(trigger.selector, { delay: 100 });
-        await new Promise(r => setTimeout(r, 1000));
-      } catch {}
+        await new Promise(r => setTimeout(r, 500));
+      } catch (e) { console.log('Click failed:', trigger.selector, e); }
     }
 
     // Fetch each discovered .xml
+    console.log('Fetching', xmlRequests.length, 'XML files...');
     for (const xmlUrl of xmlRequests) {
       try {
-        const response = await page.goto(xmlUrl, { waitUntil: 'networkidle2', timeout: 10000 });
+        const response = await page.goto(xmlUrl, { waitUntil: 'networkidle2', timeout: 8000 });
         if (response.ok()) {
           const content = await response.text();
           if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
             seenXml.add(content);
             const name = xmlUrl.split('/').pop()?.replace('.xml', '').replace(/[_-]/g, ' ') || 'Unknown Bot';
             bots.push({ name, xml: content.trim(), source: xmlUrl, size: content.length });
-            console.log('Extracted:', name);
+            console.log('Extracted:', name, 'size:', content.length);
           }
         }
       } catch (e) { console.log('Failed to fetch', xmlUrl, e); }
@@ -113,10 +120,11 @@ export default async function handler(req: any, res: any) {
         bots.push(bot);
       }
     }
+    console.log('Embedded bots:', embeddedBots.length);
 
-    // Try common paths as fallback
+    // Try common paths as fallback (limited to avoid timeout)
     const baseUrl = new URL(url).origin;
-    const commonPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/'];
+    const commonPaths = ['/xml/', '/bots/'];
     const commonNames = ['Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'UNDER_6', 'UNDER6', 'UNDER_6_BOT', 'OVER_1', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter', 'Entry_Digit', 'STARTER_BOT'];
 
     for (const path of commonPaths) {
@@ -124,7 +132,7 @@ export default async function handler(req: any, res: any) {
         const tryUrl = `${baseUrl}${path}${name}.xml`;
         if (xmlRequests.includes(tryUrl)) continue;
         try {
-          const response = await page.goto(tryUrl, { waitUntil: 'networkidle2', timeout: 8000 });
+          const response = await page.goto(tryUrl, { waitUntil: 'networkidle2', timeout: 5000 });
           if (response.ok()) {
             const content = await response.text();
             if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
@@ -138,13 +146,13 @@ export default async function handler(req: any, res: any) {
     }
 
     await browser.close();
-    console.log('Done, bots found:', bots.length);
+    console.log('=== DEEP EXTRACT COMPLETE: ' + bots.length + ' bots ===');
     return res.json({ bots, count: bots.length });
 
   } catch (error: any) {
-    console.error('Deep extract error:', error);
+    console.error('=== DEEP EXTRACT ERROR ===', error);
     if (browser) { try { await browser.close(); } catch {} }
-    return res.status(500).json({ error: error.message || 'Extraction failed' });
+    return res.status(500).json({ error: error.message || 'Extraction failed', stack: error.stack });
   }
 }
 
