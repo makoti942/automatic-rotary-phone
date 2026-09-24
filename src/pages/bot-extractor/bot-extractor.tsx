@@ -231,6 +231,88 @@ const BotExtractor = () => {
             addLog(`Main page: found ${mainBots.length} bot(s), ${mainLinks.length} links`);
             visitedUrls.add(targetUrl);
 
+            // Phase 1b: Scan JS bundles for embedded XML bots (SPA sites bundle XML in JS)
+            setProgress('Scanning JavaScript bundles...');
+            const jsUrls: string[] = [];
+            const jsMatches = html.matchAll(/src=["']([^"']*\.js(?:\?[^"']*)?)["']/gi);
+            for (const m of jsMatches) {
+                try {
+                    const full = new URL(m[1], targetUrl).href;
+                    if (!visitedUrls.has(full)) jsUrls.push(full);
+                } catch {}
+            }
+            if (jsUrls.length > 0) {
+                addLog(`Found ${jsUrls.length} JS bundle(s) — scanning for embedded XML...`);
+                const jsResults = await Promise.allSettled(
+                    jsUrls.map(async (jsUrl) => {
+                        try {
+                            visitedUrls.add(jsUrl);
+                            const jsContent = await fetchWithProxy(jsUrl);
+                            if (!jsContent) return { url: jsUrl, found: 0 };
+
+                            let found = 0;
+                            // Look for XML blocks embedded as strings: <xml ...>...</xml> or <blockly ...>...</blockly>
+                            const xmlPattern = /<xml[^>]*type=["']blockly["'][^>]*>[\s\S]*?<\/xml>/gi;
+                            let m2: RegExpExecArray | null;
+                            while ((m2 = xmlPattern.exec(jsContent)) !== null) {
+                                const xml = m2[0]
+                                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                                    .replace(/\\"/g, '"').replace(/\\'/g, "'")
+                                    .replace(/\\\//g, '/');
+                                if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                    const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
+                                    addBot({
+                                        name: nameMatch?.[1] || `JS Bot ${allBots.length + 1}`,
+                                        xml, source: jsUrl, size: xml.length,
+                                    });
+                                    found++;
+                                }
+                            }
+
+                            // Also look for escaped XML in string literals: \<xml or \u003Cxml
+                            const escapedPattern = /(?:\\u003C|\\x3C|<)xml[^>]*type=["']blockly["'][^>]*>[\s\S]*?(?:\\u003C|\\x3C|<)\/xml>/gi;
+                            while ((m2 = escapedPattern.exec(jsContent)) !== null) {
+                                const xml = m2[0]
+                                    .replace(/\\u003C/g, '<').replace(/\\x3C/g, '<')
+                                    .replace(/\\u003E/g, '>').replace(/\\x3E/g, '>')
+                                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                                    .replace(/\\"/g, '"').replace(/\\'/g, "'")
+                                    .replace(/\\\//g, '/');
+                                if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                    addBot({
+                                        name: `JS Bot ${allBots.length + 1}`,
+                                        xml, source: jsUrl, size: xml.length,
+                                    });
+                                    found++;
+                                }
+                            }
+
+                            // strategy_to_load assignments in JS
+                            const stratPattern = /strategy_to_load\s*=\s*["'`]([^"'`]{50,})["'`]/gi;
+                            while ((m2 = stratPattern.exec(jsContent)) !== null) {
+                                const xml = m2[1]
+                                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                                    .replace(/\\"/g, '"').replace(/\\'/g, "'");
+                                if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                    addBot({
+                                        name: `Strategy Bot ${allBots.length + 1}`,
+                                        xml, source: jsUrl, size: xml.length,
+                                    });
+                                    found++;
+                                }
+                            }
+
+                            return { url: jsUrl, found };
+                        } catch {
+                            return { url: jsUrl, found: 0 };
+                        }
+                    })
+                );
+                const jsWithBots = jsResults
+                    .filter((r): r is PromiseFulfilledResult<{ url: string; found: number }> => r.status === 'fulfilled' && r.value.found > 0);
+                addLog(`JS bundles: ${jsWithBots.length} contained bot(s) — ${jsWithBots.reduce((s, r) => s + r.value.found, 0)} total`);
+            }
+
             // Phase 2: Check common bot paths
             setProgress('Scanning common bot directories...');
             const baseUrl = new URL(targetUrl).origin;
