@@ -2,6 +2,11 @@
   "installCommand": "pnpm install --no-frozen-lockfile",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "functions": {
+    "api/deep-extract.mjs": {
+      "maxDuration": 30
+    }
+  },
   "env": {
     "NEXT_PUBLIC_DERIV_APP_ID": "🔒",
     "NEXT_PUBLIC_DERIV_ENV": "🔒",

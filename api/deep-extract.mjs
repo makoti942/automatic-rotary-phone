@@ -63,13 +63,13 @@ async function handler(req, res) {
 
     console.log('Phase 2 - Crawling', internalPages.size, 'internal pages...');
 
-    const pageArray = [...internalPages].slice(0, 30);
+    const pageArray = [...internalPages].slice(0, 15);
     const pageResults = await Promise.allSettled(
       pageArray.map(async (pageUrl) => {
         if (checkedUrls.has(pageUrl)) return;
         checkedUrls.add(pageUrl);
         try {
-          const pageHtml = await safeFetch(pageUrl, 6000);
+          const pageHtml = await safeFetch(pageUrl, 4000);
           if (!pageHtml) return;
           discoverXmlFiles(pageHtml, discoveredFiles);
 
