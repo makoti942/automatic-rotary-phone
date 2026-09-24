@@ -22,14 +22,21 @@ const COMMON_BOT_PATHS = [
     '/bot/', '/blockly/', '/deriv/', '/binary/', '/trade/',
     '/xml/bots/', '/xml/strategies/', '/bots/xml/', '/strategies/xml/',
     '/public/xml/', '/assets/xml/', '/static/xml/',
-    '/wp-content/uploads/', '/wp-content/themes/',
-    '/sitemaps/', '/sitemap.xml', '/robots.txt',
+    '/wp-content/uploads/',
 ];
 
-// Common bot file patterns
-const BOT_FILE_PATTERNS = [
-    '*.xml', '*.xml.zip', '*.json',
-    'bot*.xml', 'strategy*.xml', 'trade*.xml',
+// Known Deriv bot filenames to probe (common across third-party sites)
+const KNOWN_BOT_NAMES = [
+    'Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL',
+    'UNDER8_R67_PRO', 'NEW_BOT_WITH_ENTRY_POINT', 'SPLIT_MARTINGALE_BOT_PREMIUM',
+    'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'Market_Killer', 'O_U_KILLER',
+    'HIGH_LOW', 'UNDER765', 'Entry_Digit', 'AI_Analyst', 'Multi_Killer',
+    'Digit_Hunter', 'Martingale', 'martingale', 'dalembert', 'oscars_grind',
+    'reverse_martingale', 'accumulators_dalembert', 'accumulators_martingale',
+    'reverse_dalembert', '1_3_2_6', 'accumulator', 'digit_differ',
+    'rise_fall', 'run_high_low', 'tick_high_low', 'smart_martingale',
+    'grid_bot', 'scalping', 'trend_following', 'volatility_bot',
+    'deriv_bot', 'binary_bot', 'blockly_bot', 'custom_strategy',
 ];
 
 const BotExtractor = () => {
@@ -385,9 +392,47 @@ const BotExtractor = () => {
                 }
             }
 
+            // Phase 1d: Probe known bot filenames in common directories
+            const baseUrl = new URL(targetUrl).origin;
+            const probeDirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/files/', '/strategies/'];
+            const probeNames = KNOWN_BOT_NAMES;
+            const totalProbes = probeDirs.length * probeNames.length;
+            addLog(`Probing ${totalProbes} known bot filenames...`);
+            setProgress('Probing known bot filenames...');
+
+            const probeResults = await Promise.allSettled(
+                probeDirs.flatMap(dir =>
+                    probeNames.map(async (name) => {
+                        try {
+                            const probeUrl = `${baseUrl}${dir}${name}.xml`;
+                            if (visitedUrls.has(probeUrl)) return { url: probeUrl, found: false };
+                            visitedUrls.add(probeUrl);
+                            const content = await fetchWithProxy(probeUrl);
+                            if (content && content.includes('<block') && content.length > 200) {
+                                return { url: probeUrl, found: true, name, content };
+                            }
+                            return { url: probeUrl, found: false };
+                        } catch {
+                            return { url: '', found: false };
+                        }
+                    })
+                )
+            );
+
+            const foundProbes = probeResults
+                .filter((r): r is PromiseFulfilledResult<{ url: string; found: true; name: string; content: string }> => r.status === 'fulfilled' && r.value.found);
+            foundProbes.forEach(r => {
+                addBot({
+                    name: r.value.name.replace(/_/g, ' '),
+                    xml: r.value.content.trim(),
+                    source: r.value.url,
+                    size: r.value.content.length,
+                });
+            });
+            addLog(`Probe results: ${foundProbes.length} bot(s) found`);
+
             // Phase 2: Check common bot paths
             setProgress('Scanning common bot directories...');
-            const baseUrl = new URL(targetUrl).origin;
             const pathsToCheck = [...COMMON_BOT_PATHS];
             addLog(`Scanning ${pathsToCheck.length} common paths...`);
 
