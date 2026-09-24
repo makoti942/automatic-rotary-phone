@@ -2,29 +2,42 @@ const puppeteer = require('puppeteer-core');
 const chromium = require('@sparticuz/chromium');
 
 async function handler(req, res) {
+  console.log('=== HANDLER START ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+
   if (req.method !== 'POST') {
+    console.log('Method not allowed');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { url } = req.body;
+  console.log('Request body:', req.body);
   if (!url || !url.startsWith('http')) {
+    console.log('Invalid URL');
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
+  console.log('Target URL:', url);
+
   let browser;
   try {
-    console.log('=== DEEP EXTRACT START ===');
-    console.log('URL:', url);
-    console.log('Chromium path:', await chromium.executablePath());
+    console.log('=== LAUNCHING BROWSER ===');
+    console.log('Chromium executable path:', await chromium.executablePath());
+    console.log('Chromium args:', chromium.args);
 
-    browser = await puppeteer.launch({
-      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage'],
+    const launchOptions = {
+      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process', '--no-zygote'],
       executablePath: await chromium.executablePath(),
       headless: chromium.headless,
-    });
-    console.log('Browser launched successfully');
+    };
+    console.log('Launch options prepared');
+
+    browser = await puppeteer.launch(launchOptions);
+    console.log('=== BROWSER LAUNCHED SUCCESSFULLY ===');
 
     const page = await browser.newPage();
+    console.log('New page created');
     page.setDefaultNavigationTimeout(15000);
     page.setDefaultTimeout(15000);
 
@@ -43,7 +56,7 @@ async function handler(req, res) {
 
     console.log('Navigating to:', url);
     await page.goto(url, { waitUntil: 'networkidle2', timeout: 15000 });
-    console.log('Page loaded');
+    console.log('Page loaded successfully');
 
     // Wait for dynamic content
     await new Promise(r => setTimeout(r, 2000));
