@@ -22,6 +22,25 @@ const COMMON_XML_DIRS = [
     '/files/', '/strategies/', '/downloads/',
 ];
 
+function isValidDerivBot(content: string): boolean {
+    if (!content || typeof content !== 'string') return false;
+    const trimmed = content.trim();
+    if (trimmed.length < 200) return false;
+    if (trimmed.length > 500000) return false;
+    if (trimmed.includes('<!DOCTYPE html') || trimmed.includes('<html')) return false;
+    if (trimmed.includes('MODULE_NOT_FOUND') || trimmed.includes('Cannot find module')) return false;
+    if (!trimmed.startsWith('<xml') && !trimmed.startsWith('<?xml')) return false;
+    if (!trimmed.includes('<block')) return false;
+    if (!trimmed.includes('type="')) return false;
+    const blockCount = (trimmed.match(/<block /g) || []).length;
+    if (blockCount < 2) return false;
+    const tagClose = (trimmed.match(/<\/block>/g) || []).length;
+    if (tagClose === 0 && blockCount > 3) return false;
+    const hasXmlClosing = trimmed.endsWith('</xml>');
+    if (!hasXmlClosing && blockCount > 3) return false;
+    return true;
+}
+
 const BotExtractor = () => {
     const { dashboard, load_modal } = useStore();
     const { setActiveTab } = dashboard;
@@ -123,37 +142,9 @@ const BotExtractor = () => {
                     const singleXml = [...jsContent.matchAll(/['"`]([a-zA-Z0-9_ .\-]+\.xml)['"`]/gi)];
                     for (const m of singleXml) {
                         const fileName = m[1];
-                        if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$') && !fileName.includes('window.')) {
+                        if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$') && !fileName.includes('window.') && !fileName.toLowerCase().includes('error') && !fileName.toLowerCase().includes('not_found') && !fileName.toLowerCase().includes('module_not_found')) {
                             discoveredXmlFiles.add(fileName);
                         }
-                    }
-
-                    // Pattern 3: Find embedded <xml>...</xml> blocks (SPA sites bundle XML in JS)
-                    let pos = 0;
-                    while (pos < jsContent.length) {
-                        const xmlStart = jsContent.indexOf('<xml', pos);
-                        if (xmlStart === -1) break;
-                        const xmlEnd = jsContent.indexOf('</xml>', xmlStart);
-                        if (xmlEnd === -1) { pos = xmlStart + 4; continue; }
-
-                        let xml = jsContent.substring(xmlStart, xmlEnd + 6);
-                        xml = xml.replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-                            .replace(/\\"/g, '"').replace(/\\'/g, "'").replace(/\\\//g, '/');
-
-                        if (xml.length > 100 && xml.includes('<block') && !allBots.some(b => b.xml === xml)) {
-                            const catMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
-                            const blockMatch = xml.match(/type=["']([a-z_]+)["']/i);
-                            const name = catMatch?.[1] || blockMatch?.[1] || `Bot ${allBots.length + 1}`;
-                            allBots.push({
-                                name,
-                                xml,
-                                source: jsUrl,
-                                size: xml.length,
-                                fromTab: 'Embedded in JS',
-                            });
-                            addLog(`  Embedded bot: ${name} (${(xml.length / 1024).toFixed(1)} KB)`);
-                        }
-                        pos = xmlEnd + 6;
                     }
                 } catch {
                     addLog(`  ⚠️ Failed to scan bundle`);
@@ -173,8 +164,10 @@ const BotExtractor = () => {
                         visited.add(tryUrl);
                         try {
                             const content = await fetchText(tryUrl);
-                            if (content && (content.includes('<block') || content.includes('<xml')) && content.length > 200) {
-                                const botName = fileName.replace('.xml', '').replace(/[_-]/g, ' ');
+                            if (content && isValidDerivBot(content)) {
+                                const botName = fileName.replace('.xml', '').replace(/[_-]/g, ' ')
+                                    .replace(/([a-z])([A-Z])/g, '$1 $2')
+                                    .replace(/\b\w/g, c => c.toUpperCase());
                                 allBots.push({
                                     name: botName,
                                     xml: content.trim(),
@@ -182,8 +175,8 @@ const BotExtractor = () => {
                                     size: content.length,
                                     fromTab: dir,
                                 });
-                                addLog(`  ✅ ${fileName} from ${dir} (${(content.length / 1024).toFixed(1)} KB)`);
-                                break; // Found it, don't try other dirs
+                                addLog(`  ✅ ${botName} from ${dir} (${(content.length / 1024).toFixed(1)} KB)`);
+                                break;
                             }
                         } catch {}
                     }
