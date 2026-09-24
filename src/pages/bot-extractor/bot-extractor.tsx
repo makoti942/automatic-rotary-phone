@@ -10,7 +10,12 @@ interface ExtractedBot {
     size: number;
 }
 
-const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+const CORS_PROXIES = [
+    (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+    (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+    (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
+];
 
 // Common paths where Deriv bots are often hosted
 const COMMON_BOT_PATHS = [
@@ -45,8 +50,23 @@ const BotExtractor = () => {
     }, []);
 
     const fetchWithProxy = useCallback(async (targetUrl: string): Promise<string> => {
-        const proxyUrl = `${CORS_PROXY}${encodeURIComponent(targetUrl)}`;
-        const res = await fetch(proxyUrl);
+        for (const proxyFn of CORS_PROXIES) {
+            try {
+                const proxyUrl = proxyFn(targetUrl);
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 10000);
+                const res = await fetch(proxyUrl, { signal: controller.signal });
+                clearTimeout(timeout);
+                if (res.ok) {
+                    const text = await res.text();
+                    if (text && text.length > 10) return text;
+                }
+            } catch {
+                // Try next proxy
+            }
+        }
+        // Last resort: try direct fetch (will work for same-origin or open CORS)
+        const res = await fetch(targetUrl);
         if (!res.ok) throw new Error(`${res.status}`);
         return res.text();
     }, []);
@@ -225,9 +245,8 @@ const BotExtractor = () => {
                 pathsToCheck.map(async (path) => {
                     try {
                         const pathUrl = baseUrl + path;
-                        const res = await fetch(pathUrl);
-                        if (res.ok) {
-                            const content = await res.text();
+                        const content = await fetchWithProxy(pathUrl);
+                        if (content) {
                             const { bots, links } = extractXmlFromHtml(content, pathUrl);
                             bots.forEach(addBot);
                             return { path, found: bots.length, links };
@@ -385,7 +404,7 @@ const BotExtractor = () => {
                         const pageUrl = `${baseUrl}/${page}`;
                         if (visitedUrls.has(pageUrl)) return { page, found: 0 };
                         visitedUrls.add(pageUrl);
-                        const content = await fetch(pageUrl).then(r => r.ok ? r.text() : '');
+                        const content = await fetchWithProxy(pageUrl);
                         if (content) {
                             const { bots } = extractXmlFromHtml(content, pageUrl);
                             bots.forEach(addBot);
