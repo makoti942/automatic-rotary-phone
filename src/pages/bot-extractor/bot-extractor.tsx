@@ -267,6 +267,9 @@ const BotExtractor = () => {
                 addLog(`Found ${jsUrls.length} JS bundle(s) — scanning for embedded XML...`);
                 const xmlFileRefs = new Set<string>();
 
+                // Also discover lazy-loaded chunks from chunk hash maps in JS bundles
+                const chunkUrls: string[] = [];
+
                 const jsResults = await Promise.allSettled(
                     jsUrls.map(async (jsUrl) => {
                         try {
@@ -356,6 +359,21 @@ const BotExtractor = () => {
                                 } catch {}
                             }
 
+                            // Discover lazy-loaded chunks: look for {id:"hash",...} chunk maps
+                            const chunkMapPattern = /\{(\d+):"([a-f0-9]{6,8})"(?:,(\d+):"([a-f0-9]{6,8})")*\}/g;
+                            let cm: RegExpExecArray | null;
+                            while ((cm = chunkMapPattern.exec(jsContent)) !== null) {
+                                const mapStr = cm[0];
+                                const entries = [...mapStr.matchAll(/(\d+):"([a-f0-9]{6,8})"/g)];
+                                for (const entry of entries) {
+                                    const chunkId = entry[1];
+                                    const chunkHash = entry[2];
+                                    const origin = new URL(jsUrl).origin;
+                                    const chunkUrl = `${origin}/static/js/${chunkId}.${chunkHash}.js`;
+                                    if (!visitedUrls.has(chunkUrl)) chunkUrls.push(chunkUrl);
+                                }
+                            }
+
                             return { url: jsUrl, found };
                         } catch (err) {
                             addLog(`  ${jsUrl.split('/').pop()}: error — ${err}`);
@@ -363,6 +381,56 @@ const BotExtractor = () => {
                         }
                     })
                 );
+
+                // Scan lazy-loaded chunks for .xml filenames and embedded XML
+                if (chunkUrls.length > 0) {
+                    addLog(`Found ${chunkUrls.length} lazy-loaded chunk(s) — scanning...`);
+                    await Promise.allSettled(
+                        chunkUrls.map(async (chunkUrl) => {
+                            try {
+                                const chunkContent = await fetchWithProxy(chunkUrl);
+                                if (!chunkContent || chunkContent.length < 1000) return;
+
+                                // Search for .xml filename references
+                                const xmlFilePattern = /["'`]([a-zA-Z0-9_ .\-]+\.xml)["'`]/gi;
+                                let xfm: RegExpExecArray | null;
+                                while ((xfm = xmlFilePattern.exec(chunkContent)) !== null) {
+                                    const fileName = xfm[1];
+                                    if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$')) {
+                                        // Try fetching from common directories
+                                        const dirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/'];
+                                        for (const dir of dirs) {
+                                            const tryUrl = `${new URL(targetUrl).origin}${dir}${fileName}`;
+                                            if (!visitedUrls.has(tryUrl)) xmlFileRefs.add(tryUrl);
+                                        }
+                                    }
+                                }
+
+                                // Also search for embedded XML blocks
+                                let cpos = 0;
+                                while (cpos < chunkContent.length) {
+                                    const xmlStart = chunkContent.indexOf('<xml', cpos);
+                                    if (xmlStart === -1) break;
+                                    const xmlEnd = chunkContent.indexOf('</xml>', xmlStart);
+                                    if (xmlEnd === -1) { cpos = xmlStart + 4; continue; }
+                                    const rawXml = chunkContent.substring(xmlStart, xmlEnd + 6);
+                                    let xml = rawXml
+                                        .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                                        .replace(/\\"/g, '"').replace(/\\'/g, "'")
+                                        .replace(/\\\//g, '/');
+                                    if (xml.length > 100 && xml.includes('<block') && !allBots.some(b => b.xml === xml)) {
+                                        const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
+                                        addBot({
+                                            name: nameMatch?.[1] || `Chunk Bot ${allBots.length + 1}`,
+                                            xml, source: chunkUrl, size: xml.length,
+                                        });
+                                    }
+                                    cpos = xmlEnd + 6;
+                                }
+                            } catch {}
+                        })
+                    );
+                }
                 const jsWithBots = jsResults
                     .filter((r): r is PromiseFulfilledResult<{ url: string; found: number }> => r.status === 'fulfilled' && r.value.found > 0);
                 addLog(`JS bundles: ${jsWithBots.length} contained bot(s) — ${jsWithBots.reduce((s, r) => s + r.value.found, 0)} total`);
