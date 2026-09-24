@@ -38,7 +38,7 @@ const BotExtractor = () => {
             try {
                 const proxyUrl = proxyFn(targetUrl);
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 20000);
+                const timeout = setTimeout(() => controller.abort(), 30000);
                 const res = await fetch(proxyUrl, { signal: controller.signal });
                 clearTimeout(timeout);
                 if (res.ok) {
@@ -70,13 +70,12 @@ const BotExtractor = () => {
         try {
             const baseUrl = new URL(targetUrl).origin;
 
-            // ===== STEP 1: Fetch main page, find all tabs/links =====
+            // ===== STEP 1: Fetch main page, find all tabs =====
             addLog('--- Step 1: Scanning main page for tabs ---');
             setProgress('Finding all tabs on the site...');
             const mainHtml = await fetchText(targetUrl);
             const mainDoc = new DOMParser().parseFromString(mainHtml, 'text/html');
 
-            // Find navigation tabs and page links
             const tabs: { name: string; href: string }[] = [];
             mainDoc.querySelectorAll('a[href]').forEach(a => {
                 const href = a.getAttribute('href');
@@ -91,50 +90,12 @@ const BotExtractor = () => {
                     } catch {}
                 }
             });
-            addLog(`Found ${tabs.length} tab(s)/page(s) on the site:`);
+            addLog(`Found ${tabs.length} tab(s)/page(s):`);
             tabs.forEach(t => addLog(`  - ${t.name}: ${t.href}`));
 
-            // ===== STEP 2: Scan each tab for .xml bot links =====
-            addLog('\n--- Step 2: Checking each tab for bots ---');
-            setProgress(`Checking ${tabs.length} tabs for bots...`);
-
-            const botTabs: { name: string; href: string; xmlLinks: string[] }[] = [];
-
-            for (const tab of tabs) {
-                try {
-                    addLog(`\nChecking: ${tab.name} (${tab.href})`);
-                    setProgress(`Checking: ${tab.name}...`);
-                    const tabHtml = await fetchText(tab.href);
-                    const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
-
-                    const xmlLinks: string[] = [];
-
-                    // Find .xml links on this tab
-                    tabDoc.querySelectorAll('a[href*=".xml"]').forEach(el => {
-                        const href = el.getAttribute('href');
-                        if (href) {
-                            try {
-                                const full = new URL(href, tab.href).href;
-                                if (isSameDomain(full, baseUrl)) xmlLinks.push(full);
-                            } catch {}
-                        }
-                    });
-
-                    if (xmlLinks.length > 0) {
-                        botTabs.push({ name: tab.name, href: tab.href, xmlLinks });
-                        addLog(`  ✅ Found ${xmlLinks.length} .xml bot(s) on "${tab.name}"`);
-                        xmlLinks.forEach(l => addLog(`    - ${l.split('/').pop()}`));
-                    } else {
-                        addLog(`  ❌ No bots on "${tab.name}"`);
-                    }
-                } catch (err) {
-                    addLog(`  ⚠️ Could not load "${tab.name}"`);
-                }
-            }
-
-            // ===== STEP 3: Also scan JS bundles for .xml filenames =====
-            addLog('\n--- Step 3: Scanning JavaScript for bot filenames ---');
-            setProgress('Scanning JavaScript...');
+            // ===== STEP 2: Find all JS bundles =====
+            addLog('\n--- Step 2: Finding JavaScript bundles ---');
+            setProgress('Finding JS bundles...');
             const jsUrls: string[] = [];
             mainDoc.querySelectorAll('script[src]').forEach(s => {
                 const src = s.getAttribute('src');
@@ -142,36 +103,88 @@ const BotExtractor = () => {
                     try { jsUrls.push(new URL(src, targetUrl).href); } catch {}
                 }
             });
+            addLog(`Found ${jsUrls.length} JS bundle(s)`);
+            jsUrls.forEach(u => addLog(`  ${u.split('/').pop()}`));
 
-            // Find chunk maps in JS bundles
-            const chunkUrls = new Set<string>();
-            for (const jsUrl of [...jsUrls]) {
+            // ===== STEP 3: Scan JS bundles for embedded XML bots =====
+            addLog('\n--- Step 3: Scanning JS bundles for embedded bots ---');
+            setProgress('Scanning JS bundles for embedded XML...');
+
+            for (const jsUrl of jsUrls) {
                 try {
                     const jsContent = await fetchText(jsUrl);
+                    const shortName = jsUrl.split('/').pop() || jsUrl;
+                    addLog(`\nScanning: ${shortName} (${(jsContent.length / 1024).toFixed(0)} KB)`);
 
-                    // Find .xml filenames in string literals
-                    const xmlMatches = [...jsContent.matchAll(/["'`]([a-zA-Z0-9_ .\-]+\.xml)["'`]/gi)];
-                    for (const m of xmlMatches) {
-                        const fileName = m[1];
+                    // Method 1: Find <xml>...</xml> blocks embedded in JS
+                    let pos = 0;
+                    let foundInThisBundle = 0;
+                    while (pos < jsContent.length) {
+                        const xmlStart = jsContent.indexOf('<xml', pos);
+                        if (xmlStart === -1) break;
+
+                        const xmlEnd = jsContent.indexOf('</xml>', xmlStart);
+                        if (xmlEnd === -1) { pos = xmlStart + 4; continue; }
+
+                        let xml = jsContent.substring(xmlStart, xmlEnd + 6);
+
+                        // Unescape JS string escapes
+                        xml = xml
+                            .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                            .replace(/\\"/g, '"').replace(/\\'/g, "'")
+                            .replace(/\\\//g, '/');
+
+                        if (xml.length > 100 && xml.includes('<block')) {
+                            // Extract name from <category name="..."> or first block type
+                            const catMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
+                            const blockMatch = xml.match(/type=["']([a-z_]+)["']/i);
+                            const name = catMatch?.[1] || blockMatch?.[1] || `Bot ${allBots.length + 1}`;
+
+                            if (!allBots.some(b => b.xml === xml)) {
+                                allBots.push({
+                                    name,
+                                    xml,
+                                    source: jsUrl,
+                                    size: xml.length,
+                                    fromTab: 'Embedded in JS',
+                                });
+                                foundInThisBundle++;
+                            }
+                        }
+                        pos = xmlEnd + 6;
+                    }
+
+                    // Method 2: Find .xml file references (webpack chunks or direct links)
+                    const xmlFileMatches = [...jsContent.matchAll(/["'`](\.\/|\/)?([a-zA-Z0-9_ .\-]+\.xml)["'`]/gi)];
+                    const xmlFileNames = new Set<string>();
+                    for (const m of xmlFileMatches) {
+                        const fileName = m[2];
                         if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$')) {
-                            // Try common directories
+                            xmlFileNames.add(fileName);
+                        }
+                    }
+
+                    if (xmlFileNames.size > 0) {
+                        addLog(`  Found ${xmlFileNames.size} .xml file reference(s): ${[...xmlFileNames].join(', ')}`);
+
+                        // Try fetching each .xml file from common directories
+                        for (const fileName of xmlFileNames) {
                             for (const dir of ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/files/']) {
                                 const tryUrl = `${baseUrl}${dir}${fileName}`;
                                 if (!visited.has(tryUrl)) {
                                     visited.add(tryUrl);
-                                    // Check if this XML is valid
                                     try {
                                         const content = await fetchText(tryUrl);
                                         if (content && (content.includes('<block') || content.includes('<xml'))) {
-                                            const name = fileName.replace('.xml', '').replace(/[_-]/g, ' ');
+                                            const botName = fileName.replace('.xml', '').replace(/[_-]/g, ' ');
                                             allBots.push({
-                                                name,
+                                                name: botName,
                                                 xml: content.trim(),
                                                 source: tryUrl,
                                                 size: content.length,
-                                                fromTab: 'JavaScript',
+                                                fromTab: 'XML File',
                                             });
-                                            addLog(`  Found in JS: ${fileName}`);
+                                            addLog(`  ✅ ${fileName} (${(content.length / 1024).toFixed(1)} KB)`);
                                         }
                                     } catch {}
                                 }
@@ -179,94 +192,62 @@ const BotExtractor = () => {
                         }
                     }
 
-                    // Find chunk hash maps
-                    const chunkEntries = [...jsContent.matchAll(/(\d+):"([a-f0-9]{6,8})"/g)];
-                    for (const entry of chunkEntries) {
-                        const chunkUrl = `${baseUrl}/static/js/${entry[1]}.${entry[2]}.js`;
-                        if (!chunkUrls.has(chunkUrl)) chunkUrls.add(chunkUrl);
+                    if (foundInThisBundle > 0) {
+                        addLog(`  ✅ Extracted ${foundInThisBundle} embedded bot(s) from this bundle`);
+                    }
+                } catch (err) {
+                    addLog(`  ⚠️ Failed to scan: ${jsUrl.split('/').pop()}`);
+                }
+            }
+
+            // ===== STEP 4: Scan each tab page for .xml links =====
+            addLog('\n--- Step 4: Checking tab pages for .xml links ---');
+            setProgress('Checking tab pages...');
+            for (const tab of tabs) {
+                try {
+                    const tabHtml = await fetchText(tab.href);
+                    const tabDoc = new DOMParser().parseFromString(tabHtml, 'text/html');
+                    const xmlLinks: string[] = [];
+                    tabDoc.querySelectorAll('a[href*=".xml"]').forEach(el => {
+                        const href = el.getAttribute('href');
+                        if (href) {
+                            try {
+                                const full = new URL(href, tab.href).href;
+                                if (!visited.has(full)) xmlLinks.push(full);
+                            } catch {}
+                        }
+                    });
+                    if (xmlLinks.length > 0) {
+                        addLog(`  "${tab.name}": ${xmlLinks.length} .xml link(s)`);
+                        for (const xmlUrl of xmlLinks) {
+                            visited.add(xmlUrl);
+                            try {
+                                const content = await fetchText(xmlUrl);
+                                if (content && (content.includes('<block') || content.includes('<xml'))) {
+                                    const name = decodeURIComponent(xmlUrl.split('/').pop()?.split('?')[0]?.replace('.xml', '') || 'Unknown');
+                                    allBots.push({
+                                        name: name.replace(/[_-]/g, ' '),
+                                        xml: content.trim(),
+                                        source: xmlUrl,
+                                        size: content.length,
+                                        fromTab: tab.name,
+                                    });
+                                }
+                            } catch {}
+                        }
                     }
                 } catch {}
             }
 
-            // Scan chunks for more .xml references
-            if (chunkUrls.size > 0) {
-                addLog(`Scanning ${chunkUrls.size} JS chunks...`);
-                await Promise.allSettled(
-                    [...chunkUrls].map(async (chunkUrl) => {
-                        try {
-                            const chunkContent = await fetchText(chunkUrl);
-                            const matches = [...chunkContent.matchAll(/["'`]([a-zA-Z0-9_ .\-]+\.xml)["'`]/gi)];
-                            for (const m of matches) {
-                                const fileName = m[1];
-                                if (fileName.length > 3 && !fileName.includes('blockly') && !fileName.includes('module$')) {
-                                    for (const dir of ['/xml/', '/bots/', '/public/xml/', '/assets/xml/']) {
-                                        const tryUrl = `${baseUrl}${dir}${fileName}`;
-                                        if (!visited.has(tryUrl)) {
-                                            visited.add(tryUrl);
-                                            try {
-                                                const content = await fetchText(tryUrl);
-                                                if (content && (content.includes('<block') || content.includes('<xml'))) {
-                                                    const name = fileName.replace('.xml', '').replace(/[_-]/g, ' ');
-                                                    allBots.push({
-                                                        name,
-                                                        xml: content.trim(),
-                                                        source: tryUrl,
-                                                        size: content.length,
-                                                        fromTab: 'JavaScript Chunk',
-                                                    });
-                                                    addLog(`  Found in chunk: ${fileName}`);
-                                                }
-                                            } catch {}
-                                        }
-                                    }
-                                }
-                            }
-                        } catch {}
-                    })
-                );
-            }
-
-            // ===== STEP 4: Fetch all .xml files from bot tabs =====
-            addLog('\n--- Step 4: Fetching all .xml bot files ---');
-            setProgress(`Fetching .xml files from ${botTabs.length} bot tab(s)...`);
-
-            for (const botTab of botTabs) {
-                addLog(`\nFetching bots from "${botTab.name}":`);
-                for (const xmlUrl of botTab.xmlLinks) {
-                    if (visited.has(xmlUrl) && allBots.some(b => b.source === xmlUrl)) continue;
-                    visited.add(xmlUrl);
-                    try {
-                        const content = await fetchText(xmlUrl);
-                        if (content && (content.includes('<block') || content.includes('<xml'))) {
-                            const fileName = decodeURIComponent(xmlUrl.split('/').pop()?.split('?')[0]?.replace('.xml', '') || 'Unknown');
-                            const name = fileName.replace(/[_-]/g, ' ');
-                            allBots.push({
-                                name,
-                                xml: content.trim(),
-                                source: xmlUrl,
-                                size: content.length,
-                                fromTab: botTab.name,
-                            });
-                            addLog(`  ✅ ${fileName} (${(content.length / 1024).toFixed(1)} KB)`);
-                        } else {
-                            addLog(`  ❌ ${xmlUrl.split('/').pop()}: not a valid bot`);
-                        }
-                    } catch {
-                        addLog(`  ❌ ${xmlUrl.split('/').pop()}: failed to fetch`);
-                    }
-                }
-            }
-
-            // ===== STEP 5: Summary =====
+            // ===== DONE =====
             addLog(`\n=== COMPLETE ===`);
             addLog(`Total bots found: ${allBots.length}`);
-            botTabs.forEach(t => addLog(`  From "${t.name}": ${t.xmlLinks.length} bot(s)`);
 
             setExtractedBots(allBots);
             setProgress('');
 
             if (allBots.length === 0) {
-                setError('No bots found on any tab. The site may load bots dynamically or use a non-standard format.');
+                setError('No bots found. The site may use a non-standard format or require JavaScript rendering.');
             }
         } catch (err: any) {
             setError(`Extraction failed: ${err.message}`);
@@ -300,7 +281,7 @@ const BotExtractor = () => {
             <div className='bot-extractor__header'>
                 <h2 className='bot-extractor__title'>Bot Extractor</h2>
                 <p className='bot-extractor__subtitle'>
-                    Scan any Deriv site, find the tab with bots, and extract them all
+                    Scan any Deriv site — finds bots from JS bundles, .xml files, and all pages
                 </p>
             </div>
 
@@ -352,7 +333,7 @@ const BotExtractor = () => {
                     <div className='bot-extractor__results-header'>
                         <h3>Extracted Bots ({extractedBots.length})</h3>
                         <p className='bot-extractor__results-subtitle'>
-                            Real .xml files copied from the site — ready to use
+                            Real bots copied from the site — ready to load and trade
                         </p>
                     </div>
 
@@ -386,7 +367,7 @@ const BotExtractor = () => {
                     <div className='bot-extractor__empty-icon'>🔍</div>
                     <p>Paste a URL above and click Extract to scan for bots</p>
                     <p className='bot-extractor__empty-hint'>
-                        Scans every tab on the site, finds the one with .xml bot files, and extracts them all
+                        Scans JavaScript bundles for embedded XML bots and .xml files across all pages
                     </p>
                 </div>
             )}
