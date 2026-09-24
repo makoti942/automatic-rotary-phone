@@ -90,7 +90,9 @@ const BotExtractor = () => {
             if (href) {
                 try {
                     const fullUrl = new URL(href, baseUrl).href;
-                    bots.push({ name: decodeURIComponent(href.split('/').pop()?.replace('.xml', '') || 'Unknown'), xml: '', source: fullUrl, size: 0 });
+                    if (!bots.some(b => b.source === fullUrl)) {
+                        bots.push({ name: decodeURIComponent(href.split('/').pop()?.replace('.xml', '') || 'Unknown'), xml: '', source: fullUrl, size: 0 });
+                    }
                 } catch {}
             }
         });
@@ -109,10 +111,23 @@ const BotExtractor = () => {
             }
         });
 
+        // Also check for .xml references in script src attributes (SPAs import XML as modules)
+        doc.querySelectorAll('script[src]').forEach(script => {
+            const src = script.getAttribute('src') || '';
+            if (src.match(/\.xml(\?|$)/i)) {
+                try {
+                    const fullUrl = new URL(src, baseUrl).href;
+                    if (!bots.some(b => b.source === fullUrl)) {
+                        bots.push({ name: decodeURIComponent(src.split('/').pop()?.replace('.xml', '') || 'Imported Bot'), xml: '', source: fullUrl, size: 0 });
+                    }
+                } catch {}
+            }
+        });
+
         // 4. <script type="text/xml"> or <script type="application/xml">
         doc.querySelectorAll('script[type="text/xml"], script[type="application/xml"]').forEach((script, i) => {
             const content = script.textContent || '';
-            if (content.includes('<xml') || content.includes('<block')) {
+            if (content.includes('<block')) {
                 bots.push({
                     name: script.getAttribute('data-name') || `Inline Bot ${i + 1}`,
                     xml: content.trim(),
@@ -251,15 +266,15 @@ const BotExtractor = () => {
                             if (!jsContent) return { url: jsUrl, found: 0 };
 
                             let found = 0;
-                            // Look for XML blocks embedded as strings: <xml ...>...</xml> or <blockly ...>...</blockly>
-                            const xmlPattern = /<xml[^>]*type=["']blockly["'][^>]*>[\s\S]*?<\/xml>/gi;
+                            // Look for XML blocks embedded as strings: <xml ...>...</xml>
+                            const xmlPattern = /<xml\s[^>]*>[\s\S]*?<\/xml>/gi;
                             let m2: RegExpExecArray | null;
                             while ((m2 = xmlPattern.exec(jsContent)) !== null) {
-                                const xml = m2[0]
+                                let xml = m2[0]
                                     .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
                                     .replace(/\\"/g, '"').replace(/\\'/g, "'")
                                     .replace(/\\\//g, '/');
-                                if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                if (xml.length > 100 && xml.includes('<block') && !bots.some(b => b.xml === xml)) {
                                     const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
                                     addBot({
                                         name: nameMatch?.[1] || `JS Bot ${allBots.length + 1}`,
@@ -269,16 +284,33 @@ const BotExtractor = () => {
                                 }
                             }
 
-                            // Also look for escaped XML in string literals: \<xml or \u003Cxml
-                            const escapedPattern = /(?:\\u003C|\\x3C|<)xml[^>]*type=["']blockly["'][^>]*>[\s\S]*?(?:\\u003C|\\x3C|<)\/xml>/gi;
+                            // Look for XML in JS string assignments: let s='<xml...>'  or var x="<xml...>"
+                            const jsStringPattern = /(?:let|var|const)\s+\w+\s*=\s*["'](<xml\s[\s\S]*?<\/xml>)["']/gi;
+                            while ((m2 = jsStringPattern.exec(jsContent)) !== null) {
+                                let xml = m2[1]
+                                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                                    .replace(/\\"/g, '"').replace(/\\'/g, "'")
+                                    .replace(/\\\//g, '/');
+                                if (xml.length > 100 && xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                    const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
+                                    addBot({
+                                        name: nameMatch?.[1] || `JS Bot ${allBots.length + 1}`,
+                                        xml, source: jsUrl, size: xml.length,
+                                    });
+                                    found++;
+                                }
+                            }
+
+                            // Also look for escaped XML in string literals: \u003Cxml or \x3Cxml
+                            const escapedPattern = /(?:\\u003C|\\x3C|<)xml\s[\s\S]*?(?:\\u003C|\\x3C|<)\/xml>/gi;
                             while ((m2 = escapedPattern.exec(jsContent)) !== null) {
-                                const xml = m2[0]
+                                let xml = m2[0]
                                     .replace(/\\u003C/g, '<').replace(/\\x3C/g, '<')
                                     .replace(/\\u003E/g, '>').replace(/\\x3E/g, '>')
                                     .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
                                     .replace(/\\"/g, '"').replace(/\\'/g, "'")
                                     .replace(/\\\//g, '/');
-                                if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
+                                if (xml.length > 100 && xml.includes('<block') && !bots.some(b => b.xml === xml)) {
                                     addBot({
                                         name: `JS Bot ${allBots.length + 1}`,
                                         xml, source: jsUrl, size: xml.length,
@@ -288,9 +320,9 @@ const BotExtractor = () => {
                             }
 
                             // strategy_to_load assignments in JS
-                            const stratPattern = /strategy_to_load\s*=\s*["'`]([^"'`]{50,})["'`]/gi;
+                            const stratPattern = /strategy_to_load\s*=\s*["'`]([^"'`]{100,})["'`]/gi;
                             while ((m2 = stratPattern.exec(jsContent)) !== null) {
-                                const xml = m2[1]
+                                let xml = m2[1]
                                     .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
                                     .replace(/\\"/g, '"').replace(/\\'/g, "'");
                                 if (xml.includes('<block') && !bots.some(b => b.xml === xml)) {
@@ -311,6 +343,54 @@ const BotExtractor = () => {
                 const jsWithBots = jsResults
                     .filter((r): r is PromiseFulfilledResult<{ url: string; found: number }> => r.status === 'fulfilled' && r.value.found > 0);
                 addLog(`JS bundles: ${jsWithBots.length} contained bot(s) — ${jsWithBots.reduce((s, r) => s + r.value.found, 0)} total`);
+
+                // Phase 1c: Extract .xml filenames from JS bundles and fetch them
+                const xmlFileRefs = new Set<string>();
+                for (const jsUrl of jsUrls) {
+                    try {
+                        const jsContent = await fetchWithProxy(jsUrl);
+                        if (!jsContent) continue;
+                        // Find ./filename.xml or "/filename.xml" patterns
+                        const fileMatches = jsContent.matchAll(/["'`](\.\/[a-zA-Z0-9_\-]+\.xml(?:\?[^"'`]*)?)["'`]/gi);
+                        for (const fm of fileMatches) {
+                            try {
+                                const full = new URL(fm[1], jsUrl).href;
+                                if (!visitedUrls.has(full)) xmlFileRefs.add(full);
+                            } catch {}
+                        }
+                        // Also find /path/to/file.xml patterns
+                        const pathMatches = jsContent.matchAll(/["'`](\/[a-zA-Z0-9_\-\/]+\.xml(?:\?[^"'`]*)?)["'`]/gi);
+                        for (const pm of pathMatches) {
+                            try {
+                                const full = new URL(pm[1], jsUrl).href;
+                                if (!visitedUrls.has(full)) xmlFileRefs.add(full);
+                            } catch {}
+                        }
+                    } catch {}
+                }
+
+                if (xmlFileRefs.size > 0) {
+                    addLog(`Found ${xmlFileRefs.size} .xml file ref(s) in JS — fetching...`);
+                    const xmlResults = await Promise.allSettled(
+                        [...xmlFileRefs].map(async (xmlUrl) => {
+                            try {
+                                visitedUrls.add(xmlUrl);
+                                const content = await fetchWithProxy(xmlUrl);
+                                if (content && content.includes('<block')) {
+                                    const name = decodeURIComponent(xmlUrl.split('/').pop()?.replace('.xml', '') || 'XML Bot');
+                                    addBot({ name, xml: content.trim(), source: xmlUrl, size: content.length });
+                                    return { url: xmlUrl, found: 1 };
+                                }
+                                return { url: xmlUrl, found: 0 };
+                            } catch {
+                                return { url: xmlUrl, found: 0 };
+                            }
+                        })
+                    );
+                    const xmlsWithBots = xmlResults
+                        .filter((r): r is PromiseFulfilledResult<{ url: string; found: number }> => r.status === 'fulfilled' && r.value.found > 0);
+                    addLog(`XML files: ${xmlsWithBots.length} loaded successfully`);
+                }
             }
 
             // Phase 2: Check common bot paths
