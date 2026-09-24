@@ -28,6 +28,7 @@ const BotExtractor = () => {
 
     const [url, setUrl] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
+    const [isDeepExtracting, setIsDeepExtracting] = useState(false);
     const [extractedBots, setExtractedBots] = useState<ExtractedBot[]>([]);
     const [error, setError] = useState('');
     const [progress, setProgress] = useState('');
@@ -263,6 +264,60 @@ const BotExtractor = () => {
         if (e.key === 'Enter' && !isExtracting) extractBots();
     }, [extractBots, isExtracting]);
 
+    const deepExtractBots = useCallback(async () => {
+        if (!url.trim()) { setError('Please enter a URL'); return; }
+
+        let targetUrl = url.trim();
+        if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+
+        setIsDeepExtracting(true);
+        setError('');
+        setExtractedBots([]);
+        setScanLog([]);
+
+        const addLog = (msg: string) => setScanLog(prev => [...prev, msg]);
+
+        addLog('--- Deep Extract: Launching headless browser ---');
+        setProgress('Starting browser...');
+
+        try {
+            const res = await fetch('/api/deep-extract', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url: targetUrl }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || `Server error: ${res.status}`);
+            }
+
+            const data = await res.json();
+            addLog(`Deep extract complete: ${data.count} bot(s) found`);
+
+            const allBots: ExtractedBot[] = data.bots.map((bot: any, i: number) => ({
+                name: bot.name || `Bot ${i + 1}`,
+                xml: bot.xml,
+                source: bot.source || targetUrl,
+                size: bot.size || bot.xml.length,
+                fromTab: 'Deep Extract',
+            }));
+
+            setExtractedBots(allBots);
+            setProgress('');
+            addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
+
+            if (allBots.length === 0) {
+                setError('No bots found. The site may not have accessible .xml bots.');
+            }
+        } catch (err: any) {
+            setError(`Deep extraction failed: ${err.message}`);
+            setProgress('');
+        } finally {
+            setIsDeepExtracting(false);
+        }
+    }, [url]);
+
     return (
         <div className='bot-extractor'>
             <div className='bot-extractor__header'>
@@ -281,17 +336,28 @@ const BotExtractor = () => {
                         value={url}
                         onChange={e => setUrl(e.target.value)}
                         onKeyDown={handleKeyDown}
-                        disabled={isExtracting}
+                        disabled={isExtracting || isDeepExtracting}
                     />
                     <button
                         className='bot-extractor__btn bot-extractor__btn--extract'
                         onClick={extractBots}
-                        disabled={isExtracting || !url.trim()}
+                        disabled={isExtracting || isDeepExtracting || !url.trim()}
                     >
                         {isExtracting ? (
                             <><span className='bot-extractor__spinner' /> Extracting...</>
                         ) : (
                             'Extract Bots'
+                        )}
+                    </button>
+                    <button
+                        className='bot-extractor__btn bot-extractor__btn--deep'
+                        onClick={deepExtractBots}
+                        disabled={isExtracting || isDeepExtracting || !url.trim()}
+                    >
+                        {isDeepExtracting ? (
+                            <><span className='bot-extractor__spinner' /> Deep Extracting...</>
+                        ) : (
+                            'Deep Extract'
                         )}
                     </button>
                 </div>
