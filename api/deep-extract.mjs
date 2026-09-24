@@ -1,187 +1,186 @@
-import puppeteer from 'puppeteer-core';
-import chromium from '@sparticuz/chromium';
-
 async function handler(req, res) {
-  console.log('=== HANDLER START ===');
-  console.log('Method:', req.method);
-  console.log('URL:', req.url);
+  console.log('=== DEEP EXTRACT START ===');
 
   if (req.method !== 'POST') {
-    console.log('Method not allowed');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const { url } = req.body;
-  console.log('Request body:', req.body);
   if (!url || !url.startsWith('http')) {
-    console.log('Invalid URL');
     return res.status(400).json({ error: 'Invalid URL' });
   }
 
-  console.log('Target URL:', url);
-
-  let browser;
   try {
-    console.log('=== LAUNCHING BROWSER ===');
-    console.log('Chromium executable path:', await chromium.executablePath());
-    console.log('Chromium args:', chromium.args);
-
-    const launchOptions = {
-      args: [...chromium.args, '--disable-web-security', '--disable-features=IsolateOrigins', '--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--single-process', '--no-zygote'],
-      executablePath: await chromium.executablePath(),
-      headless: chromium.headless,
-    };
-    console.log('Launch options prepared');
-
-    browser = await puppeteer.launch(launchOptions);
-    console.log('=== BROWSER LAUNCHED SUCCESSFULLY ===');
-
-    const page = await browser.newPage();
-    console.log('New page created');
-    page.setDefaultNavigationTimeout(15000);
-    page.setDefaultTimeout(15000);
-
+    const targetUrl = new URL(url);
+    const baseUrl = targetUrl.origin;
     const bots = [];
     const seenXml = new Set();
-    const xmlRequests = [];
+    const fetchedUrls = new Set();
 
-    // Capture ALL network responses
-    page.on('response', response => {
-      const responseUrl = response.url();
-      if (responseUrl.includes('.xml') && !xmlRequests.includes(responseUrl)) {
-        xmlRequests.push(responseUrl);
-        console.log('Found XML request:', responseUrl);
-      }
-    });
+    console.log('Target:', url);
 
-    console.log('Navigating to:', url);
-    await page.goto(url, { waitUntil: 'networkidle2', timeout: 15000 });
-    console.log('Page loaded successfully');
+    const html = await safeFetch(url);
+    if (!html) return res.status(500).json({ error: 'Failed to fetch target page' });
 
-    // Wait for dynamic content
-    await new Promise(r => setTimeout(r, 2000));
-    console.log('Waited for dynamic content');
-
-    // Find bot links in DOM
-    const botLinks = await page.evaluate(() => {
-      const links = [];
-      document.querySelectorAll('a[href*=".xml"], a[href*="/xml/"]').forEach(a => {
-        const href = a.getAttribute('href');
-        if (href) {
-          try { links.push(new URL(href, window.location.href).href); } catch {}
-        }
-      });
-      return links;
-    });
-    console.log('Bot links found:', botLinks.length, botLinks);
-
-    // Add DOM links to xmlRequests
-    for (const link of botLinks) if (!xmlRequests.includes(link)) xmlRequests.push(link);
-
-    // Click potential bot triggers
-    const botTriggers = await page.evaluate(() => {
-      const triggers = [];
-      document.querySelectorAll('button, a, [role="button"], .bot-card, [class*="bot"], [class*="strategy"]').forEach(el => {
-        const text = el.textContent?.trim() || '';
-        if (text.length > 2 && text.length < 100) {
-          const selector = el.id ? `#${el.id}` : (el.className ? `.${el.className.split(' ')[0]}` : '');
-          if (selector) triggers.push({ selector, text });
-        }
-      });
-      return triggers.slice(0, 10);
-    });
-    console.log('Triggers to click:', botTriggers.length, botTriggers);
-
-    for (const trigger of botTriggers) {
-      try {
-        await page.click(trigger.selector, { delay: 100 });
-        await new Promise(r => setTimeout(r, 500));
-      } catch (e) { console.log('Click failed:', trigger.selector, e); }
+    const scriptSrcs = [];
+    const scriptSrcRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
+    let srcMatch;
+    while ((srcMatch = scriptSrcRegex.exec(html)) !== null) {
+      try { scriptSrcs.push(new URL(srcMatch[1], baseUrl).href); } catch {}
     }
 
-    // Fetch each discovered .xml
-    console.log('Fetching', xmlRequests.length, 'XML files...');
-    for (const xmlUrl of xmlRequests) {
+    const inlineScripts = [];
+    const scriptTagRegex = /<script[^>]*>([\s\S]*?)<\/script>/gi;
+    let match;
+    while ((match = scriptTagRegex.exec(html)) !== null) {
+      if (match[1] && match[1].length > 100) {
+        inlineScripts.push(match[1]);
+      }
+    }
+    console.log('Script sources:', scriptSrcs.length, 'Inline scripts:', inlineScripts.length);
+
+    for (const scriptUrl of scriptSrcs) {
+      if (fetchedUrls.has(scriptUrl)) continue;
+      fetchedUrls.add(scriptUrl);
       try {
-        const response = await page.goto(xmlUrl, { waitUntil: 'networkidle2', timeout: 8000 });
-        if (response.ok()) {
-          const content = await response.text();
+        const scriptContent = await safeFetch(scriptUrl);
+        if (scriptContent) {
+          inlineScripts.push(scriptContent);
+          extractXmlFromScript(scriptContent, scriptUrl, bots, seenXml);
+          await extractXmlFilenames(scriptContent, baseUrl, bots, seenXml, fetchedUrls);
+        }
+      } catch {}
+    }
+
+    for (const script of inlineScripts) {
+      extractXmlFromScript(script, url, bots, seenXml);
+      await extractXmlFilenames(script, baseUrl, bots, seenXml, fetchedUrls);
+    }
+
+    extractXmlFromScript(html, url, bots, seenXml);
+    await extractXmlFilenames(html, baseUrl, bots, seenXml, fetchedUrls);
+
+    const xmlLinks = [];
+    const linkRegex = /href=["']([^"']*\.xml[^"']*?)["']/gi;
+    while ((match = linkRegex.exec(html)) !== null) {
+      try { xmlLinks.push(new URL(match[1], baseUrl).href); } catch {}
+    }
+    const srcXmlRegex = /src=["']([^"']*\.xml[^"']*?)["']/gi;
+    while ((match = srcXmlRegex.exec(html)) !== null) {
+      try { xmlLinks.push(new URL(match[1], baseUrl).href); } catch {}
+    }
+
+    for (const xmlUrl of xmlLinks) {
+      if (fetchedUrls.has(xmlUrl)) continue;
+      fetchedUrls.add(xmlUrl);
+      try {
+        const content = await safeFetch(xmlUrl);
+        if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
+          seenXml.add(content);
+          const name = xmlUrl.split('/').pop()?.replace('.xml', '').replace(/[_-]/g, ' ') || 'Unknown';
+          bots.push({ name, xml: content.trim(), source: xmlUrl, size: content.length });
+          console.log('Found XML link:', name);
+        }
+      } catch {}
+    }
+
+    const commonNames = ['Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'UNDER_6', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter', 'Entry_Digit', 'STARTER_BOT', 'SPLIT_MARTINGALE_BOT_PREMIUM', 'NEW_BOT_WITH_ENTRY_POINT'];
+    for (const p of ['/xml/', '/bots/']) {
+      for (const n of commonNames) {
+        const tryUrl = `${baseUrl}${p}${n}.xml`;
+        if (fetchedUrls.has(tryUrl)) continue;
+        fetchedUrls.add(tryUrl);
+        try {
+          const content = await safeFetch(tryUrl);
           if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
             seenXml.add(content);
-            const name = xmlUrl.split('/').pop()?.replace('.xml', '').replace(/[_-]/g, ' ') || 'Unknown Bot';
-            bots.push({ name, xml: content.trim(), source: xmlUrl, size: content.length });
-            console.log('Extracted:', name, 'size:', content.length);
-          }
-        }
-      } catch (e) { console.log('Failed to fetch', xmlUrl, e); }
-    }
-
-    // Extract embedded XML from page
-    const pageContent = await page.content();
-    const embeddedBots = extractEmbeddedXml(pageContent, url);
-    for (const bot of embeddedBots) {
-      if (!seenXml.has(bot.xml)) {
-        seenXml.add(bot.xml);
-        bots.push(bot);
-      }
-    }
-    console.log('Embedded bots:', embeddedBots.length);
-
-    // Try common paths as fallback
-    const baseUrl = new URL(url).origin;
-    const commonPaths = ['/xml/', '/bots/'];
-    const commonNames = ['Poverty_Killer', 'BEST_RISE_FALL', 'MAKOTI_AUTOMATED_RISE_FALL', 'UNDER_6', 'UNDER6', 'UNDER_6_BOT', 'OVER_1', 'Market_Killer', 'O_U_KILLER', 'HIGH_LOW', 'EVEN_ODD_KILLER', 'DIFFERS_AUTO', 'AI_Analyst', 'Multi_Killer', 'Digit_Hunter', 'Entry_Digit', 'STARTER_BOT'];
-
-    for (const path of commonPaths) {
-      for (const name of commonNames) {
-        const tryUrl = `${baseUrl}${path}${name}.xml`;
-        if (xmlRequests.includes(tryUrl)) continue;
-        try {
-          const response = await page.goto(tryUrl, { waitUntil: 'networkidle2', timeout: 5000 });
-          if (response.ok()) {
-            const content = await response.text();
-            if (content && content.includes('<block') && content.length > 200 && !seenXml.has(content)) {
-              seenXml.add(content);
-              bots.push({ name: name.replace(/_/g, ' '), xml: content.trim(), source: tryUrl, size: content.length });
-              console.log('Extracted from common:', name);
-            }
+            bots.push({ name: n.replace(/_/g, ' '), xml: content.trim(), source: tryUrl, size: content.length });
+            console.log('Common path hit:', n);
           }
         } catch {}
       }
     }
 
-    await browser.close();
-    console.log('=== DEEP EXTRACT COMPLETE: ' + bots.length + ' bots ===');
+    console.log('=== COMPLETE:', bots.length, 'bots found ===');
     return res.json({ bots, count: bots.length });
 
   } catch (error) {
-    console.error('=== DEEP EXTRACT ERROR ===', error);
-    if (browser) { try { await browser.close(); } catch {} }
-    return res.status(500).json({ error: error.message || 'Extraction failed', stack: error.stack });
+    console.error('Error:', error.message);
+    return res.status(500).json({ error: error.message || 'Extraction failed' });
   }
 }
 
-function extractEmbeddedXml(html, sourceUrl) {
-  const bots = [];
+async function safeFetch(url, timeout = 8000) {
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeout);
+    const resp = await fetch(url, {
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+      redirect: 'follow',
+    });
+    clearTimeout(timer);
+    if (!resp.ok) return null;
+    const text = await resp.text();
+    if (text.includes('<!DOCTYPE') || text.includes('<html')) {
+      if (text.includes('<block') && text.includes('<xml')) return text;
+      if (text.length < 5000) return text;
+      return text;
+    }
+    return text;
+  } catch { return null; }
+}
+
+function extractXmlFromScript(content, source, bots, seenXml) {
   let pos = 0;
-  while (pos < html.length) {
-    const xmlStart = html.indexOf('<xml', pos);
+  while (pos < content.length) {
+    const xmlStart = content.indexOf('<xml', pos);
     if (xmlStart === -1) break;
-    const xmlEnd = html.indexOf('</xml>', xmlStart);
+    const xmlEnd = content.indexOf('</xml>', xmlStart);
     if (xmlEnd === -1) { pos = xmlStart + 4; continue; }
 
-    let xml = html.substring(xmlStart, xmlEnd + 6);
-    xml = xml.replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '"').replace(/'/g, "'").replace(/&/g, '&');
+    let xml = content.substring(xmlStart, xmlEnd + 6);
+    xml = xml.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"').replace(/\\'/g, "'");
 
-    if (xml.length > 100 && xml.includes('<block')) {
+    if (xml.length > 100 && xml.includes('<block') && !seenXml.has(xml)) {
+      seenXml.add(xml);
       const nameMatch = xml.match(/<category[^>]*name=["']([^"']+)["']/i);
       const blockMatch = xml.match(/type=["']([a-z_]+)["']/i);
       const name = nameMatch?.[1] || blockMatch?.[1] || `Bot ${bots.length + 1}`;
-      bots.push({ name, xml, source: sourceUrl, size: xml.length });
+      bots.push({ name, xml: xml.trim(), source, size: xml.length });
+      console.log('Embedded XML:', name, 'size:', xml.length);
     }
     pos = xmlEnd + 6;
   }
-  return bots;
+}
+
+async function extractXmlFilenames(content, baseUrl, bots, seenXml, fetchedUrls) {
+  const patterns = [
+    /["']([A-Za-z][A-Za-z0-9_-]*\.xml)["']/g,
+  ];
+
+  for (const regex of patterns) {
+    let match;
+    while ((match = regex.exec(content)) !== null) {
+      const name = match[1];
+      if (!name.endsWith('.xml')) continue;
+
+      for (const p of ['/xml/', '/bots/', '/']) {
+        const xmlUrl = `${baseUrl}${p}${name}`;
+        if (fetchedUrls.has(xmlUrl)) continue;
+        fetchedUrls.add(xmlUrl);
+        try {
+          const fileContent = await safeFetch(xmlUrl);
+          if (fileContent && fileContent.includes('<block') && fileContent.length > 200 && !seenXml.has(fileContent)) {
+            seenXml.add(fileContent);
+            const label = name.replace('.xml', '').replace(/[_-]/g, ' ');
+            bots.push({ name: label, xml: fileContent.trim(), source: xmlUrl, size: fileContent.length });
+            console.log('Fetched file:', name);
+          }
+        } catch {}
+      }
+    }
+  }
 }
 
 export default handler;
