@@ -123,6 +123,35 @@ async function handler(req, res) {
 
     console.log('Phase 2 - After crawl:', discoveredFiles.size, 'files,', jsContents.length, 'JS files scanned');
 
+    console.log('Phase 2b - Detecting Load Bot buttons...');
+    const loadBotUrls = new Set();
+    for (const pageUrl of checkedUrls) {
+      try {
+        const pageHtml = await safeFetch(pageUrl, 4000);
+        if (!pageHtml) continue;
+        const loadUrls = extractLoadBotUrls(pageHtml, baseUrl);
+        for (const url of loadUrls) loadBotUrls.add(url);
+      } catch {}
+    }
+    console.log('Phase 2b - Found', loadBotUrls.size, 'Load Bot URLs');
+
+    for (const loadUrl of loadBotUrls) {
+      if (fetchedUrls.has(loadUrl)) continue;
+      fetchedUrls.add(loadUrl);
+      try {
+        const xml = await safeFetch(loadUrl, 8000);
+        if (xml && isValidDerivBotXml(xml)) {
+          const name = extractNameFromXml(xml) || loadUrl.split('/').pop()?.replace('.xml', '') || 'Loaded Bot';
+          if (!seenContent.has(xml)) {
+            seenContent.add(xml);
+            bots.push({ name, xml: xml.trim(), source: 'load-button:' + loadUrl, size: xml.length });
+            console.log('Load Bot:', name, `(${xml.length} bytes)`);
+          }
+        }
+      } catch {}
+    }
+    console.log('Phase 2b - After load buttons:', bots.length, 'bots');
+
     const allPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
     const fetchPromises = [];
 
@@ -476,6 +505,63 @@ function isValidDerivBotXml(content) {
   const blockCount = (trimmed.match(/<block /g) || []).length;
   if (blockCount < 2) return false;
   return true;
+}
+
+function extractLoadBotUrls(html, baseUrl) {
+  const urls = new Set();
+  const patterns = [
+    /<button[^>]*data-(?:bot|id|xml|url)=["']([^"']+)["']/gi,
+    /<button[^>]*onclick=["']([^"']*load[^"']*)["']/gi,
+    /<a[^>]*href=["']([^"']*load[^"']*)["']/gi,
+    /<button[^>]*class=["'][^"']*(?:load|import|open)[^"']*["']/gi,
+    /<a[^>]*class=["'][^"']*(?:load|import|open)[^"']*["']/gi,
+  ];
+  for (const regex of patterns) {
+    let match;
+    while ((match = regex.exec(html)) !== null) {
+      const val = match[1] || match[0];
+      try {
+        let url = new URL(val, baseUrl).href;
+        if (url.startsWith(baseUrl) && (url.includes('.xml') || url.includes('/api/') || url.includes('/bot/') || url.includes('/load'))) {
+          urls.add(url);
+        }
+      } catch {}
+    }
+  }
+  const dataAttrRegex = /data-(?:bot|xml|id|url)=["']([^"']+\.xml)["']/gi;
+  let match;
+  while ((match = dataAttrRegex.exec(html)) !== null) {
+    try {
+      const url = new URL(match[1], baseUrl).href;
+      if (url.startsWith(baseUrl)) urls.add(url);
+    } catch {}
+  }
+  const selectRegex = /<select[^>]*name=["'][^"']*bot[^"']*["'][^>]*>([\s\S]*?)<\/select>/gi;
+  while ((match = selectRegex.exec(html)) !== null) {
+    const options = match[1].match(/<option[^>]*value=["']([^"']+)["']/gi);
+    if (options) {
+      for (const opt of options) {
+        const valMatch = opt.match(/value=["']([^"']+)["']/i);
+        if (valMatch) {
+          try {
+            const url = new URL(valMatch[1], baseUrl).href;
+            if (url.startsWith(baseUrl)) urls.add(url);
+          } catch {}
+        }
+      }
+    }
+  }
+  return [...urls];
+}
+
+function extractNameFromXml(xml) {
+  const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
+  if (nameFromField) return nameFromField[1].trim();
+  const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
+  if (nameFromMutation) return nameFromMutation[1].trim();
+  const nameFromTitle = xml.match(/<title[^>]*>([^<]{2,50})<\/title>/i);
+  if (nameFromTitle && !nameFromTitle[1].match(/^\d+$/)) return nameFromTitle[1].trim();
+  return null;
 }
 
 async function safeFetch(url, timeout = 8000) {
