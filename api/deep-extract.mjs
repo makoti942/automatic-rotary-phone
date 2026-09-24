@@ -124,9 +124,8 @@ async function handler(req, res) {
       for (const name of probeNames) {
         const candidates = [`${name}.xml`, `${name.toLowerCase()}.xml`];
         for (const filename of candidates) {
-          const tryUrl = `${baseUrl}${basePath}${filename}`;
-          if (fetchedUrls.has(tryUrl)) continue;
-          fetchedUrls.add(tryUrl);
+          let tryUrl;
+          try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
           probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
         }
       }
@@ -189,9 +188,9 @@ async function handler(req, res) {
 async function fetchAndValidate(fileUrl, filename, bots, seenContent) {
   try {
     const content = await safeFetch(fileUrl, 6000);
-    if (!content) return;
-    if (content.includes('<!DOCTYPE html') || content.includes('<html')) return;
-    if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return;
+    if (!content) return false;
+    if (content.includes('<!DOCTYPE html') || content.includes('<html')) return false;
+    if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return false;
 
     if (isValidDerivBotXml(content) && !seenContent.has(content)) {
       seenContent.add(content);
@@ -200,8 +199,10 @@ async function fetchAndValidate(fileUrl, filename, bots, seenContent) {
         .replace(/\b\w/g, c => c.toUpperCase());
       bots.push({ name, xml: content.trim(), source: fileUrl, size: content.length });
       console.log('FOUND:', name, `(${content.length} bytes)`);
+      return true;
     }
   } catch {}
+  return false;
 }
 
 function discoverXmlFiles(content, discovered) {
