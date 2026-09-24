@@ -73,6 +73,7 @@ async function handler(req, res) {
     console.log('Phase 2 - Crawling', internalPages.size, 'pages...');
 
     const pageArray = [...internalPages].slice(0, 25);
+    const discoveredJsUrls = new Set();
     await Promise.allSettled(
       pageArray.map(async (pageUrl) => {
         if (checkedUrls.has(pageUrl)) return;
@@ -81,6 +82,17 @@ async function handler(req, res) {
           const pageHtml = await safeFetch(pageUrl, 4000);
           if (!pageHtml) return;
           discoverXmlFiles(pageHtml, discoveredFiles);
+
+          const scriptSrcRegex2 = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
+          let sm;
+          while ((sm = scriptSrcRegex2.exec(pageHtml)) !== null) {
+            try {
+              const jsUrl = new URL(sm[1], pageUrl).href;
+              if (jsUrl.startsWith(baseUrl) && !fetchedUrls.has(jsUrl)) {
+                discoveredJsUrls.add(jsUrl);
+              }
+            } catch {}
+          }
 
           const subLinkRegex = /href=["']([^"'#][^"']*?)["']/gi;
           let slm;
@@ -96,7 +108,20 @@ async function handler(req, res) {
         } catch {}
       })
     );
-    console.log('Phase 2 - After crawl:', discoveredFiles.size, 'files');
+
+    console.log('Phase 2 - Found', discoveredJsUrls.size, 'new JS files from crawled pages');
+    const jsScanPromises = [...discoveredJsUrls].map(async (jsUrl) => {
+      try {
+        const js = await safeFetch(jsUrl, 10000);
+        if (js) {
+          jsContents.push({ content: js, source: jsUrl });
+          discoverXmlFiles(js, discoveredFiles);
+        }
+      } catch {}
+    });
+    await Promise.allSettled(jsScanPromises);
+
+    console.log('Phase 2 - After crawl:', discoveredFiles.size, 'files,', jsContents.length, 'JS files scanned');
 
     const allPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
     const fetchPromises = [];
@@ -190,6 +215,12 @@ async function handler(req, res) {
       await Promise.allSettled(finalFetchPromises);
     }
 
+    console.log('Phase 6 - Scanning', jsContents.length, 'JS files for embedded XML...');
+    for (const { content, source } of jsContents) {
+      extractEmbeddedBots(content, source, bots, seenContent);
+    }
+    console.log('Phase 6 - After embedded scan:', bots.length, 'bots');
+
     bots.sort((a, b) => b.size - a.size);
 
     console.log('=== RESULT:', bots.length, 'valid bots ===');
@@ -208,7 +239,9 @@ function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
     { open: '\\u003cxml', close: '\\u003c/xml\\u003e', esc: true },
     { open: '\\u003Cxml', close: '\\u003C/xml\\u003E', esc: true },
     { open: '\\x3cxml', close: '\\x3c/xml\\x3e', esc: true },
+    { open: '\\x3Cxml', close: '\\x3C/xml\\x3E', esc: true },
     { open: '<xml', close: '</xml>', esc: false },
+    { open: '<XML', close: '</XML>', esc: false },
   ];
 
   for (const { open, close, esc } of escapePatterns) {
@@ -226,6 +259,7 @@ function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
           .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
           .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
           .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
+          .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
           .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
           .replace(/\\"/g, '"').replace(/\\'/g, "'");
       }
@@ -243,6 +277,86 @@ function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
         }
       }
       pos = end + close.length;
+    }
+  }
+
+  const derivKeywords = ['trade_definition', 'bot_run', 'purchase', 'submarket', 'INITIAL_STAKE', 'take_profit', 'stop_loss', 'entry_digit', 'prediction', 'deriv_bot'];
+  let keywordPos = 0;
+  while (keywordPos < jsContent.length) {
+    let earliest = -1;
+    let earliestKw = '';
+    for (const kw of derivKeywords) {
+      const idx = jsContent.indexOf(kw, keywordPos);
+      if (idx !== -1 && (earliest === -1 || idx < earliest)) {
+        earliest = idx;
+        earliestKw = kw;
+      }
+    }
+    if (earliest === -1) break;
+
+    let xmlStart = earliest;
+    for (let i = earliest; i >= Math.max(0, earliest - 2000); i--) {
+      const ch = jsContent[i];
+      if (ch === '<' && jsContent.substring(i, i + 4) === '<xml') {
+        xmlStart = i;
+        break;
+      }
+      if (ch === '<' && jsContent.substring(i, i + 11) === '\\u003cxml') {
+        xmlStart = i;
+        break;
+      }
+      if (ch === '<' && jsContent.substring(i, i + 8) === '\\x3cxml') {
+        xmlStart = i;
+        break;
+      }
+    }
+
+    let xmlEnd = -1;
+    const searchFrom = Math.min(jsContent.length, earliest + 50000);
+    for (let i = earliest; i < searchFrom; i++) {
+      const ch = jsContent[i];
+      if (ch === '>' && jsContent.substring(i - 5, i + 1) === '</xml>') {
+        xmlEnd = i + 6;
+        break;
+      }
+      if (jsContent.substring(i, i + 6) === '\\u003e') {
+        const back6 = i - 5;
+        if (back6 >= 0 && jsContent.substring(back6, i + 6) === '/xml\\u003e') {
+          xmlEnd = i + 6;
+          break;
+        }
+      }
+      if (jsContent.substring(i, i + 5) === '\\x3e') {
+        const back5 = i - 4;
+        if (back5 >= 0 && jsContent.substring(back5, i + 5) === '/xml\\x3e') {
+          xmlEnd = i + 5;
+          break;
+        }
+      }
+    }
+
+    if (xmlEnd > xmlStart) {
+      let xml = jsContent.substring(xmlStart, xmlEnd);
+      xml = xml
+        .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
+        .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
+        .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
+        .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
+        .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+        .replace(/\\"/g, '"').replace(/\\'/g, "'");
+
+      if (xml.length > 500 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
+        const blockCount = (xml.match(/<block /g) || []).length;
+        if (blockCount >= 3) {
+          const name = extractNameFromContext(jsContent, xmlStart, xml);
+          seenContent.add(xml);
+          bots.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
+          console.log('Embedded bot (keyword):', name, `(${xml.length} bytes)`);
+        }
+      }
+      keywordPos = xmlEnd;
+    } else {
+      keywordPos = earliest + earliestKw.length;
     }
   }
 }

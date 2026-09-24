@@ -43,7 +43,9 @@ function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenCont
         { open: '\\u003cxml', close: '\\u003c/xml\\u003e', esc: true },
         { open: '\\u003Cxml', close: '\\u003C/xml\\u003E', esc: true },
         { open: '\\x3cxml', close: '\\x3c/xml\\x3e', esc: true },
+        { open: '\\x3Cxml', close: '\\x3C/xml\\x3E', esc: true },
         { open: '<xml', close: '</xml>', esc: false },
+        { open: '<XML', close: '</XML>', esc: false },
     ];
 
     for (const { open, close, esc } of escapePatterns) {
@@ -60,6 +62,7 @@ function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenCont
                     .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
                     .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
                     .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
+                    .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
                     .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
                     .replace(/\\"/g, '"').replace(/\\'/g, "'");
             }
@@ -75,6 +78,60 @@ function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenCont
             pos = end + close.length;
         }
     }
+
+    const derivKeywords = ['trade_definition', 'bot_run', 'purchase', 'submarket', 'INITIAL_STAKE', 'take_profit', 'stop_loss', 'entry_digit', 'prediction', 'deriv_bot'];
+    let keywordPos = 0;
+    while (keywordPos < jsContent.length) {
+        let earliest = -1;
+        let earliestKw = '';
+        for (const kw of derivKeywords) {
+            const idx = jsContent.indexOf(kw, keywordPos);
+            if (idx !== -1 && (earliest === -1 || idx < earliest)) {
+                earliest = idx;
+                earliestKw = kw;
+            }
+        }
+        if (earliest === -1) break;
+
+        let xmlStart = earliest;
+        for (let i = earliest; i >= Math.max(0, earliest - 2000); i--) {
+            if (jsContent.substring(i, i + 4) === '<xml') { xmlStart = i; break; }
+            if (jsContent.substring(i, i + 11) === '\\u003cxml') { xmlStart = i; break; }
+            if (jsContent.substring(i, i + 8) === '\\x3cxml') { xmlStart = i; break; }
+        }
+
+        let xmlEnd = -1;
+        const searchFrom = Math.min(jsContent.length, earliest + 50000);
+        for (let i = earliest; i < searchFrom; i++) {
+            if (jsContent.substring(i - 5, i + 1) === '</xml>') { xmlEnd = i + 6; break; }
+            if (jsContent.substring(i - 10, i + 6) === '/xml\\u003e') { xmlEnd = i + 6; break; }
+            if (jsContent.substring(i - 9, i + 5) === '/xml\\x3e') { xmlEnd = i + 5; break; }
+        }
+
+        if (xmlEnd > xmlStart) {
+            let xml = jsContent.substring(xmlStart, xmlEnd);
+            xml = xml
+                .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
+                .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
+                .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
+                .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
+                .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
+                .replace(/\\"/g, '"').replace(/\\'/g, "'");
+
+            if (xml.length > 500 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
+                const blockCount = (xml.match(/<block /g) || []).length;
+                if (blockCount >= 3) {
+                    const name = guessNameFromContext(jsContent, xmlStart, xml);
+                    seenContent.add(xml);
+                    results.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
+                }
+            }
+            keywordPos = xmlEnd;
+        } else {
+            keywordPos = earliest + earliestKw.length;
+        }
+    }
+
     return results;
 }
 
@@ -257,11 +314,20 @@ const BotExtractor = () => {
 
             const pages = [...internalPages].slice(0, 25);
             addLog(`Checking ${pages.length} pages...`);
+            const crawledJsUrls = new Set<string>();
 
             await Promise.allSettled(pages.map(async (pageUrl) => {
                 const pageHtml = await fetchTextSafe(pageUrl, 8000);
                 if (pageHtml) {
                     discoverXml(pageHtml);
+                    const scriptRegex2 = /<script[^>]+src=["']([^"']+\.js)["'][^>]*>/gi;
+                    let sm;
+                    while ((sm = scriptRegex2.exec(pageHtml)) !== null) {
+                        try {
+                            const jsUrl = new URL(sm[1], pageUrl).href;
+                            if (isSameDomain(jsUrl, baseUrl)) crawledJsUrls.add(jsUrl);
+                        } catch {}
+                    }
                     const subLinks = pageHtml.match(/href=["']([^"'#]+\.xml)["']/gi);
                     if (subLinks) {
                         for (const sl of subLinks) {
@@ -279,7 +345,22 @@ const BotExtractor = () => {
                     }
                 }
             }));
-            addLog(`After page crawl: ${discoveredFiles.size} .xml files`);
+            addLog(`After page crawl: ${discoveredFiles.size} .xml files, ${crawledJsUrls.size} new JS files`);
+
+            addLog('\n--- Step 3b: Scanning crawled JS files for embedded XML ---');
+            setProgress('Scanning crawled JS files...');
+            const crawledJsResults = await Promise.allSettled([...crawledJsUrls].map(async (jsUrl) => {
+                const js = await fetchTextSafe(jsUrl, 10000);
+                if (js) {
+                    discoverXml(js);
+                    const embedded = extractEmbeddedBotsFromJs(js, jsUrl, seenContent);
+                    for (const bot of embedded) {
+                        allBots.push({ ...bot, fromTab: 'Embedded JS' });
+                        addLog(`  Embedded: ${bot.name} (${(bot.size / 1024).toFixed(1)} KB)`);
+                    }
+                }
+            }));
+            addLog(`After crawled JS scan: ${discoveredFiles.size} .xml files, ${allBots.length} embedded bots`);
 
             addLog('\n--- Step 4: Probing common bot names ---');
             setProgress('Probing common bot paths...');
