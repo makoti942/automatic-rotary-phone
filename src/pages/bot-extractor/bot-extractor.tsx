@@ -11,10 +11,9 @@ interface ExtractedBot {
 }
 
 const CORS_PROXIES = [
+    (url: string) => `/api/proxy?url=${encodeURIComponent(url)}`,
     (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
     (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-    (url: string) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
-    (url: string) => `https://thingproxy.freeboard.io/fetch/${url}`,
 ];
 
 // Common paths where Deriv bots are often hosted
@@ -54,7 +53,7 @@ const BotExtractor = () => {
             try {
                 const proxyUrl = proxyFn(targetUrl);
                 const controller = new AbortController();
-                const timeout = setTimeout(() => controller.abort(), 10000);
+                const timeout = setTimeout(() => controller.abort(), 15000);
                 const res = await fetch(proxyUrl, { signal: controller.signal });
                 clearTimeout(timeout);
                 if (res.ok) {
@@ -65,10 +64,7 @@ const BotExtractor = () => {
                 // Try next proxy
             }
         }
-        // Last resort: try direct fetch (will work for same-origin or open CORS)
-        const res = await fetch(targetUrl);
-        if (!res.ok) throw new Error(`${res.status}`);
-        return res.text();
+        throw new Error('All proxies failed');
     }, []);
 
     const extractXmlFromHtml = useCallback((html: string, baseUrl: string): { bots: ExtractedBot[], links: string[] } => {
