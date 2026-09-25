@@ -323,6 +323,9 @@ const BotExtractor = () => {
 
         try {
             const baseUrl = new URL(targetUrl).origin;
+            for (const manifest of ['/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json']) {
+                discoveredDataUrls.add(`${baseUrl}${manifest}`);
+            }
 
             addLog('--- Step 1: Fetching main page ---');
             setProgress('Fetching main page...');

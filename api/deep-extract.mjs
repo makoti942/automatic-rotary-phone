@@ -1,4 +1,4 @@
-const MAX_PAGES = 60;
+const MAX_PAGES = 260;
 const MAX_BYTES = 2_000_000;
 const TIMEOUT_MS = 12_000;
 const MAX_BOTS = 250;
@@ -76,7 +76,7 @@ function extractXmlDocuments(content, source) {
   return output;
 }
 
-function addReferencedUrls(content, source, queue, targetHost) {
+function addReferencedUrls(content, source, queue, targetHost, targetOrigin, candidateFiles) {
   const add = (raw, onlySameHost = false) => {
     try {
       const url = new URL(raw.replace(/[),;]+$/, ''), source);
@@ -86,13 +86,50 @@ function addReferencedUrls(content, source, queue, targetHost) {
     } catch {}
   };
   const urlPattern = /(?:https?:\/\/[^\s"'`<>]+|(?:\.\.?\/|\/)[^\s"'`<>]+|[A-Za-z0-9_./-]+)(?:\.xml|\.json|\.js)(?:[?#][^\s"'`<>]*)?/gi;
-  for (const match of content.matchAll(urlPattern)) add(match[0]);
+  for (const match of content.matchAll(urlPattern)) {
+    const raw = match[0];
+    add(raw);
+    if (/\.xml(?:[?#]|$)/i.test(raw)) {
+      try {
+        const parsed = new URL(raw, source);
+        const file = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+        if (file) candidateFiles.add(file);
+      } catch {}
+    }
+  }
   const endpointPattern = /["'`]((?:https?:\/\/|\/|\.\.?\/)[^"'`<>]{1,260})["'`]/gi;
   for (const match of content.matchAll(endpointPattern)) {
     if (/(?:bot|strategy|free|download|workspace|xml)/i.test(match[1])) add(match[1]);
   }
   const srcPattern = /<(?:script[^>]+src|link[^>]+href|a[^>]+href)=["']([^"']+)["']/gi;
   for (const match of content.matchAll(srcPattern)) add(match[1], true);
+
+  // Webpack/Rspack keeps lazy application modules in an id -> hash map. A
+  // normal HTML fetch only contains the entry bundle, so enumerate these
+  // chunks as a browser would; custom Free Bots manifests commonly live in a
+  // lazy route chunk rather than the entry bundle.
+  const hashMap = new Map();
+  const hashPairs = /(?:^|[,\{])(\d+):["']([a-f0-9]{6,})["']/gi;
+  for (const match of content.matchAll(hashPairs)) hashMap.set(match[1], match[2]);
+  const namePairs = /(?:^|[,\{])(\d+):["']([^"']+)["']/g;
+  for (const match of content.matchAll(namePairs)) {
+    const hash = hashMap.get(match[1]);
+    const name = match[2];
+    if (hash && !/^[a-f0-9]{6,}$/i.test(name) && !/[\\/]/.test(name)) {
+      add(`/static/js/async/${name}.${hash}.js`, true);
+    }
+  }
+  const runtime = content.slice(content.indexOf('static/js/async/'));
+  const maps = [...runtime.matchAll(/\(\{([^{}]+)\}\)\[e\]/g)].map(match => match[1]);
+  if (maps.length >= 2) {
+    const parseMap = (value) => new Map([...value.matchAll(/(?:^|,)(\d+):["']([^"']+)["']/g)].map(match => [match[1], match[2]]));
+    const names = parseMap(maps[0]);
+    const hashes = parseMap(maps[1]);
+    for (const [id, name] of names) {
+      const hash = hashes.get(id);
+      if (hash && !/[\\/]/.test(name)) add(`/static/js/async/${name}.${hash}.js`, true);
+    }
+  }
 }
 
 async function fetchText(url) {
@@ -123,15 +160,20 @@ export default async function handler(req, res) {
 
   const targetHost = start.hostname;
   const queue = new Set([start.href]);
+  const priorityQueue = new Set();
   const visited = new Set();
   const bots = [];
   const seenXml = new Set();
+  const candidateFiles = new Set();
+  const candidateDirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
+  const manifestPaths = ['/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
+  for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
 
-  while (queue.size && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
-    const batch = [...queue].filter(url => !visited.has(url)).slice(0, 8);
+  while ((queue.size || priorityQueue.size) && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
+    const batch = [...priorityQueue, ...queue].filter(url => !visited.has(url)).slice(0, 8);
     if (!batch.length) break;
-    batch.forEach(url => visited.add(url));
+    batch.forEach(url => { visited.add(url); priorityQueue.delete(url); queue.delete(url); });
     const results = await Promise.allSettled(batch.map(async url => ({ url, result: await fetchText(url) })));
     for (const item of results) {
       if (item.status !== 'fulfilled' || !item.value.result) continue;
@@ -142,7 +184,12 @@ export default async function handler(req, res) {
         if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
       }
       if (/html|javascript|json|xml|text\//i.test(type) || /\.(?:html?|js|json|xml)(?:[?#]|$)/i.test(url)) {
-        addReferencedUrls(text, url, queue, targetHost);
+        addReferencedUrls(text, url, queue, targetHost, start.origin, candidateFiles);
+      }
+    }
+    for (const file of candidateFiles) {
+      for (const directory of candidateDirs) {
+        try { priorityQueue.add(new URL(`${directory}${file}`, start.origin).href); } catch {}
       }
     }
   }

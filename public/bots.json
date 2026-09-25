@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "bots": [
+    { "name": "STARTER BOT", "file": "/xml/STARTER_BOT.xml" },
+    { "name": "POVERTY KILLER", "file": "/xml/POVERTY_KILLER.xml" },
+    { "name": "POVERTY KILLER V2.1", "file": "/xml/POVERTY_KILLER_V2.1.xml" },
+    { "name": "BEST RISE FALL", "file": "/xml/BEST_RISE_FALL.xml" },
+    { "name": "MAKOTI AUTOMATED RISE FALL", "file": "/xml/MAKOTI_AUTOMATED_RISE_FALL.xml" },
+    { "name": "THE CMV PRO", "file": "/xml/THE CMV PRO.xml" },
+    { "name": "UNDER BLAST PRO", "file": "/xml/UNDER BLAST PRO.xml" },
+    { "name": "OVER1 R32 PRO", "file": "/xml/OVER1_R32 PRO.xml" },
+    { "name": "OVER2 R43 PRO", "file": "/xml/OVER2_R43 PRO.xml" },
+    { "name": "UNDER8 R67 PRO", "file": "/xml/UNDER8_R67 PRO.xml" },
+    { "name": "UNDER7 R56 PRO", "file": "/xml/UNDER7_R56 PRO.xml" },
+    { "name": "MAKOTIV3RISE FALL", "file": "/xml/MAKOTIV3RISE_FALL.xml" },
+    { "name": "MAKOTI RISE/FALL V4", "file": "/xml/MAKOTIRISE_FALLV4.xml" },
+    { "name": "FREE BOT WITH MARTINGALE", "file": "/xml/FREE BOT WITH MARTINGALE.xml" },
+    { "name": "ENTRY POINT BOT UNDER7 OVER4 RECOVERY", "file": "/xml/ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml" },
+    { "name": "NEW BOT WITH ENTRY POINT", "file": "/xml/NEW_BOT_WITH_ENTRY_POINT.xml" },
+    { "name": "SPLIT MARTINGALE BOT PREMIUM", "file": "/xml/SPLIT_MARTINGALE_BOT_PREMIUM.xml" }
+  ]
+}
