@@ -60,11 +60,30 @@ function extractXmlDocuments(content: string): string[] {
     return results;
 }
 
+function isBuiltInBotBundle(source: string): boolean {
+    return /(?:^|[\\/])(?:[^\\/]+-xml(?:\\.[a-f0-9]{6,})?\\.js|dbot-collection(?:\\.[a-f0-9]{6,})?\\.js)$/i.test(source);
+}
+
+function normalizeBotName(name: string | null | undefined): string | null {
+    if (!name) return null;
+    const cleaned = name.replace(/[_-]+/g, ' ').replace(/\\s+/g, ' ').trim();
+    if (!cleaned || /^(?:bot|xml|data|payload|content|strategy|s|t|e|i|o|n)(?:\\s+\\d+)?$/i.test(cleaned)) return null;
+    if (cleaned.length < 2 || cleaned.length > 120) return null;
+    return cleaned;
+}
+
+function hasCustomBotName(name: string | null | undefined): boolean {
+    return !!normalizeBotName(name);
+}
+
 function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenContent: Set<string>): { name: string; xml: string; source: string; size: number }[] {
     return extractXmlDocuments(jsContent).flatMap((xml, index) => {
         if (seenContent.has(xml)) return [];
+        if (isBuiltInBotBundle(jsSource)) return [];
+        const name = normalizeBotName(guessNameFromContext(jsContent, jsContent.indexOf(xml.slice(0, 40)), xml));
+        if (!name) return [];
         seenContent.add(xml);
-        return [{ name: guessNameFromContext(jsContent, jsContent.indexOf(xml.slice(0, 40)), xml) || `Bot ${index + 1}`, xml, source: 'embedded:' + jsSource, size: xml.length }];
+        return [{ name, xml, source: 'embedded:' + jsSource, size: xml.length }];
     });
 }
 function guessNameFromContext(jsContent: string, position: number, xml: string): string {
@@ -73,20 +92,14 @@ function guessNameFromContext(jsContent: string, position: number, xml: string):
     const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
     if (nameFromMutation) return nameFromMutation[1].trim();
 
-    const contextBefore = jsContent.substring(Math.max(0, position - 500), position);
+    const contextBefore = jsContent.substring(Math.max(0, position - 1500), position);
+    const metadataMatches = [...contextBefore.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,120})["'`]/gi)];
+    if (metadataMatches.length) return metadataMatches[metadataMatches.length - 1][1].trim();
     const varMatch = contextBefore.match(/(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["'`][^"'`]*$/g);
     if (varMatch) {
         const last = varMatch[varMatch.length - 1];
         const name = last.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '').trim();
         if (name.length > 2 && name.length < 60) return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-    }
-    const propMatch = contextBefore.match(/([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*["'`][^"'`]*$/g);
-    if (propMatch) {
-        const last = propMatch[propMatch.length - 1];
-        const name = last.replace(/\s*:.*$/, '').trim();
-        if (name.length > 2 && name.length < 60 && !['return', 'const', 'let', 'var', 'function'].includes(name)) {
-            return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-        }
     }
     const fileMatch = contextBefore.match(/["']([A-Za-z][A-Za-z0-9_-]+)\.xml["']/g);
     if (fileMatch) {
@@ -246,6 +259,7 @@ const BotExtractor = () => {
         const discoveredFiles = new Set<string>();
         const discoveredXmlUrls = new Set<string>();
         const discoveredJsUrls = new Set<string>();
+        const discoveredDataUrls = new Set<string>();
 
         const isSameDomain = (u: string, base: string) => { try { return new URL(u).hostname === new URL(base).hostname; } catch { return false; } };
 
@@ -267,13 +281,13 @@ const BotExtractor = () => {
         };
 
         const discoverAssets = (content: string, sourceUrl: string) => {
-            const addUrl = (value: string, kind: 'xml' | 'js') => {
+            const addUrl = (value: string, kind: 'xml' | 'js' | 'data') => {
                 try {
                     const clean = value.replace(/\\\"|\\\'/g, '').replace(/\\u0026/g, '&');
                     const full = new URL(clean, sourceUrl).href;
-                    if (new URL(full).hostname !== new URL(targetUrl).hostname) return;
                     if (kind === 'xml') discoveredXmlUrls.add(full);
-                    else discoveredJsUrls.add(full);
+                    else if (kind === 'js') discoveredJsUrls.add(full);
+                    else discoveredDataUrls.add(full);
                 } catch {}
             };
             const xmlPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_ .-]+)\.xml(?:[?#][^\s"'\x60<>]*)?/gi;
@@ -287,6 +301,15 @@ const BotExtractor = () => {
             }
             const jsPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_./-]+)\.js(?:[?#][^\s"'\x60<>]*)?/gi;
             while ((m = jsPattern.exec(content))) addUrl(m[0].replace(/[),;]+$/, ''), 'js');
+            const dataPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_./-]+)(?:\.json(?:[?#][^\s"'\x60<>]*)?|\/api\/(?:[^\s"'\x60<>]*(?:bot|strategy|free)[^\s"'\x60<>]*))/gi;
+            while ((m = dataPattern.exec(content))) addUrl(m[0].replace(/[),;]+$/, ''), 'data');
+            const endpointPattern = /["'\x60]((?:https?:\/\/|\/|\.\.?\/)[^"'\x60<>]{1,240})["'\x60]/gi;
+            while ((m = endpointPattern.exec(content))) {
+                const value = m[1];
+                if (/(?:bot|strategy|free|download|workspace|xml)/i.test(value) && !/\.js(?:[?#]|$)/i.test(value)) {
+                    addUrl(value, 'data');
+                }
+            }
 
             // Webpack/Rspack often keeps XML bots in hashed async chunks and only
             // exposes the chunk name/id mapping in the runtime bundle.
@@ -346,6 +369,18 @@ const BotExtractor = () => {
                     for (const bot of extractEmbeddedBotsFromJs(js, jsUrl, seenContent)) {
                         allBots.push({ ...bot, fromTab: 'Embedded JS' });
                         addLog(`  Embedded: ${bot.name} (${(bot.size / 1024).toFixed(1)} KB)`);
+                    }
+                }));
+            }
+            if (discoveredDataUrls.size) {
+                addLog(`Fetching ${discoveredDataUrls.size} discovered bot data source(s)...`);
+                await Promise.allSettled([...discoveredDataUrls].map(async dataUrl => {
+                    const data = await fetchTextSafe(dataUrl, 10000);
+                    if (!data) return;
+                    discoverAssets(data, dataUrl);
+                    for (const bot of extractEmbeddedBotsFromJs(data, dataUrl, seenContent)) {
+                        allBots.push({ ...bot, fromTab: 'Custom Bot Data' });
+                        addLog(`  Custom data: ${bot.name} (${(bot.size / 1024).toFixed(1)} KB)`);
                     }
                 }));
             }
@@ -451,31 +486,7 @@ const BotExtractor = () => {
             }));
             addLog(`After crawled JS scan: ${discoveredFiles.size} .xml files, ${allBots.length} embedded bots`);
 
-            addLog('\n--- Step 4: Probing common bot names ---');
-            setProgress('Probing common bot paths...');
-            const commonNames = [
-                'Martingale', 'Dalembert', 'Oscar_Grinde', 'Fibonacci', 'Paroli',
-                'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
-                'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
-                'Under_5', 'Under_6', 'Under_7', 'Under_8',
-                'Over_1', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
-                'Even_Odd', 'Differs', 'Digits', 'Matches',
-                'Market_Killer', 'Entry_Digit', 'Digit_Hunter',
-                'Multi_Killer', 'AI_Analyst', 'Recovery', 'Starter',
-                'Killer', 'Sniper', 'Hunter', 'Blaster', 'Turbo',
-                'Premium', 'Advanced', 'Basic', 'Pro', 'Elite',
-            ];
-            for (const name of commonNames) {
-                discoveredFiles.add(`${name}.xml`);
-                const lower = name.toLowerCase();
-                if (lower !== name) discoveredFiles.add(`${lower}.xml`);
-                const upper = name.toUpperCase();
-                if (upper !== name) discoveredFiles.add(`${upper}.xml`);
-                discoveredFiles.add(`${name.replace(/ /g, '_')}.xml`);
-            }
-            addLog(`Total candidate files: ${discoveredFiles.size}`);
-
-            addLog('\n--- Step 5: Fetching .xml files ---');
+            addLog('\n--- Step 4: Fetching discovered custom bot files ---');
             setProgress(`Fetching ${discoveredFiles.size} candidate files...`);
 
             const dirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
@@ -503,12 +514,14 @@ const BotExtractor = () => {
                     if (!content) return;
                     if (content.includes('<!DOCTYPE html') || content.includes('<html')) return;
                     if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return;
+                    if (isBuiltInBotBundle(fUrl)) return;
 
                     if (isValidDerivBot(content) && !seenContent.has(content)) {
                         seenContent.add(content);
-                        const botName = name.replace('.xml', '').replace(/[_-]/g, ' ')
+                        const botName = extractNameFromXml(content) || name.replace(/\.xml$/i, '').replace(/[_-]/g, ' ')
                             .replace(/([a-z])([A-Z])/g, '$1 $2')
                             .replace(/\b\w/g, c => c.toUpperCase());
+                        if (!hasCustomBotName(botName)) return;
                         allBots.push({
                             name: botName,
                             xml: content.trim(),
