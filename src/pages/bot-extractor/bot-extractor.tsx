@@ -37,6 +37,7 @@ function isValidDerivBot(content: string): boolean {
     if (!/^(?:<\?xml\b[^>]*\?>\s*)?<xml\b/i.test(trimmed) || !/<\/xml>\s*$/i.test(trimmed)) return false;
     if (/<(?:!doctype|html|head|body)\b/i.test(trimmed)) return false;
     if (/MODULE_NOT_FOUND|Cannot find module|Blockly\.(?:Blocks|JavaScript)/i.test(trimmed)) return false;
+    if (!/<xml\b[^>]*\bis_dbot=["']true["']/i.test(trimmed)) return false;
     const blockCount = (trimmed.match(/<block\b/gi) || []).length;
     if (blockCount < 5) return false;
     const hasTradeDefinition = /<block\b[^>]*type=["']trade_definition["']/i.test(trimmed);
@@ -67,7 +68,7 @@ function isBuiltInBotBundle(source: string): boolean {
 function normalizeBotName(name: string | null | undefined): string | null {
     if (!name) return null;
     const cleaned = name.replace(/[_-]+/g, ' ').replace(/\\s+/g, ' ').trim();
-    if (!cleaned || /^(?:bot|xml|data|payload|content|strategy|s|t|e|i|o|n)(?:\\s+\\d+)?$/i.test(cleaned)) return null;
+    if (!cleaned || /^(?:bot|xml|data|payload|content|strategy|workspace|document|template)(?:\\s*\\d+)?$/i.test(cleaned)) return null;
     if (cleaned.length < 2 || cleaned.length > 120) return null;
     return cleaned;
 }
@@ -101,12 +102,7 @@ function guessNameFromContext(jsContent: string, position: number, xml: string):
         const name = last.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '').trim();
         if (name.length > 2 && name.length < 60) return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
     }
-    const fileMatch = contextBefore.match(/["']([A-Za-z][A-Za-z0-9_-]+)\.xml["']/g);
-    if (fileMatch) {
-        const last = fileMatch[fileMatch.length - 1].replace(/["']/g, '').replace('.xml', '');
-        return last.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-    }
-    return `Bot ${Math.floor(position / 100)}`;
+    return '';
 }
 
 function extractLoadBotUrls(html: string, baseUrl: string): string[] {

@@ -16,7 +16,8 @@ function isValidBotXml(value) {
   const xml = decodeMarkup(value || '').trim();
   if (xml.length < 500 || xml.length > 1_000_000) return false;
   if (!/^(?:<\?xml\b[^>]*\?>\s*)?<xml\b/i.test(xml) || !/<\/xml>\s*$/i.test(xml)) return false;
-  if (/<(?:!doctype|html|head|body)\b/i.test(xml)) return false;
+  if (/<(?:!doctype\s+html|html)\b/i.test(xml)) return false;
+  if (!/<xml\b[^>]*\bis_dbot=["']true["']/i.test(xml)) return false;
   if (/MODULE_NOT_FOUND|Cannot find module|Blockly\.(?:Blocks|JavaScript)/i.test(xml)) return false;
   if ((xml.match(/<block\b/gi) || []).length < 5) return false;
   return /<block\b[^>]*type=["']trade_definition["']/i.test(xml)
@@ -31,7 +32,7 @@ function isBuiltInBundle(url) {
 function normalizeName(value) {
   if (!value) return null;
   const name = value.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
-  if (!name || /^(?:bot|xml|data|payload|content|strategy|workspace)(?:\s+\d+)?$/i.test(name)) return null;
+  if (!name || /^(?:bot|xml|data|payload|content|strategy|workspace|document|template)(?:\s*\d+)?$/i.test(name)) return null;
   return name.length >= 2 && name.length <= 140 ? name : null;
 }
 
@@ -47,6 +48,7 @@ function nameFromContext(content, position, source) {
   const before = content.slice(Math.max(0, position - 2500), position);
   const match = [...before.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,140})["'`]/gi)].pop();
   if (match) return normalizeName(match[1]);
+  if (!/\.(?:xml|json)(?:[?#]|$)/i.test(source)) return null;
   try {
     const file = decodeURIComponent(new URL(source).pathname.split('/').pop() || '').replace(/\.(?:xml|json|js)$/i, '');
     return normalizeName(file);
