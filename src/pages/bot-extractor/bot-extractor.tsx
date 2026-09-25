@@ -81,11 +81,21 @@ function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenCont
     return extractXmlDocuments(jsContent).flatMap((xml, index) => {
         if (seenContent.has(xml)) return [];
         if (isBuiltInBotBundle(jsSource)) return [];
-        const name = normalizeBotName(guessNameFromContext(jsContent, jsContent.indexOf(xml.slice(0, 40)), xml));
+        const name = normalizeBotName(guessNameFromContext(jsContent, jsContent.indexOf(xml.slice(0, 40)), xml))
+            || normalizeBotName(guessNameFromChunkSource(jsSource));
         if (!name) return [];
         seenContent.add(xml);
         return [{ name, xml, source: 'embedded:' + jsSource, size: xml.length }];
     });
+}
+function guessNameFromChunkSource(source: string): string {
+    try {
+        const chunk = decodeURIComponent(new URL(source).pathname.split('/').pop() || '')
+            .replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
+        if (!/(?:free|bot|strategy|scalper)/i.test(chunk)) return '';
+        return chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '')
+            .replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' ');
+    } catch { return ''; }
 }
 function guessNameFromContext(jsContent: string, position: number, xml: string): string {
     const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
@@ -292,7 +302,8 @@ const BotExtractor = () => {
                 const value = m[0].replace(/[),;]+$/, '');
                 if (value.length >= 5 && value.length <= 300 && !/node_modules|blockly/i.test(value)) {
                     addUrl(value, 'xml');
-                    discoveredFiles.add(value.split('/').pop()!.split(/[?#]/)[0]);
+                    const sourcePath = value.split(/[?#]/)[0].replace(/^\.\//, '').replace(/^\//, '');
+                    discoveredFiles.add(sourcePath || value.split('/').pop()!.split(/[?#]/)[0]);
                 }
             }
             const jsPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_./-]+)\.js(?:[?#][^\s"'\x60<>]*)?/gi;
@@ -496,7 +507,10 @@ const BotExtractor = () => {
                 if (!visited.has(xmlUrl)) { visited.add(xmlUrl); fetchQueue.push({ url: xmlUrl, name }); }
             }
             for (const fname of discoveredFiles) {
+                const exactUrl = `${baseUrl}/${fname}`;
+                if (!visited.has(exactUrl)) { visited.add(exactUrl); fetchQueue.push({ url: exactUrl, name: fname }); }
                 for (const dir of dirs) {
+                    if (dir === '/') continue;
                     const tryUrl = `${baseUrl}${dir}${fname}`;
                     if (!visited.has(tryUrl)) { visited.add(tryUrl); fetchQueue.push({ url: tryUrl, name: fname }); }
                 }
