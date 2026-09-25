@@ -185,6 +185,40 @@ async function runtimeBrowserScan(startUrl) {
     await new Promise(resolve => setTimeout(resolve, 700));
     await Promise.allSettled([...pending]);
     inspect(await page.content(), page.url());
+    const browserState = await page.evaluate(async () => {
+      const values = [];
+      for (const storage of [window.localStorage, window.sessionStorage]) {
+        for (let i = 0; i < storage.length; i++) {
+          const key = storage.key(i);
+          if (key) values.push(`${key}=${storage.getItem(key) || ''}`);
+        }
+      }
+      try {
+        const databases = await indexedDB.databases();
+        for (const database of databases.slice(0, 10)) {
+          if (!database.name) continue;
+          await new Promise(resolve => {
+            const request = indexedDB.open(database.name);
+            request.onerror = () => resolve();
+            request.onsuccess = () => {
+              const db = request.result;
+              const names = [...db.objectStoreNames].slice(0, 20);
+              if (!names.length) { db.close(); resolve(); return; }
+              let remaining = names.length;
+              for (const name of names) {
+                try {
+                  const get = db.transaction(name, 'readonly').objectStore(name).getAll();
+                  get.onsuccess = () => { values.push(`indexeddb:${database.name}/${name}=${JSON.stringify(get.result).slice(0, 500000)}`); if (!--remaining) { db.close(); resolve(); } };
+                  get.onerror = () => { if (!--remaining) { db.close(); resolve(); } };
+                } catch { if (!--remaining) { db.close(); resolve(); } }
+              }
+            };
+          });
+        }
+      } catch {}
+      return values;
+    }).catch(() => []);
+    for (const value of browserState) inspect(value, `${page.url()}#browser-storage`);
     await browser.close();
   } catch {
     try { await browser?.close(); } catch {}
