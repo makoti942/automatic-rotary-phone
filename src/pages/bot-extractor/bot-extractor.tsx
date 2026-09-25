@@ -22,126 +22,51 @@ const COMMON_XML_DIRS = [
     '/files/', '/strategies/', '/downloads/',
 ];
 
-function isValidDerivBot(content: string): boolean {
-    if (!content || typeof content !== 'string') return false;
-    const trimmed = content.trim();
-    if (trimmed.length < 200) return false;
-    if (trimmed.length > 500000) return false;
-    if (trimmed.includes('<!DOCTYPE html') || trimmed.includes('<html')) return false;
-    if (trimmed.includes('MODULE_NOT_FOUND') || trimmed.includes('Cannot find module')) return false;
-    if (!trimmed.startsWith('<xml') && !trimmed.startsWith('<?xml')) return false;
-    if (!trimmed.includes('<block')) return false;
-    if (!trimmed.includes('type="')) return false;
-    const blockCount = (trimmed.match(/<block /g) || []).length;
-    if (blockCount < 2) return false;
-    return true;
+function decodeMarkup(content: string): string {
+    return content
+        .replace(/\\u003[cC]/g, '<').replace(/\\u003[eE]/g, '>')
+        .replace(/\\x3[cC]/g, '<').replace(/\\x3[eE]/g, '>')
+        .replace(/\\u0026/g, '&').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+        .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'").replace(/&amp;/gi, '&');
 }
 
-function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenContent: Set<string>): { name: string; xml: string; source: string; size: number }[] {
-    const results: { name: string; xml: string; source: string; size: number }[] = [];
-    const escapePatterns = [
-        { open: '\\u003cxml', close: '\\u003c/xml\\u003e', esc: true },
-        { open: '\\u003Cxml', close: '\\u003C/xml\\u003E', esc: true },
-        { open: '\\x3cxml', close: '\\x3c/xml\\x3e', esc: true },
-        { open: '\\x3Cxml', close: '\\x3C/xml\\x3E', esc: true },
-        { open: '<xml', close: '</xml>', esc: false },
-        { open: '<XML', close: '</XML>', esc: false },
-    ];
+function isValidDerivBot(content: string): boolean {
+    if (!content || typeof content !== 'string') return false;
+    const trimmed = decodeMarkup(content).trim();
+    if (trimmed.length < 500 || trimmed.length > 1000000) return false;
+    if (!/^(?:<\?xml\b[^>]*\?>\s*)?<xml\b/i.test(trimmed) || !/<\/xml>\s*$/i.test(trimmed)) return false;
+    if (/<(?:!doctype|html|head|body)\b/i.test(trimmed)) return false;
+    if (/MODULE_NOT_FOUND|Cannot find module|Blockly\.(?:Blocks|JavaScript)/i.test(trimmed)) return false;
+    const blockCount = (trimmed.match(/<block\b/gi) || []).length;
+    if (blockCount < 5) return false;
+    const hasTradeDefinition = /<block\b[^>]*type=["']trade_definition["']/i.test(trimmed);
+    const hasPurchase = /<block\b[^>]*type=["']purchase["']/i.test(trimmed);
+    const hasTradeFlow = /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(trimmed);
+    return hasTradeDefinition && hasPurchase && hasTradeFlow;
+}
 
-    for (const { open, close, esc } of escapePatterns) {
-        let pos = 0;
-        while (pos < jsContent.length) {
-            const start = jsContent.indexOf(open, pos);
-            if (start === -1) break;
-            const end = jsContent.indexOf(close, start + open.length);
-            if (end === -1) { pos = start + open.length; continue; }
-
-            let xml = jsContent.substring(start, end + close.length);
-            if (esc) {
-                xml = xml
-                    .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
-                    .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
-                    .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
-                    .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
-                    .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-                    .replace(/\\"/g, '"').replace(/\\'/g, "'");
-            }
-
-            if (xml.length > 1000 && xml.includes('<block') && !seenContent.has(xml)) {
-                const blockCount = (xml.match(/<block /g) || []).length;
-                const startsXml = xml.trimStart().startsWith('<xml');
-                const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
-                const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
-                const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript');
-                if (startsXml && hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
-                    const name = guessNameFromContext(jsContent, start, xml);
-                    seenContent.add(xml);
-                    results.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-                }
-            }
-            pos = end + close.length;
-        }
+function extractXmlDocuments(content: string): string[] {
+    const decoded = decodeMarkup(content);
+    const results: string[] = [];
+    const open = /<xml\b[^>]*>/gi;
+    let match: RegExpExecArray | null;
+    while ((match = open.exec(decoded))) {
+        const end = decoded.indexOf('</xml>', match.index + match[0].length);
+        if (end === -1) continue;
+        const xml = decoded.slice(match.index, end + 6).trim();
+        if (isValidDerivBot(xml) && !results.includes(xml)) results.push(xml);
+        open.lastIndex = end + 6;
     }
-
-    const derivKeywords = ['trade_definition', 'bot_run', 'purchase', 'submarket', 'INITIAL_STAKE', 'take_profit', 'stop_loss', 'entry_digit', 'prediction', 'deriv_bot'];
-    let keywordPos = 0;
-    while (keywordPos < jsContent.length) {
-        let earliest = -1;
-        let earliestKw = '';
-        for (const kw of derivKeywords) {
-            const idx = jsContent.indexOf(kw, keywordPos);
-            if (idx !== -1 && (earliest === -1 || idx < earliest)) {
-                earliest = idx;
-                earliestKw = kw;
-            }
-        }
-        if (earliest === -1) break;
-
-        let xmlStart = earliest;
-        for (let i = earliest; i >= Math.max(0, earliest - 2000); i--) {
-            if (jsContent.substring(i, i + 4) === '<xml') { xmlStart = i; break; }
-            if (jsContent.substring(i, i + 11) === '\\u003cxml') { xmlStart = i; break; }
-            if (jsContent.substring(i, i + 8) === '\\x3cxml') { xmlStart = i; break; }
-        }
-
-        let xmlEnd = -1;
-        const searchFrom = Math.min(jsContent.length, earliest + 50000);
-        for (let i = earliest; i < searchFrom; i++) {
-            if (jsContent.substring(i - 5, i + 1) === '</xml>') { xmlEnd = i + 6; break; }
-            if (jsContent.substring(i - 10, i + 6) === '/xml\\u003e') { xmlEnd = i + 6; break; }
-            if (jsContent.substring(i - 9, i + 5) === '/xml\\x3e') { xmlEnd = i + 5; break; }
-        }
-
-        if (xmlEnd > xmlStart) {
-            let xml = jsContent.substring(xmlStart, xmlEnd);
-            xml = xml
-                .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
-                .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
-                .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
-                .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
-                .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-                .replace(/\\"/g, '"').replace(/\\'/g, "'");
-
-            if (xml.length > 1000 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
-                const blockCount = (xml.match(/<block /g) || []).length;
-                const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
-                const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
-                const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript');
-                if (hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
-                    const name = guessNameFromContext(jsContent, xmlStart, xml);
-                    seenContent.add(xml);
-                    results.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-                }
-            }
-            keywordPos = xmlEnd;
-        } else {
-            keywordPos = earliest + earliestKw.length;
-        }
-    }
-
     return results;
 }
 
+function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenContent: Set<string>): { name: string; xml: string; source: string; size: number }[] {
+    return extractXmlDocuments(jsContent).flatMap((xml, index) => {
+        if (seenContent.has(xml)) return [];
+        seenContent.add(xml);
+        return [{ name: guessNameFromContext(jsContent, jsContent.indexOf(xml.slice(0, 40)), xml) || `Bot ${index + 1}`, xml, source: 'embedded:' + jsSource, size: xml.length }];
+    });
+}
 function guessNameFromContext(jsContent: string, position: number, xml: string): string {
     const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
     if (nameFromField) return nameFromField[1].trim();
@@ -227,7 +152,7 @@ function extractNameFromXml(xml: string): string | null {
 }
 
 function scanCurrentPageDOM(): { name: string; xml: string; source: string; size: number; fetchUrl: string }[] {
-    const results: { name: string; xml: string; source: string; size: number }[] = [];
+    const results: { name: string; xml: string; source: string; size: number; fetchUrl: string }[] = [];
     const seen = new Set<string>();
 
     const buttons = document.querySelectorAll('button[data-bot], button[data-xml], button[data-id], button[data-url], button[onclick*="load" i], a[href*="load" i], a[href*="import" i], a[href*="bot" i]');
@@ -243,7 +168,7 @@ function scanCurrentPageDOM(): { name: string; xml: string; source: string; size
         }
     }
 
-    const selects = document.querySelectorAll('select[name*="bot" i], select[id*="bot" i]');
+    const selects = document.querySelectorAll<HTMLSelectElement>('select[name*="bot" i], select[id*="bot" i]');
     for (const sel of selects) {
         for (const opt of sel.options) {
             if (opt.value) {
@@ -257,7 +182,7 @@ function scanCurrentPageDOM(): { name: string; xml: string; source: string; size
         }
     }
 
-    const links = document.querySelectorAll('a[href$=".xml"], a[href*="/bot/"], a[href*="/api/bot"]');
+    const links = document.querySelectorAll<HTMLAnchorElement>('a[href$=".xml"], a[href*="/bot/"], a[href*="/api/bot"]');
     for (const link of links) {
         try {
             const full = new URL(link.href, window.location.origin).href;
@@ -319,6 +244,8 @@ const BotExtractor = () => {
         const visited = new Set<string>();
         const seenContent = new Set<string>();
         const discoveredFiles = new Set<string>();
+        const discoveredXmlUrls = new Set<string>();
+        const discoveredJsUrls = new Set<string>();
 
         const isSameDomain = (u: string, base: string) => { try { return new URL(u).hostname === new URL(base).hostname; } catch { return false; } };
 
@@ -339,27 +266,38 @@ const BotExtractor = () => {
             return null;
         };
 
-        const discoverXml = (content: string) => {
-            const patterns = [
-                /["']([A-Za-z][A-Za-z0-9_ .-]+\.xml)["']/g,
-                /\/([A-Za-z][A-Za-z0-9_ .-]+\.xml)/g,
-            ];
-            for (const regex of patterns) {
-                let m;
-                while ((m = regex.exec(content)) !== null) {
-                    let fname = m[1] || m[0];
-                    if (!fname.endsWith('.xml') || fname.length < 5 || fname.length > 80) continue;
-                    fname = fname.replace(/^["'\/]+/, '').replace(/["']+$/, '');
-                    if (fname.includes('blockly') || fname.includes('node_modules')) continue;
-                    discoveredFiles.add(fname);
+        const discoverAssets = (content: string, sourceUrl: string) => {
+            const addUrl = (value: string, kind: 'xml' | 'js') => {
+                try {
+                    const clean = value.replace(/\\\"|\\\'/g, '').replace(/\\u0026/g, '&');
+                    const full = new URL(clean, sourceUrl).href;
+                    if (new URL(full).hostname !== new URL(targetUrl).hostname) return;
+                    if (kind === 'xml') discoveredXmlUrls.add(full);
+                    else discoveredJsUrls.add(full);
+                } catch {}
+            };
+            const xmlPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_ .-]+)\.xml(?:[?#][^\s"'\x60<>]*)?/gi;
+            let m: RegExpExecArray | null;
+            while ((m = xmlPattern.exec(content))) {
+                const value = m[0].replace(/[),;]+$/, '');
+                if (value.length >= 5 && value.length <= 300 && !/node_modules|blockly/i.test(value)) {
+                    addUrl(value, 'xml');
+                    discoveredFiles.add(value.split('/').pop()!.split(/[?#]/)[0]);
                 }
             }
-            const arr = /\[([^[\]]*\.xml[^[\]]*)\]/g;
-            let am;
-            while ((am = arr.exec(content)) !== null) {
-                const items = am[1].match(/["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g);
-                if (items && items.length >= 2) {
-                    for (const item of items) discoveredFiles.add(item.replace(/["']/g, ''));
+            const jsPattern = /(?:https?:\/\/[^\s"'\x60<>]+|(?:\.\.?\/|\/)[^\s"'\x60<>]+|[A-Za-z0-9_./-]+)\.js(?:[?#][^\s"'\x60<>]*)?/gi;
+            while ((m = jsPattern.exec(content))) addUrl(m[0].replace(/[),;]+$/, ''), 'js');
+
+            // Webpack/Rspack often keeps XML bots in hashed async chunks and only
+            // exposes the chunk name/id mapping in the runtime bundle.
+            const asyncRoot = content.indexOf('static/js/async/');
+            if (asyncRoot !== -1) {
+                const hashSection = content.slice(asyncRoot);
+                const chunkNames = /([0-9]+):["']([^"']+-xml)["']/g;
+                let chunk: RegExpExecArray | null;
+                while ((chunk = chunkNames.exec(content))) {
+                    const hash = hashSection.match(new RegExp(`(?:^|[^0-9])${chunk[1]}:["']([a-f0-9]{6,})["']`, 'i'))?.[1];
+                    if (hash) addUrl(`/static/js/async/${chunk[2]}.${hash}.js`, 'js');
                 }
             }
         };
@@ -371,23 +309,24 @@ const BotExtractor = () => {
             setProgress('Fetching main page...');
             const mainHtml = await fetchTextSafe(targetUrl);
             if (!mainHtml) throw new Error('Failed to fetch main page');
-            discoverXml(mainHtml);
+            discoverAssets(mainHtml, targetUrl);
             addLog(`Main page scanned, ${discoveredFiles.size} .xml files found`);
 
             addLog('\n--- Step 2: Scanning JS bundles ---');
             setProgress('Scanning JavaScript bundles...');
-            const jsUrls: string[] = [];
-            const jsRegex = /<script[^>]+src=["']([^"']+\.js)["'][^>]*>/gi;
+            const jsUrls = new Set<string>();
+            const jsRegex = /<(?:script[^>]+src|link[^>]+href)=["']([^"']+\.js(?:\?[^"']*)?)["']/gi;
             let jm;
             while ((jm = jsRegex.exec(mainHtml)) !== null) {
-                try { jsUrls.push(new URL(jm[1], targetUrl).href); } catch {}
+                try { jsUrls.add(new URL(jm[1], targetUrl).href); } catch {}
             }
-            addLog(`Found ${jsUrls.length} JS bundle(s)`);
+            discoveredJsUrls.forEach(jsUrl => jsUrls.add(jsUrl));
+            addLog(`Found ${jsUrls.size} JavaScript asset(s)`);
 
-            const jsResults = await Promise.allSettled(jsUrls.map(async (jsUrl) => {
+            const jsResults = await Promise.allSettled([...jsUrls].map(async (jsUrl) => {
                 const js = await fetchTextSafe(jsUrl, 12000);
                 if (js) {
-                    discoverXml(js);
+                    discoverAssets(js, jsUrl);
                     const embedded = extractEmbeddedBotsFromJs(js, jsUrl, seenContent);
                     for (const bot of embedded) {
                         allBots.push({ ...bot, fromTab: 'Embedded JS' });
@@ -397,7 +336,20 @@ const BotExtractor = () => {
                     addLog(`  ${short}: ${[...discoveredFiles].length} files so far`);
                 }
             }));
-            addLog(`After JS scan: ${discoveredFiles.size} .xml files, ${allBots.length} embedded bots`);
+            const asyncJsUrls = [...discoveredJsUrls].filter(jsUrl => !jsUrls.has(jsUrl));
+            if (asyncJsUrls.length) {
+                addLog(`Fetching ${asyncJsUrls.length} discovered async bundle(s)...`);
+                await Promise.allSettled(asyncJsUrls.map(async jsUrl => {
+                    const js = await fetchTextSafe(jsUrl, 12000);
+                    if (!js) return;
+                    discoverAssets(js, jsUrl);
+                    for (const bot of extractEmbeddedBotsFromJs(js, jsUrl, seenContent)) {
+                        allBots.push({ ...bot, fromTab: 'Embedded JS' });
+                        addLog(`  Embedded: ${bot.name} (${(bot.size / 1024).toFixed(1)} KB)`);
+                    }
+                }));
+            }
+            addLog(`After JS scan: ${discoveredXmlUrls.size || discoveredFiles.size} XML references, ${allBots.length} embedded bots`);
 
             addLog('\n--- Step 3: Crawling internal pages ---');
             setProgress('Crawling pages for .xml references...');
@@ -427,7 +379,7 @@ const BotExtractor = () => {
                 checkedPages.add(pageUrl);
                 const pageHtml = await fetchTextSafe(pageUrl, 8000);
                 if (pageHtml) {
-                    discoverXml(pageHtml);
+                    discoverAssets(pageHtml, pageUrl);
                     const scriptRegex2 = /<script[^>]+src=["']([^"']+\.js)["'][^>]*>/gi;
                     let sm;
                     while ((sm = scriptRegex2.exec(pageHtml)) !== null) {
@@ -472,7 +424,7 @@ const BotExtractor = () => {
             for (const loadUrl of loadBotUrls) {
                 try {
                     const xml = await fetchTextSafe(loadUrl, 8000);
-                    if (xml && isValidDerivBotXml(xml)) {
+                    if (xml && isValidDerivBot(xml)) {
                         const name = extractNameFromXml(xml) || loadUrl.split('/').pop()?.replace('.xml', '') || 'Loaded Bot';
                         if (!seenContent.has(xml)) {
                             seenContent.add(xml);
@@ -489,7 +441,7 @@ const BotExtractor = () => {
             const crawledJsResults = await Promise.allSettled([...crawledJsUrls].map(async (jsUrl) => {
                 const js = await fetchTextSafe(jsUrl, 10000);
                 if (js) {
-                    discoverXml(js);
+                    discoverAssets(js, jsUrl);
                     const embedded = extractEmbeddedBotsFromJs(js, jsUrl, seenContent);
                     for (const bot of embedded) {
                         allBots.push({ ...bot, fromTab: 'Embedded JS' });
@@ -529,13 +481,14 @@ const BotExtractor = () => {
             const dirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
             const fetchQueue: { url: string; name: string }[] = [];
 
+            for (const xmlUrl of discoveredXmlUrls) {
+                const name = decodeURIComponent(new URL(xmlUrl).pathname.split('/').pop() || 'bot.xml');
+                if (!visited.has(xmlUrl)) { visited.add(xmlUrl); fetchQueue.push({ url: xmlUrl, name }); }
+            }
             for (const fname of discoveredFiles) {
                 for (const dir of dirs) {
                     const tryUrl = `${baseUrl}${dir}${fname}`;
-                    if (!visited.has(tryUrl)) {
-                        visited.add(tryUrl);
-                        fetchQueue.push({ url: tryUrl, name: fname });
-                    }
+                    if (!visited.has(tryUrl)) { visited.add(tryUrl); fetchQueue.push({ url: tryUrl, name: fname }); }
                 }
             }
 
@@ -579,7 +532,7 @@ const BotExtractor = () => {
             setProgress('');
 
             if (allBots.length === 0) {
-                setError('No bots found. This site either does not serve .xml bot files, or bots are stored in a database/localStorage. Only sites with actual .xml files in /xml/ or /bots/ paths can be extracted.');
+                setError('No bots found. This site either does not serve .xml bot files, or bots are stored in a database/localStorage. The site may keep bots in JavaScript bundles, JSON, API responses, or non-standard paths that could not be reached.');
             }
         } catch (err: any) {
             setError(`Extraction failed: ${err.message}`);
@@ -689,7 +642,7 @@ const BotExtractor = () => {
                         const res = await fetch(bot.fetchUrl, { credentials: 'include' });
                         if (res.ok) {
                             const xml = await res.text();
-                            if (xml && isValidDerivBotXml(xml)) {
+                            if (xml && isValidDerivBot(xml)) {
                                 const name = extractNameFromXml(xml) || bot.name;
                                 if (!seenContent.has(xml)) {
                                     seenContent.add(xml);

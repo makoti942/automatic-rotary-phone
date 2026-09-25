@@ -50,8 +50,8 @@
     if (!t.includes("<block")) return false;
     const blocks = (t.match(/<block /g) || []).length;
     if (blocks < 5) return false;
-    if (!t.includes(\'type="bot_run"\') && !t.includes(\'type="deriv_bot"\')) return false;
-    if (!t.includes(\'type="trade_definition"\') && !t.includes(\'type="purchase"\') && !t.includes(\'type="submarket"\')) return false;
+    if (!t.includes('type="bot_run"') && !t.includes('type="deriv_bot"')) return false;
+    if (!t.includes('type="trade_definition"') && !t.includes('type="purchase"') && !t.includes('type="submarket"')) return false;
     if (t.includes("Blockly.Blocks") || t.includes("Blockly.JavaScript")) return false;
     return true;
   }
