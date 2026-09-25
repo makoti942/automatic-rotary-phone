@@ -85,7 +85,7 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
       if (!queue.has(url.href)) queue.add(url.href);
     } catch {}
   };
-  const urlPattern = /(?:https?:\/\/[^\s"'`<>]+|(?:\.\.?\/|\/)[^\s"'`<>]+|[A-Za-z0-9_./-]+)(?:\.xml|\.json|\.js)(?:[?#][^\s"'`<>]*)?/gi;
+  const urlPattern = /(?:https?:\/\/[^\s"'`<>]+|(?:\.\.?\/|\/)[^\s"'`<>]+|[A-Za-z0-9_./-]+)(?:\.xml|\.json|\.js|\.map)(?:[?#][^\s"'`<>]*)?/gi;
   for (const match of content.matchAll(urlPattern)) {
     const raw = match[0];
     add(raw);
@@ -103,6 +103,8 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
   }
   const srcPattern = /<(?:script[^>]+src|link[^>]+href|a[^>]+href)=["']([^"']+)["']/gi;
   for (const match of content.matchAll(srcPattern)) add(match[1], true);
+  const mapComment = /[#@]\s*sourceMappingURL[=:]\s*([^\s]+)/gi;
+  for (const match of content.matchAll(mapComment)) add(match[1]);
 
   // Webpack/Rspack keeps lazy application modules in an id -> hash map. A
   // normal HTML fetch only contains the entry bundle, so enumerate these
@@ -268,10 +270,25 @@ export default async function handler(req, res) {
       const { url, result } = item.value;
       const { text, type } = result;
       if (/<(?:!doctype\s+html|html)\b/i.test(text) && !/\.xml(?:[?#]|$)/i.test(url)) spaShells++;
+      if (/\.map(?:[?#]|$)/i.test(url)) {
+        try {
+          const sourceMap = JSON.parse(text);
+          for (let index = 0; index < (sourceMap.sourcesContent || []).length; index++) {
+            const sourceText = sourceMap.sourcesContent[index];
+            const sourceName = sourceMap.sources?.[index] || `source-${index}.txt`;
+            if (sourceText && /\.xml(?:[?#]|$)/i.test(sourceName)) {
+              candidateFiles.add(decodeURIComponent(sourceName.split('/').pop()));
+              for (const bot of extractXmlDocuments(sourceText, new URL(sourceName, url).href)) {
+                if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+              }
+            }
+          }
+        } catch {}
+      }
       for (const bot of extractXmlDocuments(text, url)) {
         if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
       }
-      if (/html|javascript|json|xml|text\//i.test(type) || /\.(?:html?|js|json|xml)(?:[?#]|$)/i.test(url)) {
+      if (/html|javascript|json|xml|text\//i.test(type) || /\.(?:html?|js|json|xml|map)(?:[?#]|$)/i.test(url)) {
         addReferencedUrls(text, url, queue, targetHost, start.origin, candidateFiles);
       }
     }
