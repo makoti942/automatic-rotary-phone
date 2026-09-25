@@ -148,6 +148,50 @@ async function fetchText(url) {
   return text.length <= MAX_BYTES ? { text, type: response.headers.get('content-type') || '' } : null;
 }
 
+async function runtimeBrowserScan(startUrl) {
+  const found = [];
+  const seen = new Set();
+  let browser;
+  try {
+    const chromium = (await import('@sparticuz/chromium')).default;
+    const puppeteer = await import('puppeteer-core');
+    browser = await puppeteer.default.launch({ args: chromium.args, defaultViewport: { width: 1365, height: 900 }, executablePath: await chromium.executablePath(), headless: true });
+    const page = await browser.newPage();
+    const pending = new Set();
+    const inspect = (text, source) => extractXmlDocuments(text, source).forEach(bot => {
+      if (!seen.has(bot.xml)) { seen.add(bot.xml); found.push(bot); }
+    });
+    page.on('response', response => {
+      const source = response.url();
+      const type = response.headers()['content-type'] || '';
+      if (!/xml|json|javascript|text\//i.test(type) && !/\.(?:xml|json|js)(?:[?#]|$)/i.test(source)) return;
+      const task = response.text().then(text => inspect(text, source)).catch(() => {}).finally(() => pending.delete(task));
+      pending.add(task);
+    });
+    const routes = ['', '/free-bots', '/trading-bots', '/browse-bots', '/bot-builder', '/dashboard'];
+    for (const route of routes) {
+      const target = new URL(route, startUrl).href;
+      await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
+      await new Promise(resolve => setTimeout(resolve, 700));
+      const labels = await page.evaluate(() => [...document.querySelectorAll('button,a,[role="tab"]')]
+        .map(element => (element.textContent || '').replace(/\s+/g, ' ').trim())
+        .filter(text => text && /bot|import|library|strategy|load|free|trading/i.test(text)).slice(0, 30));
+      for (const label of labels) {
+        await page.evaluate(targetLabel => [...document.querySelectorAll('button,a,[role="tab"]')]
+          .find(element => (element.textContent || '').replace(/\s+/g, ' ').trim() === targetLabel)?.click(), label).catch(() => {});
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 700));
+    await Promise.allSettled([...pending]);
+    inspect(await page.content(), page.url());
+    await browser.close();
+  } catch {
+    try { await browser?.close(); } catch {}
+  }
+  return found;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const input = String(req.body?.url || '').trim();
@@ -169,6 +213,16 @@ export default async function handler(req, res) {
   const manifestPaths = ['/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
   for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
+
+  const runtimeBots = await runtimeBrowserScan(start.href);
+  for (const bot of runtimeBots) {
+    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+  }
+  if (bots.length) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'runtime-browser' });
+  }
 
   while ((queue.size || priorityQueue.size) && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
     const batch = [...priorityQueue, ...queue].filter(url => !visited.has(url)).slice(0, 8);
