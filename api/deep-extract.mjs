@@ -1,587 +1,151 @@
-async function handler(req, res) {
-  console.log('=== DEEP EXTRACT v6 ===');
+const MAX_PAGES = 60;
+const MAX_BYTES = 2_000_000;
+const TIMEOUT_MS = 12_000;
+const MAX_BOTS = 250;
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
-  }
+function decodeMarkup(value) {
+  return value
+    .replace(/\\u003[cC]/g, '<').replace(/\\u003[eE]/g, '>')
+    .replace(/\\x3[cC]/g, '<').replace(/\\x3[eE]/g, '>')
+    .replace(/\\u0026/g, '&').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+    .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+    .replace(/&#39;|&apos;/gi, "'").replace(/&amp;/gi, '&');
+}
 
-  const { url } = req.body;
-  if (!url || !url.startsWith('http')) {
-    return res.status(400).json({ error: 'Invalid URL' });
-  }
+function isValidBotXml(value) {
+  const xml = decodeMarkup(value || '').trim();
+  if (xml.length < 500 || xml.length > 1_000_000) return false;
+  if (!/^(?:<\?xml\b[^>]*\?>\s*)?<xml\b/i.test(xml) || !/<\/xml>\s*$/i.test(xml)) return false;
+  if (/<(?:!doctype|html|head|body)\b/i.test(xml)) return false;
+  if (/MODULE_NOT_FOUND|Cannot find module|Blockly\.(?:Blocks|JavaScript)/i.test(xml)) return false;
+  if ((xml.match(/<block\b/gi) || []).length < 5) return false;
+  return /<block\b[^>]*type=["']trade_definition["']/i.test(xml)
+    && /<block\b[^>]*type=["']purchase["']/i.test(xml)
+    && /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(xml);
+}
 
+function isBuiltInBundle(url) {
+  return /(?:^|[\\/])(?:[^\\/]+-xml(?:\.[a-f0-9]{6,})?\.js|dbot-collection(?:\.[a-f0-9]{6,})?\.js)$/i.test(url);
+}
+
+function normalizeName(value) {
+  if (!value) return null;
+  const name = value.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!name || /^(?:bot|xml|data|payload|content|strategy|workspace)(?:\s+\d+)?$/i.test(name)) return null;
+  return name.length >= 2 && name.length <= 140 ? name : null;
+}
+
+function nameFromXml(xml) {
+  return normalizeName(
+    xml.match(/<field\s+name=["']BOT_NAME["']>([^<]+)<\/field>/i)?.[1]
+    || xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i)?.[1]
+    || xml.match(/<title[^>]*>([^<]{2,140})<\/title>/i)?.[1]
+  );
+}
+
+function nameFromContext(content, position, source) {
+  const before = content.slice(Math.max(0, position - 2500), position);
+  const match = [...before.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,140})["'`]/gi)].pop();
+  if (match) return normalizeName(match[1]);
   try {
-    const targetUrl = new URL(url);
-    const baseUrl = targetUrl.origin;
-    const bots = [];
-    const seenContent = new Set();
-    const fetchedUrls = new Set();
-    const checkedUrls = new Set();
-
-    console.log('Target:', url);
-
-    const html = await safeFetch(url);
-    if (!html) return res.status(500).json({ error: 'Failed to fetch target page' });
-
-    const discoveredFiles = new Set();
-    const jsContents = [];
-
-    const scriptSrcRegex = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
-    const scriptSrcs = [];
-    let m;
-    while ((m = scriptSrcRegex.exec(html)) !== null) {
-      try { scriptSrcs.push(new URL(m[1], baseUrl).href); } catch {}
-    }
-
-    for (const scriptUrl of scriptSrcs) {
-      if (fetchedUrls.has(scriptUrl)) continue;
-      fetchedUrls.add(scriptUrl);
-      try {
-        const js = await safeFetch(scriptUrl, 12000);
-        if (js) {
-          jsContents.push({ content: js, source: scriptUrl });
-          discoverXmlFiles(js, discoveredFiles);
-        }
-      } catch {}
-    }
-
-    discoverXmlFiles(html, discoveredFiles);
-    console.log('Phase 1 - JS scan:', discoveredFiles.size, 'files');
-
-    for (const { content: js, source: jsSource } of jsContents) {
-      extractEmbeddedBots(js, jsSource, bots, seenContent);
-    }
-    console.log('Phase 1b - Embedded bots:', bots.length);
-
-    const internalPages = new Set();
-    const linkRegex = /href=["']([^"'#][^"']*?)["']/gi;
-    let lm;
-    while ((lm = linkRegex.exec(html)) !== null) {
-      try {
-        const full = new URL(lm[1], baseUrl).href;
-        if (full.startsWith(baseUrl)) internalPages.add(full);
-      } catch {}
-    }
-
-    const botPagePatterns = ['free-bots', 'browse-bots', 'strategies', 'bots', 'library', 'market', 'trade', 'xml', 'bot', 'dashboard', 'workspace', 'editor', 'builder', 'create'];
-    for (const pattern of botPagePatterns) {
-      for (const suffix of ['', '/', '.html', '?page=1']) {
-        internalPages.add(`${baseUrl}/${pattern}${suffix}`);
-      }
-    }
-
-    console.log('Phase 2 - Crawling', internalPages.size, 'pages...');
-
-    const pageArray = [...internalPages].slice(0, 25);
-    const discoveredJsUrls = new Set();
-    await Promise.allSettled(
-      pageArray.map(async (pageUrl) => {
-        if (checkedUrls.has(pageUrl)) return;
-        checkedUrls.add(pageUrl);
-        try {
-          const pageHtml = await safeFetch(pageUrl, 4000);
-          if (!pageHtml) return;
-          discoverXmlFiles(pageHtml, discoveredFiles);
-
-          const scriptSrcRegex2 = /<script[^>]+src=["']([^"']+)["'][^>]*>/gi;
-          let sm;
-          while ((sm = scriptSrcRegex2.exec(pageHtml)) !== null) {
-            try {
-              const jsUrl = new URL(sm[1], pageUrl).href;
-              if (jsUrl.startsWith(baseUrl) && !fetchedUrls.has(jsUrl)) {
-                discoveredJsUrls.add(jsUrl);
-              }
-            } catch {}
-          }
-
-          const subLinkRegex = /href=["']([^"'#][^"']*?)["']/gi;
-          let slm;
-          while ((slm = subLinkRegex.exec(pageHtml)) !== null) {
-            try {
-              const subFull = new URL(slm[1], pageUrl).href;
-              if (subFull.startsWith(baseUrl) && subFull.endsWith('.xml') && !checkedUrls.has(subFull)) {
-                checkedUrls.add(subFull);
-                discoveredFiles.add(subFull.split('/').pop());
-              }
-            } catch {}
-          }
-        } catch {}
-      })
-    );
-
-    console.log('Phase 2 - Found', discoveredJsUrls.size, 'new JS files from crawled pages');
-    const jsScanPromises = [...discoveredJsUrls].map(async (jsUrl) => {
-      try {
-        const js = await safeFetch(jsUrl, 10000);
-        if (js) {
-          jsContents.push({ content: js, source: jsUrl });
-          discoverXmlFiles(js, discoveredFiles);
-        }
-      } catch {}
-    });
-    await Promise.allSettled(jsScanPromises);
-
-    console.log('Phase 2 - After crawl:', discoveredFiles.size, 'files,', jsContents.length, 'JS files scanned');
-
-    console.log('Phase 2b - Detecting Load Bot buttons...');
-    const loadBotUrls = new Set();
-    for (const pageUrl of checkedUrls) {
-      try {
-        const pageHtml = await safeFetch(pageUrl, 4000);
-        if (!pageHtml) continue;
-        const loadUrls = extractLoadBotUrls(pageHtml, baseUrl);
-        for (const url of loadUrls) loadBotUrls.add(url);
-      } catch {}
-    }
-    console.log('Phase 2b - Found', loadBotUrls.size, 'Load Bot URLs');
-
-    for (const loadUrl of loadBotUrls) {
-      if (fetchedUrls.has(loadUrl)) continue;
-      fetchedUrls.add(loadUrl);
-      try {
-        const xml = await safeFetch(loadUrl, 8000);
-        if (xml && isValidDerivBotXml(xml)) {
-          const name = extractNameFromXml(xml) || loadUrl.split('/').pop()?.replace('.xml', '') || 'Loaded Bot';
-          if (!seenContent.has(xml)) {
-            seenContent.add(xml);
-            bots.push({ name, xml: xml.trim(), source: 'load-button:' + loadUrl, size: xml.length });
-            console.log('Load Bot:', name, `(${xml.length} bytes)`);
-          }
-        }
-      } catch {}
-    }
-    console.log('Phase 2b - After load buttons:', bots.length, 'bots');
-
-    const allPaths = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
-    const fetchPromises = [];
-
-    for (const filename of discoveredFiles) {
-      for (const basePath of allPaths) {
-        let fileUrl;
-        try { fileUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
-        if (fetchedUrls.has(fileUrl)) continue;
-        fetchedUrls.add(fileUrl);
-        fetchPromises.push(fetchAndValidate(fileUrl, filename, bots, seenContent));
-      }
-    }
-
-    console.log('Phase 3 - Fetching', fetchPromises.length, 'URLs...');
-    await Promise.allSettled(fetchPromises);
-    console.log('Phase 3 - After fetch:', bots.length, 'bots');
-
-    const probeNames = [
-      'Martingale', 'Dalembert', 'Oscar_Grinde', 'Fibonacci', 'Paroli',
-      'Anti_Martingale', 'Custom_Strategy', 'Rise_Fall', 'Both_Sides',
-      'Accumulators', 'Multipliers', 'Turbos', 'Ticks',
-      'Under_5', 'Under_6', 'Under_7', 'Under_8',
-      'Over_1', 'Over_2', 'Over_3', 'Over_4', 'Over_5',
-      'Even_Odd', 'Differs', 'Digits', 'Matches', 'Differs_Auto',
-      'Market_Killer', 'O_U_Killer', 'High_Low', 'Entry_Digit',
-      'Digit_Hunter', 'Multi_Killer', 'AI_Analyst', 'Recovery',
-      'Premium', 'Advanced', 'Basic', 'Pro', 'Elite', 'Smart', 'Auto',
-      'Starter', 'Killer', 'Sniper', 'Hunter', 'Blaster', 'Turbo',
-      'RNG', 'Static', 'Dynamic', 'Matrix', 'Sentinel', 'Viper',
-      'Thunder', 'Lightning', 'Storm', 'Falcon', 'Eagle', 'Wolf',
-      'Dragon', 'Phoenix', 'Titan', 'Alpha', 'Omega', 'Sigma',
-    ];
-
-    const probePromises = [];
-    for (const basePath of ['/xml/', '/bots/']) {
-      for (const name of probeNames) {
-        const variants = [
-          `${name}.xml`,
-          `${name.toLowerCase()}.xml`,
-          `${name.toUpperCase()}.xml`,
-          `${name.replace(/ /g, '_')}.xml`,
-          `${name.replace(/ /g, '-')}.xml`,
-        ];
-        for (const filename of variants) {
-          let tryUrl;
-          try { tryUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
-          probePromises.push(fetchAndValidate(tryUrl, filename, bots, seenContent));
-        }
-      }
-    }
-
-    console.log('Phase 4 - Probing', probePromises.length, 'names...');
-    await Promise.allSettled(probePromises);
-    console.log('Phase 4 - After probe:', bots.length, 'bots');
-
-    const dirPromises = [];
-    for (const dir of ['/xml/', '/bots/']) {
-      const dirUrl = `${baseUrl}${dir}`;
-      if (!fetchedUrls.has(dirUrl)) {
-        fetchedUrls.add(dirUrl);
-        dirPromises.push((async () => {
-          try {
-            const dirContent = await safeFetch(dirUrl, 5000);
-            if (dirContent) {
-              const fileLinks = dirContent.match(/href=["']([^"']+\.xml)["']/gi);
-              if (fileLinks) {
-                for (const fl of fileLinks) {
-                  const fname = fl.match(/href=["']([^"']+\.xml)["']/i)?.[1];
-                  if (fname) discoveredFiles.add(fname.split('/').pop());
-                }
-              }
-            }
-          } catch {}
-        })());
-      }
-    }
-    await Promise.allSettled(dirPromises);
-
-    const finalFetchPromises = [];
-    for (const filename of discoveredFiles) {
-      for (const basePath of ['/xml/', '/bots/']) {
-        let fileUrl;
-        try { fileUrl = new URL(basePath + filename, baseUrl).href; } catch { continue; }
-        if (fetchedUrls.has(fileUrl)) continue;
-        fetchedUrls.add(fileUrl);
-        finalFetchPromises.push(fetchAndValidate(fileUrl, filename, bots, seenContent));
-      }
-    }
-    if (finalFetchPromises.length > 0) {
-      await Promise.allSettled(finalFetchPromises);
-    }
-
-    console.log('Phase 6 - Scanning', jsContents.length, 'JS files for embedded XML...');
-    for (const { content, source } of jsContents) {
-      extractEmbeddedBots(content, source, bots, seenContent);
-    }
-    console.log('Phase 6 - After embedded scan:', bots.length, 'bots');
-
-    bots.sort((a, b) => b.size - a.size);
-
-    console.log('=== RESULT:', bots.length, 'valid bots ===');
-    for (const b of bots) console.log(`  ${b.name} (${b.size} bytes) from ${b.source}`);
-
-    return res.json({ bots, count: bots.length });
-
-  } catch (error) {
-    console.error('ERROR:', error.message);
-    return res.status(500).json({ error: error.message || 'Extraction failed' });
-  }
-}
-
-function extractEmbeddedBots(jsContent, jsSource, bots, seenContent) {
-  const escapePatterns = [
-    { open: '\\u003cxml', close: '\\u003c/xml\\u003e', esc: true },
-    { open: '\\u003Cxml', close: '\\u003C/xml\\u003E', esc: true },
-    { open: '\\x3cxml', close: '\\x3c/xml\\x3e', esc: true },
-    { open: '\\x3Cxml', close: '\\x3C/xml\\x3E', esc: true },
-    { open: '<xml', close: '</xml>', esc: false },
-    { open: '<XML', close: '</XML>', esc: false },
-  ];
-
-  for (const { open, close, esc } of escapePatterns) {
-    let pos = 0;
-    while (pos < jsContent.length) {
-      const start = jsContent.indexOf(open, pos);
-      if (start === -1) break;
-
-      const end = jsContent.indexOf(close, start + open.length);
-      if (end === -1) { pos = start + open.length; continue; }
-
-      let xml = jsContent.substring(start, end + close.length);
-      if (esc) {
-        xml = xml
-          .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
-          .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
-          .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
-          .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
-          .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-          .replace(/\\"/g, '"').replace(/\\'/g, "'");
-      }
-
-      if (xml.length > 1000 && xml.includes('<block') && !seenContent.has(xml)) {
-        const blockCount = (xml.match(/<block /g) || []).length;
-        const startsXml = xml.trimStart().startsWith('<xml');
-        const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
-        const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
-        const hasVar = xml.includes('<variable');
-        const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript') || xml.includes('function(');
-
-        if (startsXml && hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
-          const name = extractNameFromContext(jsContent, start, xml);
-          seenContent.add(xml);
-          bots.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-          console.log('Embedded bot:', name, `(${xml.length} bytes, ${blockCount} blocks)`);
-        }
-      }
-      pos = end + close.length;
-    }
-  }
-
-  const derivKeywords = ['trade_definition', 'bot_run', 'purchase', 'submarket', 'INITIAL_STAKE', 'take_profit', 'stop_loss', 'entry_digit', 'prediction', 'deriv_bot'];
-  let keywordPos = 0;
-  while (keywordPos < jsContent.length) {
-    let earliest = -1;
-    let earliestKw = '';
-    for (const kw of derivKeywords) {
-      const idx = jsContent.indexOf(kw, keywordPos);
-      if (idx !== -1 && (earliest === -1 || idx < earliest)) {
-        earliest = idx;
-        earliestKw = kw;
-      }
-    }
-    if (earliest === -1) break;
-
-    let xmlStart = earliest;
-    for (let i = earliest; i >= Math.max(0, earliest - 2000); i--) {
-      const ch = jsContent[i];
-      if (ch === '<' && jsContent.substring(i, i + 4) === '<xml') {
-        xmlStart = i;
-        break;
-      }
-      if (ch === '<' && jsContent.substring(i, i + 11) === '\\u003cxml') {
-        xmlStart = i;
-        break;
-      }
-      if (ch === '<' && jsContent.substring(i, i + 8) === '\\x3cxml') {
-        xmlStart = i;
-        break;
-      }
-    }
-
-    let xmlEnd = -1;
-    const searchFrom = Math.min(jsContent.length, earliest + 50000);
-    for (let i = earliest; i < searchFrom; i++) {
-      const ch = jsContent[i];
-      if (ch === '>' && jsContent.substring(i - 5, i + 1) === '</xml>') {
-        xmlEnd = i + 6;
-        break;
-      }
-      if (jsContent.substring(i, i + 6) === '\\u003e') {
-        const back6 = i - 5;
-        if (back6 >= 0 && jsContent.substring(back6, i + 6) === '/xml\\u003e') {
-          xmlEnd = i + 6;
-          break;
-        }
-      }
-      if (jsContent.substring(i, i + 5) === '\\x3e') {
-        const back5 = i - 4;
-        if (back5 >= 0 && jsContent.substring(back5, i + 5) === '/xml\\x3e') {
-          xmlEnd = i + 5;
-          break;
-        }
-      }
-    }
-
-    if (xmlEnd > xmlStart) {
-      let xml = jsContent.substring(xmlStart, xmlEnd);
-      xml = xml
-        .replace(/\\u003c/gi, '<').replace(/\\u003e/gi, '>')
-        .replace(/\\u003C/gi, '<').replace(/\\u003E/gi, '>')
-        .replace(/\\x3c/gi, '<').replace(/\\x3e/gi, '>')
-        .replace(/\\x3C/gi, '<').replace(/\\x3E/gi, '>')
-        .replace(/\\n/g, '\n').replace(/\\t/g, '\t')
-        .replace(/\\"/g, '"').replace(/\\'/g, "'");
-
-      if (xml.length > 1000 && xml.includes('<block') && xml.trimStart().startsWith('<xml') && !seenContent.has(xml)) {
-        const blockCount = (xml.match(/<block /g) || []).length;
-        const hasBotRun = xml.includes('type="bot_run"') || xml.includes('type="deriv_bot"');
-        const hasTrade = xml.includes('type="trade_definition"') || xml.includes('type="purchase"') || xml.includes('type="submarket"');
-        const isFramework = xml.includes('Blockly.Blocks') || xml.includes('Blockly.JavaScript') || xml.includes('function(');
-        if (hasBotRun && hasTrade && blockCount >= 5 && !isFramework) {
-          const name = extractNameFromContext(jsContent, xmlStart, xml);
-          seenContent.add(xml);
-          bots.push({ name, xml: xml.trim(), source: 'embedded:' + jsSource, size: xml.length });
-          console.log('Embedded bot (keyword):', name, `(${xml.length} bytes, ${blockCount} blocks)`);
-        }
-      }
-      keywordPos = xmlEnd;
-    } else {
-      keywordPos = earliest + earliestKw.length;
-    }
-  }
-}
-
-function extractNameFromContext(jsContent, position, xml) {
-  const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
-  if (nameFromField) return nameFromField[1].trim();
-
-  const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
-  if (nameFromMutation) return nameFromMutation[1].trim();
-
-  const nameFromTitle = xml.match(/<title[^>]*>([^<]{2,50})<\/title>/i);
-  if (nameFromTitle && !nameFromTitle[1].match(/^\d+$/)) return nameFromTitle[1].trim();
-
-  const nameFromComment = xml.match(/<comment[^>]*>([^<]{2,50})<\/comment>/i);
-  if (nameFromComment) return nameFromComment[1].trim();
-
-  const contextBefore = jsContent.substring(Math.max(0, position - 500), position);
-
-  const varNameMatch = contextBefore.match(/(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["'`]/g);
-  if (varNameMatch) {
-    const last = varNameMatch[varNameMatch.length - 1];
-    const name = last.replace(/(?:const|let|var)\s+/, '').replace(/\s*=.*/, '').trim();
-    if (name.length > 2 && name.length < 60) {
-      return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-    }
-  }
-
-  const propNameMatch = contextBefore.match(/([A-Za-z_$][A-Za-z0-9_$]*)\s*:\s*["'`][^"'`]*$/g);
-  if (propNameMatch) {
-    const last = propNameMatch[propNameMatch.length - 1];
-    const name = last.replace(/\s*:.*$/, '').trim();
-    if (name.length > 2 && name.length < 60 && !['return', 'const', 'let', 'var', 'function', 'import', 'export'].includes(name)) {
-      return name.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-    }
-  }
-
-  const xmlFileMatch = contextBefore.match(/["']([A-Za-z][A-Za-z0-9_-]+)\.xml["']/g);
-  if (xmlFileMatch) {
-    const last = xmlFileMatch[xmlFileMatch.length - 1].replace(/["']/g, '').replace('.xml', '');
-    return last.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-  }
-
-  const contextAfter = jsContent.substring(position, Math.min(jsContent.length, position + 200));
-  const assignMatch = contextAfter.match(/^["'`]([A-Za-z][A-Za-z0-9 _-]{2,50})["'`]/);
-  if (assignMatch) {
-    return assignMatch[1].replace(/([a-z])([A-Z])/g, '$1 $2').replace(/[_-]/g, ' ');
-  }
-
-  return `Embedded Bot ${position.toString(36)}`;
-}
-
-async function fetchAndValidate(fileUrl, filename, bots, seenContent) {
-  try {
-    const content = await safeFetch(fileUrl, 6000);
-    if (!content) return false;
-    if (content.includes('<!DOCTYPE html') || content.includes('<html')) return false;
-    if (content.includes('MODULE_NOT_FOUND') || content.includes('Cannot find module')) return false;
-
-    if (isValidDerivBotXml(content) && !seenContent.has(content)) {
-      seenContent.add(content);
-      const name = filename.replace('.xml', '').replace(/[_-]/g, ' ')
-        .replace(/([a-z])([A-Z])/g, '$1 $2')
-        .replace(/\b\w/g, c => c.toUpperCase());
-      bots.push({ name, xml: content.trim(), source: fileUrl, size: content.length });
-      console.log('FOUND:', name, `(${content.length} bytes)`);
-      return true;
-    }
-  } catch {}
-  return false;
-}
-
-function discoverXmlFiles(content, discovered) {
-  const patterns = [
-    /["']([A-Za-z][A-Za-z0-9_ .-]+\.xml)["']/g,
-    /\/([A-Za-z][A-Za-z0-9_ .-]+\.xml)/g,
-  ];
-
-  let match;
-  for (const regex of patterns) {
-    while ((match = regex.exec(content)) !== null) {
-      let filename = match[1] || match[0];
-      if (!filename.endsWith('.xml')) continue;
-      if (filename.length < 5 || filename.length > 80) continue;
-      filename = filename.replace(/^["'\/]+/, '').replace(/["']+$/, '');
-      if (filename.includes('blockly') || filename.includes('node_modules')) continue;
-      discovered.add(filename);
-    }
-  }
-
-  const arrayPattern = /\[([^[\]]*\.xml[^[\]]*)\]/g;
-  while ((match = arrayPattern.exec(content)) !== null) {
-    const block = match[1];
-    const items = block.match(/["']([A-Za-z][A-Za-z0-9_-]+\.xml)["']/g);
-    if (items && items.length >= 2) {
-      for (const item of items) {
-        discovered.add(item.replace(/["']/g, ''));
-      }
-    }
-  }
-}
-
-function isValidDerivBotXml(content) {
-  if (!content || typeof content !== 'string') return false;
-  const trimmed = content.trim();
-  if (trimmed.length < 200) return false;
-  if (trimmed.length > 500000) return false;
-  if (!trimmed.startsWith('<xml') && !trimmed.startsWith('<?xml')) return false;
-  if (!trimmed.includes('<block')) return false;
-  if (!trimmed.includes('type="')) return false;
-  const blockCount = (trimmed.match(/<block /g) || []).length;
-  if (blockCount < 2) return false;
-  return true;
-}
-
-function extractLoadBotUrls(html, baseUrl) {
-  const urls = new Set();
-  const patterns = [
-    /<button[^>]*data-(?:bot|id|xml|url)=["']([^"']+)["']/gi,
-    /<button[^>]*onclick=["']([^"']*load[^"']*)["']/gi,
-    /<a[^>]*href=["']([^"']*load[^"']*)["']/gi,
-    /<button[^>]*class=["'][^"']*(?:load|import|open)[^"']*["']/gi,
-    /<a[^>]*class=["'][^"']*(?:load|import|open)[^"']*["']/gi,
-  ];
-  for (const regex of patterns) {
-    let match;
-    while ((match = regex.exec(html)) !== null) {
-      const val = match[1] || match[0];
-      try {
-        let url = new URL(val, baseUrl).href;
-        if (url.startsWith(baseUrl) && (url.includes('.xml') || url.includes('/api/') || url.includes('/bot/') || url.includes('/load'))) {
-          urls.add(url);
-        }
-      } catch {}
-    }
-  }
-  const dataAttrRegex = /data-(?:bot|xml|id|url)=["']([^"']+\.xml)["']/gi;
-  let match;
-  while ((match = dataAttrRegex.exec(html)) !== null) {
-    try {
-      const url = new URL(match[1], baseUrl).href;
-      if (url.startsWith(baseUrl)) urls.add(url);
-    } catch {}
-  }
-  const selectRegex = /<select[^>]*name=["'][^"']*bot[^"']*["'][^>]*>([\s\S]*?)<\/select>/gi;
-  while ((match = selectRegex.exec(html)) !== null) {
-    const options = match[1].match(/<option[^>]*value=["']([^"']+)["']/gi);
-    if (options) {
-      for (const opt of options) {
-        const valMatch = opt.match(/value=["']([^"']+)["']/i);
-        if (valMatch) {
-          try {
-            const url = new URL(valMatch[1], baseUrl).href;
-            if (url.startsWith(baseUrl)) urls.add(url);
-          } catch {}
-        }
-      }
-    }
-  }
-  return [...urls];
-}
-
-function extractNameFromXml(xml) {
-  const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
-  if (nameFromField) return nameFromField[1].trim();
-  const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
-  if (nameFromMutation) return nameFromMutation[1].trim();
-  const nameFromTitle = xml.match(/<title[^>]*>([^<]{2,50})<\/title>/i);
-  if (nameFromTitle && !nameFromTitle[1].match(/^\d+$/)) return nameFromTitle[1].trim();
-  return null;
-}
-
-async function safeFetch(url, timeout = 8000) {
-  try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeout);
-    const resp = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': '*/*',
-      },
-      redirect: 'follow',
-    });
-    clearTimeout(timer);
-    if (!resp.ok) return null;
-    const ct = resp.headers.get('content-type') || '';
-    if (ct.includes('image') || ct.includes('video') || ct.includes('font')) return null;
-    return await resp.text();
+    const file = decodeURIComponent(new URL(source).pathname.split('/').pop() || '').replace(/\.(?:xml|json|js)$/i, '');
+    return normalizeName(file);
   } catch { return null; }
 }
 
-export default handler;
+function extractXmlDocuments(content, source) {
+  const decoded = decodeMarkup(content);
+  if (isBuiltInBundle(source)) return [];
+  const output = [];
+  const open = /<xml\b[^>]*>/gi;
+  let match;
+  while ((match = open.exec(decoded))) {
+    const end = decoded.indexOf('</xml>', match.index + match[0].length);
+    if (end < 0) continue;
+    const xml = decoded.slice(match.index, end + 6).trim();
+    if (!isValidBotXml(xml) || output.some(item => item.xml === xml)) {
+      open.lastIndex = end + 6;
+      continue;
+    }
+    const name = nameFromXml(xml) || nameFromContext(decoded, match.index, source);
+    if (name) output.push({ name, xml, source, size: xml.length });
+    open.lastIndex = end + 6;
+  }
+  return output;
+}
+
+function addReferencedUrls(content, source, queue, targetHost) {
+  const add = (raw, onlySameHost = false) => {
+    try {
+      const url = new URL(raw.replace(/[),;]+$/, ''), source);
+      if (!['http:', 'https:'].includes(url.protocol)) return;
+      if (onlySameHost && url.hostname !== targetHost) return;
+      if (!queue.has(url.href)) queue.add(url.href);
+    } catch {}
+  };
+  const urlPattern = /(?:https?:\/\/[^\s"'`<>]+|(?:\.\.?\/|\/)[^\s"'`<>]+|[A-Za-z0-9_./-]+)(?:\.xml|\.json|\.js)(?:[?#][^\s"'`<>]*)?/gi;
+  for (const match of content.matchAll(urlPattern)) add(match[0]);
+  const endpointPattern = /["'`]((?:https?:\/\/|\/|\.\.?\/)[^"'`<>]{1,260})["'`]/gi;
+  for (const match of content.matchAll(endpointPattern)) {
+    if (/(?:bot|strategy|free|download|workspace|xml)/i.test(match[1])) add(match[1]);
+  }
+  const srcPattern = /<(?:script[^>]+src|link[^>]+href|a[^>]+href)=["']([^"']+)["']/gi;
+  for (const match of content.matchAll(srcPattern)) add(match[1], true);
+}
+
+async function fetchText(url) {
+  const response = await fetch(url, {
+    redirect: 'follow',
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; CustomBotExtractor/2.0)',
+      Accept: 'text/html,application/xhtml+xml,application/xml,application/json,text/javascript,*/*;q=0.8',
+    },
+    signal: AbortSignal.timeout(TIMEOUT_MS),
+  });
+  if (!response.ok) return null;
+  const contentLength = Number(response.headers.get('content-length') || 0);
+  if (contentLength > MAX_BYTES) return null;
+  const text = await response.text();
+  return text.length <= MAX_BYTES ? { text, type: response.headers.get('content-type') || '' } : null;
+}
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  const input = String(req.body?.url || '').trim();
+  if (!input) return res.status(400).json({ error: 'Missing url' });
+
+  let start;
+  try { start = new URL(/^https?:\/\//i.test(input) ? input : `https://${input}`); }
+  catch { return res.status(400).json({ error: 'Invalid URL' }); }
+  if (!['http:', 'https:'].includes(start.protocol)) return res.status(400).json({ error: 'Invalid protocol' });
+
+  const targetHost = start.hostname;
+  const queue = new Set([start.href]);
+  const visited = new Set();
+  const bots = [];
+  const seenXml = new Set();
+  let spaShells = 0;
+
+  while (queue.size && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
+    const batch = [...queue].filter(url => !visited.has(url)).slice(0, 8);
+    if (!batch.length) break;
+    batch.forEach(url => visited.add(url));
+    const results = await Promise.allSettled(batch.map(async url => ({ url, result: await fetchText(url) })));
+    for (const item of results) {
+      if (item.status !== 'fulfilled' || !item.value.result) continue;
+      const { url, result } = item.value;
+      const { text, type } = result;
+      if (/<(?:!doctype\s+html|html)\b/i.test(text) && !/\.xml(?:[?#]|$)/i.test(url)) spaShells++;
+      for (const bot of extractXmlDocuments(text, url)) {
+        if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+      }
+      if (/html|javascript|json|xml|text\//i.test(type) || /\.(?:html?|js|json|xml)(?:[?#]|$)/i.test(url)) {
+        addReferencedUrls(text, url, queue, targetHost);
+      }
+    }
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'no-store');
+  return res.status(200).json({ count: bots.length, bots, pagesScanned: visited.size, spaShells });
+}
