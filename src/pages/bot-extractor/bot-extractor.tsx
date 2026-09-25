@@ -62,7 +62,7 @@ function extractXmlDocuments(content: string): string[] {
 }
 
 function isBuiltInBotBundle(source: string): boolean {
-    return /(?:^|[\\/])(?:[^\\/]+-xml(?:\\.[a-f0-9]{6,})?\\.js|dbot-collection(?:\\.[a-f0-9]{6,})?\\.js)$/i.test(source);
+    return /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(source);
 }
 
 function normalizeBotName(name: string | null | undefined): string | null {

@@ -26,7 +26,7 @@ function isValidBotXml(value) {
 }
 
 function isBuiltInBundle(url) {
-  return /(?:^|[\\/])(?:[^\\/]+-xml(?:\.[a-f0-9]{6,})?\.js|dbot-collection(?:\.[a-f0-9]{6,})?\.js)$/i.test(url);
+  return /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(url);
 }
 
 function normalizeName(value) {
@@ -48,7 +48,14 @@ function nameFromContext(content, position, source) {
   const before = content.slice(Math.max(0, position - 2500), position);
   const match = [...before.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,140})["'`]/gi)].pop();
   if (match) return normalizeName(match[1]);
-  if (!/\.(?:xml|json)(?:[?#]|$)/i.test(source)) return null;
+  if (!/\.(?:xml|json)(?:[?#]|$)/i.test(source)) {
+    const chunk = decodeURIComponent(new URL(source).pathname.split('/').pop() || '')
+      .replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
+    if (chunk && /(?:free|bot|strategy|scalper)/i.test(chunk)) {
+      return normalizeName(chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '').replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' '));
+    }
+    return null;
+  }
   try {
     const file = decodeURIComponent(new URL(source).pathname.split('/').pop() || '').replace(/\.(?:xml|json|js)$/i, '');
     return normalizeName(file);
@@ -76,13 +83,14 @@ function extractXmlDocuments(content, source) {
   return output;
 }
 
-function addReferencedUrls(content, source, queue, targetHost, targetOrigin, candidateFiles) {
-  const add = (raw, onlySameHost = false) => {
+function addReferencedUrls(content, source, queue, targetHost, targetOrigin, candidateFiles, priorityQueue) {
+  const add = (raw, onlySameHost = false, priority = false) => {
     try {
       const url = new URL(raw.replace(/[),;]+$/, ''), source);
       if (!['http:', 'https:'].includes(url.protocol)) return;
       if (onlySameHost && url.hostname !== targetHost) return;
-      if (!queue.has(url.href)) queue.add(url.href);
+      if (priority && priorityQueue) priorityQueue.add(url.href);
+      else if (!queue.has(url.href)) queue.add(url.href);
     } catch {}
   };
   const urlPattern = /(?:https?:\/\/[^\s"'`<>]+|(?:\.\.?\/|\/)[^\s"'`<>]+|[A-Za-z0-9_./-]+)(?:\.xml|\.json|\.js|\.map)(?:[?#][^\s"'`<>]*)?/gi;
@@ -92,7 +100,8 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
     if (/\.xml(?:[?#]|$)/i.test(raw)) {
       try {
         const parsed = new URL(raw, source);
-        const file = decodeURIComponent(parsed.pathname.split('/').pop() || '');
+        const rawPath = raw.split(/[?#]/)[0].replace(/^\.\//, '').replace(/^\//, '');
+        const file = decodeURIComponent(rawPath || parsed.pathname.split('/').pop() || '');
         if (file) candidateFiles.add(file);
       } catch {}
     }
@@ -129,7 +138,16 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
     const hashes = parseMap(maps[1]);
     for (const [id, name] of names) {
       const hash = hashes.get(id);
-      if (hash && !/[\\/]/.test(name)) add(`/static/js/async/${name}.${hash}.js`, true);
+      if (hash && !/[\\/]/.test(name)) add(`/static/js/async/${name}.${hash}.js`, true, true);
+    }
+    const contextEntries = /["']([^"']+\.xml)["']:\["[^"']+","(\d+)"\]/g;
+    for (const match of content.matchAll(contextEntries)) {
+      const sourceName = match[1];
+      const chunkId = match[2];
+      candidateFiles.add(sourceName.replace(/^\.\//, ''));
+      const name = names.get(chunkId);
+      const hash = hashes.get(chunkId);
+      if (name && hash) add(`/static/js/async/${name}.${hash}.js`, true, true);
     }
   }
 }
@@ -289,11 +307,13 @@ export default async function handler(req, res) {
         if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
       }
       if (/html|javascript|json|xml|text\//i.test(type) || /\.(?:html?|js|json|xml|map)(?:[?#]|$)/i.test(url)) {
-        addReferencedUrls(text, url, queue, targetHost, start.origin, candidateFiles);
+        addReferencedUrls(text, url, queue, targetHost, start.origin, candidateFiles, priorityQueue);
       }
     }
     for (const file of candidateFiles) {
+      try { priorityQueue.add(new URL(`/${file}`, start.origin).href); } catch {}
       for (const directory of candidateDirs) {
+        if (directory === '/') continue;
         try { priorityQueue.add(new URL(`${directory}${file}`, start.origin).href); } catch {}
       }
     }
