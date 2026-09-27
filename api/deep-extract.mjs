@@ -1,6 +1,6 @@
-const MAX_PAGES = 260;
+const MAX_PAGES = 24;
 const MAX_BYTES = 2_000_000;
-const TIMEOUT_MS = 12_000;
+const TIMEOUT_MS = 4_000;
 const MAX_BOTS = 250;
 
 function decodeMarkup(value) {
@@ -249,34 +249,46 @@ async function runtimeBrowserScan(startUrl) {
 async function fastBundleScan(startUrl) {
   const found = [];
   const seen = new Set();
-  const priority = new Set();
-  const queue = new Set();
-  const files = new Set();
-  const add = (url) => { if (/\.js(?:[?#]|$)/i.test(url)) priority.add(url); };
   const page = await fetchText(startUrl);
   if (!page) return found;
+  const entryUrls = new Set();
   const scriptPattern = /(?:src|href)=["']([^"']+\.js(?:[?#][^"']*)?)["']/gi;
   for (const match of page.text.matchAll(scriptPattern)) {
-    try { add(new URL(match[1], startUrl).href); } catch {}
+    try { entryUrls.add(new URL(match[1], startUrl).href); } catch {}
   }
-  for (const match of page.text.matchAll(/https?:\/\/[^\s"'<>]+\.js(?:[?#][^\s"'<>]*)?/gi)) add(match[0]);
-  const inspect = (text, source) => {
-    for (const bot of extractXmlDocuments(text, source)) {
+  for (const match of page.text.matchAll(/https?:\/\/[^\s"'<>]+\.js(?:[?#][^\s"'<>]*)?/gi)) entryUrls.add(match[0]);
+  const entries = [...entryUrls].slice(0, 12);
+  const entryResults = await Promise.allSettled(entries.map(async url => ({ url, result: await fetchText(url) })));
+  const chunkUrls = new Set();
+  for (const item of entryResults) {
+    if (item.status !== 'fulfilled' || !item.value.result) continue;
+    const { url, result } = item.value;
+    for (const bot of extractXmlDocuments(result.text, url)) {
       if (!seen.has(bot.xml)) { seen.add(bot.xml); found.push(bot); }
     }
-  };
-  let scanned = 0;
-  while (priority.size && scanned < 320) {
-    const batch = [...priority].slice(0, 20);
-    batch.forEach(url => priority.delete(url));
+    const runtime = result.text.slice(Math.max(0, result.text.indexOf('static/js/async/')));
+    const maps = [...runtime.matchAll(/\(\{([^{}]+)\}\)\[e\]/g)].map(match => match[1]);
+    if (maps.length < 2) continue;
+    const parseMap = value => new Map([...value.matchAll(/(?:^|,)(\d+):["']([^"']+)["']/g)].map(match => [match[1], match[2]]));
+    const names = parseMap(maps[0]);
+    const hashes = parseMap(maps[1]);
+    const contextEntries = /["']([^"']+\.xml)["']:\[["'][^"']+["'],["'](\d+)["']\]/g;
+    for (const match of result.text.matchAll(contextEntries)) {
+      const name = names.get(match[2]);
+      const hash = hashes.get(match[2]);
+      if (name && hash) chunkUrls.add(new URL(`/static/js/async/${name}.${hash}.js`, startUrl).href);
+    }
+  }
+  const chunks = [...chunkUrls].slice(0, 220);
+  for (let offset = 0; offset < chunks.length; offset += 50) {
+    const batch = chunks.slice(offset, offset + 50);
     const results = await Promise.allSettled(batch.map(async url => ({ url, result: await fetchText(url) })));
     for (const item of results) {
       if (item.status !== 'fulfilled' || !item.value.result) continue;
-      const { url, result } = item.value;
-      inspect(result.text, url);
-      addReferencedUrls(result.text, url, queue, new URL(startUrl).hostname, new URL(startUrl).origin, files, priority);
+      for (const bot of extractXmlDocuments(item.value.result.text, item.value.url)) {
+        if (!seen.has(bot.xml)) { seen.add(bot.xml); found.push(bot); }
+      }
     }
-    scanned += batch.length;
   }
   return found;
 }
@@ -311,16 +323,6 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'webpack-context' });
-  }
-
-  const runtimeBots = await runtimeBrowserScan(start.href);
-  for (const bot of runtimeBots) {
-    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
-  }
-  if (bots.length) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'runtime-browser' });
   }
 
   while ((queue.size || priorityQueue.size) && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
