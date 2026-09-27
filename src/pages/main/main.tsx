@@ -51,7 +51,6 @@ import './main.scss';
 import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
-import AnalysisTool from '../analysis-tool/analysis-tool';
 import TradingViewComponent from '@/components/trading-view-chart/trading-view';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
@@ -89,9 +88,9 @@ const AppWrapper = observer(() => {
         [key: string]: string;
     };
     const { clear } = summary_card;
-    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, ANALYSIS_TOOL, MANUAL_TRADE, COPY_TRADING, BOT_EXTRACTOR } = DBOT_TABS;
+    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING, BOT_EXTRACTOR } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'analysis_tool', 'manual_trade', 'trading_view', 'copy_trading', 'bot_extractor', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'bot_extractor', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -386,7 +385,7 @@ const AppWrapper = observer(() => {
     // [/AI]
     return (
         <React.Fragment>
-            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS || active_tab === ANALYSIS_TOOL, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
+            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
                 <div
                     className={classNames('main__container', {
                         'main__container--active': active_tour && active_tab === DASHBOARD && !isDesktop,
@@ -475,21 +474,6 @@ const AppWrapper = observer(() => {
                                 id='id-analysis'
                             >
                                 <Analysis />
-                            </div>
-                            <div
-                                label={
-                                    <>
-                                        <LabelPairedChartTrendUpCaptionRegularIcon
-                                            height='24px'
-                                            width='24px'
-                                            fill='var(--text-general)'
-                                        />
-                                        <Localize i18n_default_text='Analysis Tool' />
-                                    </>
-                                }
-                                id='id-analysis-tool'
-                            >
-                                <AnalysisTool />
                             </div>
                             <div
                                 label={
