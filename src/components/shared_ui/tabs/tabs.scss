@@ -220,3 +220,111 @@
         display: none;
     }
 }
+
+/* Makoti 3D navigation skin */
+.dc-tabs--main__tabs {
+    position: relative;
+    isolation: isolate;
+    padding: 0.85rem 1rem 0;
+    background: linear-gradient(180deg, #0a1020 0%, #111a2d 72%, #0a1020 100%);
+    box-shadow: inset 0 -1px rgba(119, 152, 214, 0.18), 0 0.7rem 1.8rem rgba(0, 0, 0, 0.28);
+}
+
+.dc-tabs--main__tabs::before {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    background: radial-gradient(circle at 15% -80%, rgba(89, 214, 255, 0.22), transparent 36%), radial-gradient(circle at 84% -70%, rgba(132, 101, 255, 0.2), transparent 40%);
+    content: '';
+    pointer-events: none;
+}
+
+.dc-tabs--main__tabs .dc-tabs__list--main__tabs {
+    gap: 0.55rem;
+    align-items: flex-end;
+    min-height: 4.9rem;
+    padding: 0.35rem 0.3rem 0;
+    overflow: visible;
+    background: transparent !important;
+    border: 0 !important;
+}
+
+.dc-tabs--main__tabs .dc-themed-scrollbars-wrapper {
+    width: 100%;
+}
+
+.dc-tabs--main__tabs .dc-tabs__item {
+    position: relative;
+    display: inline-flex;
+    min-width: 8.6rem;
+    height: 4rem;
+    align-items: center;
+    justify-content: center;
+    padding: 0 1.15rem;
+    overflow: hidden;
+    border: 1px solid rgba(161, 184, 226, 0.16) !important;
+    border-radius: 0.9rem 0.9rem 0.55rem 0.55rem !important;
+    color: #aab8d2 !important;
+    background: linear-gradient(155deg, rgba(35, 52, 84, 0.96), rgba(16, 25, 45, 0.98)) !important;
+    box-shadow: 0 0.35rem 0 rgba(5, 9, 19, 0.9), 0 0.8rem 1.1rem rgba(0, 0, 0, 0.18), inset 0 1px rgba(255, 255, 255, 0.08);
+    transform: perspective(600px) rotateX(0deg) translateY(0);
+    transition: transform 180ms ease, box-shadow 180ms ease, color 180ms ease, background 180ms ease;
+}
+
+.dc-tabs--main__tabs .dc-tabs__item::before {
+    position: absolute;
+    top: 0;
+    left: -90%;
+    width: 65%;
+    height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.14), transparent);
+    content: '';
+    transform: skewX(-18deg);
+    transition: left 500ms ease;
+}
+
+.dc-tabs--main__tabs .dc-tabs__item:hover {
+    color: #e7f4ff !important;
+    background: linear-gradient(155deg, #2b4773, #182643) !important;
+    box-shadow: 0 0.42rem 0 rgba(5, 9, 19, 0.95), 0 0.95rem 1.35rem rgba(0, 0, 0, 0.3), 0 0 1.3rem rgba(72, 180, 255, 0.12), inset 0 1px rgba(255, 255, 255, 0.14);
+    transform: perspective(600px) rotateX(3deg) translateY(-0.18rem);
+}
+
+.dc-tabs--main__tabs .dc-tabs__item:hover::before { left: 140%; }
+
+.dc-tabs--main__tabs .dc-tabs__item > *,
+.dc-tabs--main__tabs .dc-tabs__item svg { position: relative; z-index: 1; color: inherit !important; fill: currentColor !important; }
+.dc-tabs--main__tabs .dc-tabs__item__icon { margin-right: 0.55rem; padding: 0; }
+
+.dc-tabs--main__tabs .dc-tabs__active {
+    color: #fff !important;
+    background: linear-gradient(145deg, #397dff 0%, #6259ed 48%, #984de1 100%) !important;
+    border-color: rgba(168, 218, 255, 0.72) !important;
+    box-shadow: 0 0.5rem 0 #1c2369, 0 1rem 1.7rem rgba(57, 100, 255, 0.38), 0 0 1.8rem rgba(127, 91, 255, 0.42), inset 0 1px rgba(255, 255, 255, 0.38) !important;
+    transform: perspective(600px) rotateX(3deg) translateY(-0.35rem) scale(1.015);
+}
+
+.dc-tabs--main__tabs .dc-tabs__active::after {
+    position: absolute;
+    right: 16%;
+    bottom: 0.35rem;
+    left: 16%;
+    height: 0.18rem;
+    border-radius: 99rem;
+    background: #bdf5ff;
+    box-shadow: 0 0 0.8rem #bdf5ff;
+    content: '';
+}
+
+.dc-tabs--main__tabs .dc-tabs__active-line { display: none !important; }
+
+@media (max-width: 900px) {
+    .dc-tabs--main__tabs { padding: 0.55rem 0.45rem 0; }
+    .dc-tabs--main__tabs .dc-tabs__list--main__tabs { gap: 0.4rem; min-height: 4.25rem; padding-top: 0.25rem; }
+    .dc-tabs--main__tabs .dc-tabs__item { min-width: 7rem; height: 3.55rem; padding: 0 0.75rem; font-size: 0.78rem !important; }
+    .dc-tabs--main__tabs .dc-tabs__item__icon { margin-right: 0.35rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dc-tabs--main__tabs .dc-tabs__item, .dc-tabs--main__tabs .dc-tabs__item::before { transition: none; }
+}
