@@ -1,11 +1,15 @@
 .bot-extractor {
-    padding: 16px;
+    padding: 20px;
     height: 100%;
     overflow-y: auto;
     color: var(--text-general);
+    background: radial-gradient(circle at 90% 0%, rgba(139, 92, 246, 0.12), transparent 34%), var(--general-main-1);
 
     &__header {
-        margin-bottom: 20px;
+        margin: -20px -20px 20px;
+        padding: 24px 20px 20px;
+        background: linear-gradient(135deg, rgba(99, 102, 241, 0.18), rgba(168, 85, 247, 0.08));
+        border-bottom: 1px solid rgba(139, 92, 246, 0.22);
     }
 
     &__title {
@@ -23,11 +27,17 @@
 
     &__input-section {
         margin-bottom: 20px;
+        padding: 14px;
+        border: 1px solid rgba(139, 92, 246, 0.2);
+        border-radius: 14px;
+        background: rgba(20, 20, 35, 0.2);
+        box-shadow: 0 12px 30px rgba(0, 0, 0, 0.12);
     }
 
     &__input-row {
         display: flex;
         gap: 8px;
+        flex-wrap: wrap;
     }
 
     &__input {
@@ -246,6 +256,51 @@
         font-size: 11px;
         margin-top: 8px;
         color: var(--text-general--low);
+    }
+
+    @media (max-width: 700px) {
+        padding: 12px;
+
+        &__header {
+            margin: -12px -12px 14px;
+            padding: 18px 14px 16px;
+        }
+
+        &__title { font-size: 18px; }
+        &__subtitle { font-size: 12px; line-height: 1.45; }
+        &__input-section { padding: 10px; }
+
+        &__input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        &__input {
+            width: 100%;
+            min-width: 0;
+            grid-column: 1 / -1;
+        }
+
+        &__btn {
+            min-width: 0;
+            width: 100%;
+            justify-content: center;
+            padding: 10px 8px;
+            font-size: 12px;
+        }
+
+        &__btn--current { grid-column: 1 / -1; }
+
+        &__bot-card {
+            align-items: flex-start;
+            gap: 10px;
+            padding: 11px;
+        }
+
+        &__bot-name { white-space: normal; line-height: 1.3; }
+        &__bot-meta { flex-wrap: wrap; }
+        &__btn--load { width: auto; flex: 0 0 auto; }
     }
 
     &__log {

@@ -572,12 +572,24 @@ const BotExtractor = () => {
         if (!bot.xml) return;
         const tempId = `extracted_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
+            const xml = decodeMarkup(bot.xml).trim();
+            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid');
+
+            // The extractor is a sub-tab, so Blockly may not be mounted yet.
+            // Switch first, wait for the real workspace, then import. Importing
+            // before this point silently leaves the old workspace unchanged.
+            setActiveTab(DBOT_TABS.BOT_BUILDER);
+            let workspace = window.Blockly?.derivWorkspace;
+            for (let attempt = 0; !workspace && attempt < 20; attempt++) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                workspace = window.Blockly?.derivWorkspace;
+            }
+            if (!workspace) throw new Error('Bot Builder workspace is still loading. Please try Load to Builder again.');
             await load_modal.loadStrategyToBuilder(
-                { id: tempId, xml: bot.xml, name: bot.name, save_type: 'pending' },
+                { id: tempId, xml, name: bot.name, save_type: 'pending' },
                 true
             );
             setLoadedBots(prev => new Set(prev).add(bot.source));
-            setActiveTab(DBOT_TABS.BOT_BUILDER);
         } catch (err: any) {
             setError(`Failed to load bot: ${err.message}`);
         }
