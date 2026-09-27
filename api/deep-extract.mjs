@@ -1,6 +1,6 @@
 const MAX_PAGES = 24;
-const MAX_BYTES = 2_000_000;
-const TIMEOUT_MS = 4_000;
+const MAX_BYTES = 4_000_000;
+const TIMEOUT_MS = 8_000;
 const MAX_BOTS = 250;
 
 function decodeMarkup(value) {
@@ -20,9 +20,11 @@ function isValidBotXml(value) {
   if (!/<xml\b[^>]*\bis_dbot=["']true["']/i.test(xml)) return false;
   if (/MODULE_NOT_FOUND|Cannot find module|Blockly\.(?:Blocks|JavaScript)/i.test(xml)) return false;
   if ((xml.match(/<block\b/gi) || []).length < 5) return false;
+  const hasTradeFlow = /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(xml)
+    || /<statement\s+name=["'](?:BEFOREPURCHASE_STACK|DURINGPURCHASE_STACK|AFTERPURCHASE_STACK)["']/i.test(xml);
   return /<block\b[^>]*type=["']trade_definition["']/i.test(xml)
-    && /<block\b[^>]*type=["']purchase["']/i.test(xml)
-    && /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(xml);
+    && /<block\b[^>]*type=["'](?:purchase|apollo_purchase|apollo_purchase2)["']/i.test(xml)
+    && hasTradeFlow;
 }
 
 function isBuiltInBundle(url) {
@@ -45,6 +47,14 @@ function nameFromXml(xml) {
 }
 
 function nameFromContext(content, position, source) {
+  const beforeDocument = content.slice(0, position);
+  const moduleMatches = [...beforeDocument.matchAll(/(?:^|[,{}])(\d+):function\(/g)];
+  const moduleId = moduleMatches.pop()?.[1];
+  if (moduleId) {
+    const escapedId = moduleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const moduleFile = content.match(new RegExp(`["']([^"']+\\.xml)["']\\s*:\\s*["']${escapedId}["']`, 'i'));
+    if (moduleFile) return normalizeName(moduleFile[1].replace(/^\.\//, '').replace(/\.xml$/i, ''));
+  }
   const before = content.slice(Math.max(0, position - 2500), position);
   const match = [...before.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,140})["'`]/gi)].pop();
   if (match) return normalizeName(match[1]);
@@ -153,19 +163,21 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
 }
 
 async function fetchText(url) {
-  const response = await fetch(url, {
-    redirect: 'follow',
-    headers: {
-      'User-Agent': 'Mozilla/5.0 (compatible; CustomBotExtractor/2.0)',
-      Accept: 'text/html,application/xhtml+xml,application/xml,application/json,text/javascript,*/*;q=0.8',
-    },
-    signal: AbortSignal.timeout(TIMEOUT_MS),
-  });
-  if (!response.ok) return null;
-  const contentLength = Number(response.headers.get('content-length') || 0);
-  if (contentLength > MAX_BYTES) return null;
-  const text = await response.text();
-  return text.length <= MAX_BYTES ? { text, type: response.headers.get('content-type') || '' } : null;
+  try {
+    const response = await fetch(url, {
+      redirect: 'follow',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (compatible; CustomBotExtractor/2.0)',
+        Accept: 'text/html,application/xhtml+xml,application/xml,application/json,text/javascript,*/*;q=0.8',
+      },
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+    if (!response.ok) return null;
+    const contentLength = Number(response.headers.get('content-length') || 0);
+    if (contentLength > MAX_BYTES) return null;
+    const text = await response.text();
+    return text.length <= MAX_BYTES ? { text, type: response.headers.get('content-type') || '' } : null;
+  } catch { return null; }
 }
 
 async function runtimeBrowserScan(startUrl) {

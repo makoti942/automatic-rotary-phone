@@ -55,8 +55,9 @@ function isValidDerivBot(content: string): boolean {
     const blockCount = (trimmed.match(/<block\b/gi) || []).length;
     if (blockCount < 5) return false;
     const hasTradeDefinition = /<block\b[^>]*type=["']trade_definition["']/i.test(trimmed);
-    const hasPurchase = /<block\b[^>]*type=["']purchase["']/i.test(trimmed);
-    const hasTradeFlow = /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(trimmed);
+    const hasPurchase = /<block\b[^>]*type=["'](?:purchase|apollo_purchase|apollo_purchase2)["']/i.test(trimmed);
+    const hasTradeFlow = /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(trimmed)
+        || /<statement\s+name=["'](?:BEFOREPURCHASE_STACK|DURINGPURCHASE_STACK|AFTERPURCHASE_STACK)["']/i.test(trimmed);
     return hasTradeDefinition && hasPurchase && hasTradeFlow;
 }
 
@@ -112,6 +113,14 @@ function guessNameFromChunkSource(source: string): string {
     } catch { return ''; }
 }
 function guessNameFromContext(jsContent: string, position: number, xml: string): string {
+    const beforeDocument = jsContent.substring(0, position);
+    const moduleMatches = [...beforeDocument.matchAll(/(?:^|[,{}])(\d+):function\(/g)];
+    const moduleId = moduleMatches.pop()?.[1];
+    if (moduleId) {
+        const escapedId = moduleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const moduleFile = jsContent.match(new RegExp(`["']([^"']+\\.xml)["']\\s*:\\s*["']${escapedId}["']`, 'i'));
+        if (moduleFile) return normalizeBotName(moduleFile[1].replace(/^\.\//, '').replace(/\.xml$/i, '')) || '';
+    }
     const nameFromField = xml.match(/<field name="BOT_NAME">([^<]+)<\/field>/i);
     if (nameFromField) return nameFromField[1].trim();
     const nameFromMutation = xml.match(/<mutation[^>]*bot_name=["']([^"']+)["']/i);
