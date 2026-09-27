@@ -173,4 +173,27 @@ const AnalysisTool = () => {
     </div>;
 };
 
-export default AnalysisTool;
+class AnalysisToolBoundary extends React.Component<React.PropsWithChildren, { hasError: boolean }> {
+    state = { hasError: false };
+
+    static getDerivedStateFromError() { return { hasError: true }; }
+
+    componentDidCatch(error: Error) { console.error('Analysis Tool render error:', error); }
+
+    render() {
+        if (this.state.hasError) {
+            return <div className='analysis-tool analysis-tool--error'>
+                <div className='analysis-tool__error-card'>
+                    <strong>Analysis Tool paused safely</strong>
+                    <p>A market-data response could not be rendered. Refresh the tab to restart the analysis stream.</p>
+                    <button type='button' onClick={() => this.setState({ hasError: false })}>Restart analysis</button>
+                </div>
+            </div>;
+        }
+        return this.props.children;
+    }
+}
+
+export default function AnalysisToolSafe() {
+    return <AnalysisToolBoundary><AnalysisTool /></AnalysisToolBoundary>;
+}
