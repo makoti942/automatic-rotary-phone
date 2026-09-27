@@ -180,6 +180,42 @@ async function fetchText(url) {
   } catch { return null; }
 }
 
+function manifestBotEntries(value, output = []) {
+  if (!value || output.length >= MAX_BOTS) return output;
+  if (Array.isArray(value)) { for (const item of value) manifestBotEntries(item, output); return output; }
+  if (typeof value !== 'object') return output;
+  const url = value.xml_url || value.xmlUrl || value.xml || value.download_url || value.downloadUrl;
+  if (typeof url === 'string' && /(?:\.xml(?:[?#]|$)|\/api\/asset\/)/i.test(url)) {
+    output.push({ url, name: value.name || value.title || value.label || null, category: value.category || value.tab || 'Custom Bots' });
+  }
+  for (const child of Object.values(value)) manifestBotEntries(child, output);
+  return output;
+}
+
+async function extractManifestBots(start) {
+  const paths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json'];
+  const found = [], seen = new Set();
+  for (const path of paths) {
+    const manifest = await fetchText(new URL(path, start.origin).href);
+    if (!manifest || !/^\s*[\[{]/.test(manifest.text)) continue;
+    let parsed;
+    try { parsed = JSON.parse(manifest.text); } catch { continue; }
+    for (const entry of manifestBotEntries(parsed)) {
+      try {
+        const xmlUrl = new URL(entry.url, start.origin).href;
+        if (seen.has(xmlUrl)) continue;
+        seen.add(xmlUrl);
+        const result = await fetchText(xmlUrl);
+        if (!result || !isValidBotXml(result.text)) continue;
+        const fallback = decodeURIComponent(new URL(xmlUrl).pathname.split('/').pop() || 'Bot.xml').replace(/\.xml$/i, '');
+        found.push({ name: normalizeName(entry.name) || nameFromXml(result.text) || normalizeName(fallback), xml: decodeMarkup(result.text).trim(), source: `manifest:${xmlUrl}`, size: result.text.length, fromTab: entry.category });
+        if (found.length >= MAX_BOTS) return found;
+      } catch {}
+    }
+  }
+  return found;
+}
+
 async function runtimeBrowserScan(startUrl) {
   const found = [];
   const seen = new Set();
@@ -323,7 +359,7 @@ export default async function handler(req, res) {
   const seenXml = new Set();
   const candidateFiles = new Set();
   const candidateDirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
-  const manifestPaths = ['/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
+  const manifestPaths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
   for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
 
@@ -335,6 +371,16 @@ export default async function handler(req, res) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
     return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'webpack-context' });
+  }
+
+  const manifestBots = await extractManifestBots(start);
+  for (const bot of manifestBots) {
+    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+  }
+  if (bots.length) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'public-manifest' });
   }
 
   while ((queue.size || priorityQueue.size) && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
