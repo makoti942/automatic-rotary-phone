@@ -256,7 +256,7 @@ const BotExtractor = () => {
     const [progress, setProgress] = useState('');
     const [loadedBots, setLoadedBots] = useState<Set<string>>(new Set());
     const [scanLog, setScanLog] = useState<string[]>([]);
-    const [showAllBots, setShowAllBots] = useState(false);
+    const [isBotDrawerOpen, setIsBotDrawerOpen] = useState(false);
 
     useEffect(() => {
         try { window.localStorage.setItem(EXTRACTED_BOTS_STORAGE_KEY, JSON.stringify(extractedBots)); } catch {}
@@ -747,10 +747,22 @@ const BotExtractor = () => {
     return (
         <div className='bot-extractor'>
             <div className='bot-extractor__header'>
-                <h2 className='bot-extractor__title'>Bot Extractor</h2>
-                <p className='bot-extractor__subtitle'>
-                    Scan any Deriv site — finds bot filenames from JS bundles and .xml files
-                </p>
+                <div>
+                    <h2 className='bot-extractor__title'>Bot Extractor</h2>
+                    <p className='bot-extractor__subtitle'>
+                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files
+                    </p>
+                </div>
+                <button
+                    className='bot-extractor__library-button'
+                    onClick={() => setIsBotDrawerOpen(true)}
+                    type='button'
+                    aria-label={`Show all ${extractedBots.length} extracted bots`}
+                >
+                    <span className='bot-extractor__library-icon'>☰</span>
+                    <span>Show All Bots</span>
+                    <span className='bot-extractor__library-count'>{extractedBots.length}</span>
+                </button>
             </div>
 
             <div className='bot-extractor__input-section'>
@@ -822,13 +834,6 @@ const BotExtractor = () => {
                             <h3>Extracted Bots ({extractedBots.length})</h3>
                             <p className='bot-extractor__results-subtitle'>Saved on this device and available after navigation</p>
                         </div>
-                        <button
-                            className='bot-extractor__show-all'
-                            onClick={() => setShowAllBots(prev => !prev)}
-                            type='button'
-                        >
-                            {showAllBots ? 'Show fewer' : `Show all ${extractedBots.length}`}
-                        </button>
                     </div>
                     <div className='bot-extractor__results-description'>
                         <p className='bot-extractor__results-subtitle'>
@@ -837,7 +842,7 @@ const BotExtractor = () => {
                     </div>
 
                     <div className='bot-extractor__bot-list'>
-                        {(showAllBots ? extractedBots : extractedBots.slice(-12)).map((bot, index) => (
+                        {extractedBots.slice(-12).map((bot, index) => (
                             <div key={index} className='bot-extractor__bot-card'>
                                 <div className='bot-extractor__bot-info'>
                                     <div className='bot-extractor__bot-name'>{bot.name}</div>
@@ -859,6 +864,37 @@ const BotExtractor = () => {
                         ))}
                     </div>
                 </div>
+            )}
+
+            {isBotDrawerOpen && (
+                <>
+                    <button className='bot-extractor__drawer-backdrop' onClick={() => setIsBotDrawerOpen(false)} aria-label='Close extracted bot library' type='button' />
+                    <aside className='bot-extractor__drawer' aria-label='All extracted bots'>
+                        <div className='bot-extractor__drawer-header'>
+                            <div>
+                                <h3>All Extracted Bots</h3>
+                                <p>{extractedBots.length} bot{extractedBots.length === 1 ? '' : 's'} saved on this device</p>
+                            </div>
+                            <button className='bot-extractor__drawer-close' onClick={() => setIsBotDrawerOpen(false)} type='button' aria-label='Close'>×</button>
+                        </div>
+                        <div className='bot-extractor__drawer-list'>
+                            {extractedBots.map((bot, index) => (
+                                <div key={`${bot.source}-${index}`} className='bot-extractor__bot-card'>
+                                    <div className='bot-extractor__bot-info'>
+                                        <div className='bot-extractor__bot-name'>{bot.name}</div>
+                                        <div className='bot-extractor__bot-meta'>
+                                            <span className='bot-extractor__bot-tab'>{bot.fromTab}</span>
+                                            <span className='bot-extractor__bot-size'>{(bot.size / 1024).toFixed(1)} KB</span>
+                                        </div>
+                                    </div>
+                                    <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source)}>
+                                        {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                    </button>
+                                </div>
+                            ))}
+                        </div>
+                    </aside>
+                </>
             )}
 
             {!isExtracting && extractedBots.length === 0 && !error && (
