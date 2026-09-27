@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import './bot-extractor.scss';
@@ -9,6 +9,20 @@ interface ExtractedBot {
     source: string;
     size: number;
     fromTab: string;
+}
+
+const EXTRACTED_BOTS_STORAGE_KEY = 'bot-extractor:extracted-bots:v1';
+
+function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
+    const merged = [...existing];
+    const seen = new Set(existing.map(bot => bot.xml.trim()));
+    for (const bot of incoming) {
+        const xml = bot.xml.trim();
+        if (!xml || seen.has(xml)) continue;
+        seen.add(xml);
+        merged.push({ ...bot, xml, size: bot.size || xml.length });
+    }
+    return merged.slice(-250);
 }
 
 const CORS_PROXIES = [
@@ -221,11 +235,23 @@ const BotExtractor = () => {
     const [url, setUrl] = useState('');
     const [isExtracting, setIsExtracting] = useState(false);
     const [isDeepExtracting, setIsDeepExtracting] = useState(false);
-    const [extractedBots, setExtractedBots] = useState<ExtractedBot[]>([]);
+    const [extractedBots, setExtractedBots] = useState<ExtractedBot[]>(() => {
+        if (typeof window === 'undefined') return [];
+        try {
+            const saved = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
+            const parsed = saved ? JSON.parse(saved) : [];
+            return Array.isArray(parsed) ? parsed.filter(bot => bot?.xml && bot?.name) : [];
+        } catch { return []; }
+    });
     const [error, setError] = useState('');
     const [progress, setProgress] = useState('');
     const [loadedBots, setLoadedBots] = useState<Set<string>>(new Set());
     const [scanLog, setScanLog] = useState<string[]>([]);
+    const [showAllBots, setShowAllBots] = useState(false);
+
+    useEffect(() => {
+        try { window.localStorage.setItem(EXTRACTED_BOTS_STORAGE_KEY, JSON.stringify(extractedBots)); } catch {}
+    }, [extractedBots]);
 
     const addLog = useCallback((msg: string) => {
         setScanLog(prev => [...prev, msg]);
@@ -256,7 +282,6 @@ const BotExtractor = () => {
 
         setIsExtracting(true);
         setError('');
-        setExtractedBots([]);
         setScanLog([]);
 
         const allBots: ExtractedBot[] = [];
@@ -554,7 +579,7 @@ const BotExtractor = () => {
             addLog(`\n=== COMPLETE ===`);
             addLog(`Total bots found: ${allBots.length}`);
 
-            setExtractedBots(allBots);
+            setExtractedBots(prev => mergeExtractedBots(prev, allBots));
             setProgress('');
 
             if (allBots.length === 0) {
@@ -607,7 +632,6 @@ const BotExtractor = () => {
 
         setIsDeepExtracting(true);
         setError('');
-        setExtractedBots([]);
         setScanLog([]);
 
         const addLog = (msg: string) => setScanLog(prev => [...prev, msg]);
@@ -641,7 +665,7 @@ const BotExtractor = () => {
                 fromTab: 'Deep Extract',
             }));
 
-            setExtractedBots(allBots);
+            setExtractedBots(prev => mergeExtractedBots(prev, allBots));
             setProgress('');
             addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
 
@@ -659,7 +683,6 @@ const BotExtractor = () => {
     const extractFromCurrentPage = useCallback(async () => {
         setIsExtracting(true);
         setError('');
-        setExtractedBots([]);
         setScanLog([]);
 
         const addLog = (msg: string) => setScanLog(prev => [...prev, msg]);
@@ -697,7 +720,7 @@ const BotExtractor = () => {
                 }
             }
 
-            setExtractedBots(allBots);
+            setExtractedBots(prev => mergeExtractedBots(prev, allBots));
             setProgress('');
             addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted from current page ===`);
 
@@ -786,14 +809,26 @@ const BotExtractor = () => {
             {extractedBots.length > 0 && (
                 <div className='bot-extractor__results'>
                     <div className='bot-extractor__results-header'>
-                        <h3>Extracted Bots ({extractedBots.length})</h3>
+                        <div>
+                            <h3>Extracted Bots ({extractedBots.length})</h3>
+                            <p className='bot-extractor__results-subtitle'>Saved on this device and available after navigation</p>
+                        </div>
+                        <button
+                            className='bot-extractor__show-all'
+                            onClick={() => setShowAllBots(prev => !prev)}
+                            type='button'
+                        >
+                            {showAllBots ? 'Show fewer' : `Show all ${extractedBots.length}`}
+                        </button>
+                    </div>
+                    <div className='bot-extractor__results-description'>
                         <p className='bot-extractor__results-subtitle'>
-                            Real bots copied from the site — ready to load and trade
+                            Real bots copied from the site — each card contains the complete XML and a dedicated loader.
                         </p>
                     </div>
 
                     <div className='bot-extractor__bot-list'>
-                        {extractedBots.map((bot, index) => (
+                        {(showAllBots ? extractedBots : extractedBots.slice(-12)).map((bot, index) => (
                             <div key={index} className='bot-extractor__bot-card'>
                                 <div className='bot-extractor__bot-info'>
                                     <div className='bot-extractor__bot-name'>{bot.name}</div>
