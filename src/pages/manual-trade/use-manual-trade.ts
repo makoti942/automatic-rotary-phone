@@ -291,14 +291,17 @@ export function useManualTrade() {
                     let settledContract: any = null;
                     list.forEach((poc: any) => {
                         const contractKey = String(poc?.contract_id ?? '');
-                        const isSold = poc?.is_sold === true || Number(poc?.is_sold) === 1 || poc?.status === 'sold';
-                        if (!isSold || poc.exit_tick == null || !trackedContractsRef.current.has(contractKey)) return;
+                        const closedStatuses = ['sold', 'won', 'lost', 'closed', 'expired'];
+                        const isSold = poc?.is_sold === true || Number(poc?.is_sold) === 1 || closedStatuses.includes(String(poc?.status ?? '').toLowerCase());
+                        const hasSellValue = poc?.sell_price != null || poc?.sell_time != null || poc?.exit_tick != null;
+                        if ((!isSold && !hasSellValue) || !trackedContractsRef.current.has(contractKey)) return;
                         const key = String(poc.contract_id);
                         if (seenSoldRef.current.has(key)) return;
                         seenSoldRef.current.add(key);
                         trackedContractsRef.current.delete(key);
+                        const exitValue = poc.exit_tick ?? poc.exit_tick_display ?? poc.exit_spot ?? poc.exit_price;
                         freshFlash = {
-                            digit: lastDigitOfPrice(poc.exit_tick),
+                            digit: exitValue == null ? -1 : lastDigitOfPrice(exitValue),
                             win: Number(poc.profit ?? 0) > 0,
                             key: Date.now(),
                         };
@@ -314,7 +317,7 @@ export function useManualTrade() {
                         flashTimerRef.current = setTimeout(() => {
                             if (mountedRef.current) setTradeFlash(null);
                         }, 4000);
-                        setExitDigit(freshFlash.digit);
+                        if (freshFlash.digit >= 0) setExitDigit(freshFlash.digit);
                         if (exitDigitTimerRef.current) clearTimeout(exitDigitTimerRef.current);
                         exitDigitTimerRef.current = setTimeout(() => {
                             if (mountedRef.current) setExitDigit(null);
@@ -324,7 +327,7 @@ export function useManualTrade() {
                             type: 'closed',
                             contractId: settledContract.contract_id,
                             profit,
-                            exitDigit: freshFlash.digit,
+                            exitDigit: freshFlash.digit >= 0 ? freshFlash.digit : undefined,
                             win: profit > 0,
                             stake: settledContract.buy_price ? Number(settledContract.buy_price) : undefined,
                             key: Date.now(),

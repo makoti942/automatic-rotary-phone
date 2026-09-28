@@ -268,7 +268,7 @@ const ManualTrade = observer(() => {
                                 <div className='mt-notif-body'>
                                     <span className='mt-notif-title'>Contract Closed</span>
                                     <span className='mt-notif-detail'>
-                                        Exit digit: {n.exitDigit} | {n.win ? '+' : ''}${n.profit?.toFixed(2)}
+                                        Exit digit: {n.exitDigit ?? '—'} | {n.win ? '+' : ''}${n.profit?.toFixed(2)}
                                     </span>
                                 </div>
                             </>
