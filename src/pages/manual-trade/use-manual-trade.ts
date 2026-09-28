@@ -192,6 +192,7 @@ export function useManualTrade() {
     entryDigitRef.current = entryDigitValue;
     const entryEnabledRef = useRef(entryDigitEnabled);
     entryEnabledRef.current = entryDigitEnabled;
+    const lastDigitRef = useRef<number | null>(null);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -227,6 +228,7 @@ export function useManualTrade() {
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
+    lastDigitRef.current = lastDigit;
 
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
@@ -575,14 +577,14 @@ export function useManualTrade() {
         if (entryEnabledRef.current) {
             const targetDigit = entryDigitRef.current;
             const timeout = Date.now() + 30000;
-            while (lastDigitOfPrice(pricesRef.current[pricesRef.current.length - 1] ?? 0) !== targetDigit) {
+            while (lastDigitRef.current !== targetDigit) {
                 if (Date.now() > timeout) {
                     isBuyingRef.current = false;
                     if (mountedRef.current) setIsBuying(false);
                     setBuyError('Entry digit timeout — digit ' + targetDigit + ' did not appear within 30s.');
                     return;
                 }
-                await new Promise(r => setTimeout(r, 200));
+                await new Promise(r => setTimeout(r, 100));
             }
         }
 

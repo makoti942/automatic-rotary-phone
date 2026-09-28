@@ -729,7 +729,7 @@ $radius:   10px;
 
 .mt-history-drawer {
     position: fixed;
-    top: 0;
+    top: 5.4rem;
     right: 0;
     bottom: 0;
     z-index: 100001;
@@ -749,14 +749,14 @@ $radius:   10px;
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    padding: 16px 18px;
+    padding: 14px 18px;
     border-bottom: 1px solid $border;
     flex-shrink: 0;
     background: $bg;
     z-index: 1;
 }
 
-.mt-history-head h2 { margin: 0 0 4px; color: $text; font-size: 16px; font-weight: 600; }
+.mt-history-head h2 { margin: 0 0 2px; color: $text; font-size: 15px; font-weight: 600; }
 .mt-history-head span { color: $muted; font-size: 11px; }
 .mt-history-close { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-top: 2px; border: 1px solid $border; border-radius: 8px; background: rgba($text, 0.04); color: $muted; font-size: 24px; line-height: 1; cursor: pointer; &:hover { color: $text; background: rgba($text, 0.1); } }
 .mt-history-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 18px; padding: 13px; border: 1px solid $border; border-radius: 10px; background: rgba($accent, 0.07); flex-shrink: 0; }
