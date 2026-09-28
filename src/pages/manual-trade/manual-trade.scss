@@ -647,3 +647,72 @@ $radius:   10px;
     from { opacity: 0; transform: translateX(20px); }
     to   { opacity: 1; transform: translateX(0); }
 }
+
+.mt-history-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    padding: 7px 10px;
+    border: 1px solid rgba($accent, 0.35);
+    border-radius: 8px;
+    background: rgba($accent, 0.1);
+    color: $text;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    &:hover { background: rgba($accent, 0.2); }
+    b { color: $accent; }
+}
+
+.mt-history-trigger-icon { color: $accent; font-size: 13px; }
+
+.mt-history-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100000;
+    background: rgba(0, 0, 0, 0.46);
+    animation: mt-history-fade 0.2s ease-out;
+}
+
+.mt-history-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100001;
+    width: min(390px, 92vw);
+    padding: 22px 18px;
+    overflow-y: auto;
+    background: $bg;
+    border-left: 1px solid $border;
+    box-shadow: -14px 0 40px rgba(0, 0, 0, 0.42);
+    animation: mt-history-slide 0.24s ease-out;
+}
+
+.mt-history-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding-bottom: 18px; border-bottom: 1px solid $border; }
+.mt-history-head h2 { margin: 0 0 4px; color: $text; font-size: 18px; }
+.mt-history-head span { color: $muted; font-size: 11px; }
+.mt-history-close { border: 0; background: transparent; color: $muted; font-size: 28px; line-height: 1; cursor: pointer; &:hover { color: $text; } }
+.mt-history-list { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; }
+.mt-history-card { padding: 13px; border: 1px solid $border; border-radius: 10px; background: $bg2; }
+.mt-history-card--won { border-color: rgba($win, 0.42); }
+.mt-history-card--lost { border-color: rgba($loss, 0.42); }
+.mt-history-card-top, .mt-history-meta, .mt-history-values { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mt-history-card-top strong { color: $text; font-size: 12px; }
+.mt-history-meta { margin-top: 7px; color: $muted; font-size: 10px; }
+.mt-history-status { padding: 3px 6px; border-radius: 999px; font-size: 9px; font-weight: 800; }
+.mt-history-status--open { color: #7dd3fc; background: rgba(#0284c7, 0.18); }
+.mt-history-status--won { color: $win; background: rgba($win, 0.14); }
+.mt-history-status--lost { color: $loss; background: rgba($loss, 0.14); }
+.mt-history-values { margin-top: 13px; }
+.mt-history-values div { display: flex; flex-direction: column; gap: 3px; }
+.mt-history-values small { color: $muted; font-size: 9px; letter-spacing: 0.5px; }
+.mt-history-values b { color: $text; font-size: 14px; }
+.mt-history-values b.is-profit { color: $win; }
+.mt-history-values b.is-loss { color: $loss; }
+.mt-history-time { margin-top: 11px; color: $muted; font-size: 10px; text-align: right; }
+.mt-history-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 48px 20px; color: $muted; text-align: center; }
+.mt-history-empty strong { color: $text; }
+@keyframes mt-history-slide { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes mt-history-fade { from { opacity: 0; } to { opacity: 1; } }

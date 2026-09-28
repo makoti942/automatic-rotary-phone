@@ -34,10 +34,11 @@ const ManualTrade = observer(() => {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, tradeFlash,
-        notifications, exitDigit, activeTrade,
+        notifications, exitDigit, activeTrade, tradeHistory,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
+    const [historyOpen, setHistoryOpen] = useState(false);
 
     const digitLabels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const modeOptions = CONTRACT_MODE_OPTIONS[tradeType];
@@ -103,6 +104,10 @@ const ManualTrade = observer(() => {
                             <span className='mt-digit-label'>
                                 {lastDigit !== null ? 'Last Digit' : 'Awaiting tick…'}
                             </span>
+                            <button type='button' className='mt-history-trigger' onClick={() => setHistoryOpen(true)} aria-label='Show executed trades'>
+                                <span className='mt-history-trigger-icon'>☰</span>
+                                Trades <b>{tradeHistory.length}</b>
+                            </button>
                         </div>
                     </div>
 
@@ -267,6 +272,39 @@ const ManualTrade = observer(() => {
                     </div>
                 </div>
             </div>
+
+            {historyOpen && (
+                <>
+                    <div className='mt-history-backdrop' onClick={() => setHistoryOpen(false)} />
+                    <aside className='mt-history-drawer' aria-label='Executed trades'>
+                        <div className='mt-history-head'>
+                            <div>
+                                <h2>Session Trades</h2>
+                                <span>{tradeHistory.length} executed trade{tradeHistory.length === 1 ? '' : 's'}</span>
+                            </div>
+                            <button type='button' className='mt-history-close' onClick={() => setHistoryOpen(false)} aria-label='Close trade history'>×</button>
+                        </div>
+                        <div className='mt-history-list'>
+                            {tradeHistory.length === 0 ? (
+                                <div className='mt-history-empty'><strong>No trades yet</strong><span>Executed trades from this session will appear here.</span></div>
+                            ) : tradeHistory.slice().reverse().map(trade => (
+                                <article className={`mt-history-card mt-history-card--${trade.status}`} key={trade.contractId}>
+                                    <div className='mt-history-card-top'>
+                                        <strong>{trade.contractType}</strong>
+                                        <span className={`mt-history-status mt-history-status--${trade.status}`}>{trade.status === 'open' ? 'RUNNING' : trade.status.toUpperCase()}</span>
+                                    </div>
+                                    <div className='mt-history-meta'><span>{SYMBOL_LABELS[trade.symbol] ?? trade.symbol}</span><span>#{trade.contractId}</span></div>
+                                    <div className='mt-history-values'>
+                                        <div><small>STAKE</small><b>${trade.stake.toFixed(2)}</b></div>
+                                        <div><small>PROFIT</small><b className={trade.profit !== null && trade.profit >= 0 ? 'is-profit' : trade.profit !== null ? 'is-loss' : ''}>{trade.profit === null ? '—' : `${trade.profit >= 0 ? '+' : ''}$${trade.profit.toFixed(2)}`}</b></div>
+                                    </div>
+                                    <div className='mt-history-time'>{new Date(trade.executedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                                </article>
+                            ))}
+                        </div>
+                    </aside>
+                </>
+            )}
 
             {/* Notification popups */}
             <div className='mt-notifications'>

@@ -66,6 +66,18 @@ export interface ActiveTrade {
     openedAt: number;
 }
 
+export interface SessionTrade {
+    contractId: number;
+    symbol: string;
+    contractType: ContractMode;
+    stake: number;
+    profit: number | null;
+    status: 'open' | 'won' | 'lost';
+    executedAt: number;
+    closedAt?: number;
+    exitDigit?: number;
+}
+
 function lastDigitOfPrice(v: number | string): number {
     const digits = String(v).match(/\d/g);
     return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
@@ -156,6 +168,7 @@ export function useManualTrade() {
     const [notifications, setNotifications] = useState<TradeNotification[]>([]);
     const [exitDigit, setExitDigit] = useState<number | null>(null);
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
+    const [tradeHistory, setTradeHistory] = useState<SessionTrade[]>([]);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -312,6 +325,15 @@ export function useManualTrade() {
 
                     if (freshFlash && settledContract) {
                         setActiveTrade(null);
+                        const settledId = Number(settledContract.contract_id);
+                        const settledProfit = Number(settledContract.profit ?? 0);
+                        setTradeHistory(previous => previous.map(trade => trade.contractId === settledId ? {
+                            ...trade,
+                            profit: settledProfit,
+                            status: settledProfit > 0 ? 'won' : 'lost',
+                            closedAt: Date.now(),
+                            exitDigit: freshFlash?.digit >= 0 ? freshFlash.digit : undefined,
+                        } : trade));
                         setTradeFlash(freshFlash);
                         if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
                         flashTimerRef.current = setTimeout(() => {
@@ -553,6 +575,15 @@ export function useManualTrade() {
                     stake: Number(buyRes.buy.buy_price),
                     openedAt: Date.now(),
                 });
+                setTradeHistory(previous => [...previous, {
+                    contractId,
+                    symbol: activeSymbol,
+                    contractType: mode,
+                    stake: Number(buyRes.buy.buy_price),
+                    profit: null,
+                    status: 'open',
+                    executedAt: Date.now(),
+                }]);
                 // Show opened notification
                 const notif: TradeNotification = {
                     type: 'opened',
@@ -596,6 +627,6 @@ export function useManualTrade() {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
-        notifications, exitDigit, activeTrade,
+        notifications, exitDigit, activeTrade, tradeHistory,
     };
 }
