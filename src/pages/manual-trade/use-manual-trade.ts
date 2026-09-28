@@ -317,6 +317,7 @@ export function useManualTrade() {
                             balanceAfter: Number(data.buy.balance_after),
                         });
                         setBuyError(null);
+                        setNotifications(p => p.filter(n => n.type !== 'error'));
                     } else if (data.error) {
                         setBuyError(data.error.message ?? 'Buy failed');
                     }
