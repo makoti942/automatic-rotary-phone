@@ -34,7 +34,7 @@ const ManualTrade = observer(() => {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, tradeFlash,
-        notifications, exitDigit, activeTrade, tradeHistory,
+        notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
@@ -64,6 +64,7 @@ const ManualTrade = observer(() => {
     }, [digitPcts, digitTotal]);
 
     const currentPrice = currentTick?.quote.toFixed(pipSize) ?? '—';
+    const sessionProfit = tradeHistory.reduce((total, trade) => total + (trade.profit ?? 0), 0);
 
     if (isLoading) {
         return (
@@ -282,7 +283,11 @@ const ManualTrade = observer(() => {
                                 <h2>Session Trades</h2>
                                 <span>{tradeHistory.length} executed trade{tradeHistory.length === 1 ? '' : 's'}</span>
                             </div>
-                            <button type='button' className='mt-history-close' onClick={() => setHistoryOpen(false)} aria-label='Close trade history'>×</button>
+                            <button type='button' className='mt-history-close' onClick={() => setHistoryOpen(false)} aria-label='Close trade history'>←</button>
+                        </div>
+                        <div className='mt-history-summary'>
+                            <div><small>SESSION P/L</small><strong className={sessionProfit >= 0 ? 'is-profit' : 'is-loss'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div>
+                            <button type='button' className='mt-history-clear' onClick={clearTradeHistory} disabled={tradeHistory.length === 0}>Clear</button>
                         </div>
                         <div className='mt-history-list'>
                             {tradeHistory.length === 0 ? (

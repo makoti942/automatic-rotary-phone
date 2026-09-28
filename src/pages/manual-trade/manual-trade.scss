@@ -694,6 +694,13 @@ $radius:   10px;
 .mt-history-head h2 { margin: 0 0 4px; color: $text; font-size: 18px; }
 .mt-history-head span { color: $muted; font-size: 11px; }
 .mt-history-close { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-top: 2px; border: 1px solid $border; border-radius: 8px; background: rgba($text, 0.04); color: $muted; font-size: 24px; line-height: 1; cursor: pointer; &:hover { color: $text; background: rgba($text, 0.1); } }
+.mt-history-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 13px; border: 1px solid $border; border-radius: 10px; background: rgba($accent, 0.07); }
+.mt-history-summary div { display: flex; flex-direction: column; gap: 4px; }
+.mt-history-summary small { color: $muted; font-size: 9px; letter-spacing: 0.6px; }
+.mt-history-summary strong { font-size: 20px; }
+.mt-history-summary .is-profit { color: $win; }
+.mt-history-summary .is-loss { color: $loss; }
+.mt-history-clear { padding: 7px 10px; border: 1px solid $border; border-radius: 7px; background: transparent; color: $muted; font-size: 11px; font-weight: 700; cursor: pointer; &:hover:not(:disabled) { color: $text; background: rgba($text, 0.08); } &:disabled { opacity: 0.4; cursor: not-allowed; } }
 .mt-history-list { display: flex; flex-direction: column; gap: 10px; padding-top: 16px; }
 .mt-history-card { padding: 13px; border: 1px solid $border; border-radius: 10px; background: $bg2; }
 .mt-history-card--won { border-color: rgba($win, 0.42); }

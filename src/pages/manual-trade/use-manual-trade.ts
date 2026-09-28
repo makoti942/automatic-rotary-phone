@@ -78,6 +78,21 @@ export interface SessionTrade {
     exitDigit?: number;
 }
 
+const SESSION_TRADES_KEY = 'manual-trade-session-history';
+
+function readSessionTrades(): SessionTrade[] {
+    if (typeof window === 'undefined') return [];
+    try {
+        const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming | undefined;
+        if (navigation?.type === 'reload') {
+            sessionStorage.removeItem(SESSION_TRADES_KEY);
+            return [];
+        }
+        const saved = sessionStorage.getItem(SESSION_TRADES_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+}
+
 function lastDigitOfPrice(v: number | string): number {
     const digits = String(v).match(/\d/g);
     return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
@@ -168,7 +183,7 @@ export function useManualTrade() {
     const [notifications, setNotifications] = useState<TradeNotification[]>([]);
     const [exitDigit, setExitDigit] = useState<number | null>(null);
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
-    const [tradeHistory, setTradeHistory] = useState<SessionTrade[]>([]);
+    const [tradeHistory, setTradeHistory] = useState<SessionTrade[]>(readSessionTrades);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -197,6 +212,10 @@ export function useManualTrade() {
     const pocSubIdRef = useRef<string | null>(null);
     const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const trackedContractsRef = useRef<Set<string>>(new Set());
+
+    useEffect(() => {
+        try { sessionStorage.setItem(SESSION_TRADES_KEY, JSON.stringify(tradeHistory)); } catch {}
+    }, [tradeHistory]);
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
@@ -618,6 +637,11 @@ export function useManualTrade() {
         setBuyError(null);
     }, []);
 
+    const clearTradeHistory = useCallback(() => {
+        setTradeHistory([]);
+        try { sessionStorage.removeItem(SESSION_TRADES_KEY); } catch {}
+    }, []);
+
     return {
         symbols, activeSymbol, setActiveSymbol,
         currentTick, lastDigit, digitCounts, digitGrowth, digitTotal, pipSize,
@@ -627,6 +651,6 @@ export function useManualTrade() {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
-        notifications, exitDigit, activeTrade, tradeHistory,
+        notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
     };
 }
