@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES } from './makoti-ws';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
-import { analyzeDigits, predictContract, getDigit, calcFreq, scanAllSymbols, type SignalResult, type DigitAnalysis, type SymbolState } from './trade-signal-engine';
+import { analyzeDigits, predictContract, getDigit, calcFreq, type SignalResult, type SymbolState } from './trade-signal-engine';
 import './trade-signal.scss';
 
 interface TradeLog { time: string; msg: string; type: 'signal' | 'trade' | 'win' | 'loss' | 'info'; }
@@ -16,22 +16,18 @@ export const TradeSignal: React.FC = () => {
     const [bestSymbol, setBestSymbol] = useState<string>('');
     const [symbolStates, setSymbolStates] = useState<Map<string, SymbolState>>(new Map());
     const [isRunning, setIsRunning] = useState(false);
-    const [isTrading, setIsTrading] = useState(false);
     const [lastTrade, setLastTrade] = useState<string | null>(null);
-    const [autoTrade, setAutoTrade] = useState(() => localStorage.getItem('mw_ts_auto') === 'true');
     const [logs, setLogs] = useState<TradeLog[]>([]);
     const [totalTicks, setTotalTicks] = useState(0);
+    const [openCount, setOpenCount] = useState(0);
 
     const allTicksRef = useRef<Map<string, number[]>>(new Map());
     const mountedRef = useRef(true);
-    const autoTradeRef = useRef(autoTrade);
-    autoTradeRef.current = autoTrade;
     const lastSignalRef = useRef<string>('');
     const contractMapRef = useRef<Map<string, any>>(new Map());
-    const isTradingRef = useRef(false);
-    isTradingRef.current = isTrading;
     const isRunningRef = useRef(false);
     isRunningRef.current = isRunning;
+    const openCountRef = useRef(0);
 
     const addLog = useCallback((msg: string, type: TradeLog['type'] = 'info') => {
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -49,13 +45,15 @@ export const TradeSignal: React.FC = () => {
         setBestSymbol('');
         setSymbolStates(new Map());
         setTotalTicks(0);
+        setOpenCount(0);
+        openCountRef.current = 0;
+        lastSignalRef.current = '';
 
-        // Subscribe to all symbols
         if (window._newSystemWS?.readyState === WebSocket.OPEN) {
             ALL_SYMBOLS.forEach(sym => {
                 window._newSystemWS!.send(JSON.stringify({ ticks_history: sym, style: 'ticks', count: 500, end: 'latest', subscribe: 1 }));
             });
-            addLog(`Scanning ${ALL_SYMBOLS.length} markets...`, 'info');
+            addLog(`Scanning ${ALL_SYMBOLS.length} markets — auto-trade ON`, 'info');
         } else {
             addLog('WebSocket not connected', 'info');
         }
@@ -76,24 +74,23 @@ export const TradeSignal: React.FC = () => {
                 allTicksRef.current.set(sym, updated);
                 setTotalTicks(prev => prev + 1);
 
-                // Run analysis on THIS tick immediately
+                // Instant analysis on this tick
                 if (updated.length >= 30) {
                     const ana = analyzeDigits(updated);
                     const sig = predictContract(ana, updated, sym);
 
                     if (sig.action === 'BUY' && sig.confidence >= 50) {
-                        // Found a signal — set it and optionally trade
                         setSignal(sig);
                         setBestSymbol(sym);
+
+                        // One trade at a time — skip if already in a trade
+                        if (openCountRef.current > 0) return;
 
                         const key = `${sym}_${sig.contractType}_${sig.barrier}`;
                         if (key !== lastSignalRef.current) {
                             lastSignalRef.current = key;
                             addLog(`SIGNAL: ${SYMBOL_LABELS[sym]} ${sig.contractType} ${sig.barrier} pred=${sig.predictedDigit} [${sig.confidence.toFixed(0)}%]`, 'signal');
-
-                            if (autoTradeRef.current && !isTradingRef.current) {
-                                executeTradeNow(sig);
-                            }
+                            executeTradeNow(sig);
                         }
                     }
                 }
@@ -103,7 +100,7 @@ export const TradeSignal: React.FC = () => {
         return () => { mountedRef.current = false; unsub(); };
     }, [isRunning]);
 
-    // Update symbol states for display (every 1s to avoid render spam)
+    // Update symbol states for display
     useEffect(() => {
         if (!isRunning) return;
         const id = setInterval(() => {
@@ -125,12 +122,13 @@ export const TradeSignal: React.FC = () => {
         return () => clearInterval(id);
     }, [isRunning]);
 
-    // Execute trade IMMEDIATELY
+    // Execute trade IMMEDIATELY — one at a time
     const executeTradeNow = useCallback(async (sig: SignalResult) => {
-        if (isTradingRef.current) return;
+        if (openCountRef.current > 0) return;
         if (window._newSystemWS?.readyState !== WebSocket.OPEN) { addLog('WS not connected', 'info'); return; }
 
-        setIsTrading(true);
+        openCountRef.current = 1;
+        setOpenCount(1);
         const tradeStake = parseFloat(stake) || 1;
         const tradeDuration = parseInt(duration) || 1;
 
@@ -147,7 +145,7 @@ export const TradeSignal: React.FC = () => {
             if (contractId) {
                 contractMapRef.current.set(String(contractId), { ...sig, stake: tradeStake, openedAt: Date.now() });
                 setLastTrade(`${sig.contractType} ${sig.barrier} pred=${sig.predictedDigit} #${contractId}`);
-                addLog(`#${contractId} opened`, 'trade');
+                addLog(`#${contractId} opened — waiting for close`, 'trade');
                 try {
                     transactions.onBotContractEvent({
                         contract_id: contractId, transaction_ids: { buy: response?.buy?.transaction_id },
@@ -156,29 +154,18 @@ export const TradeSignal: React.FC = () => {
                         date_start: Math.floor(Date.now() / 1000), status: 'open',
                     } as any);
                 } catch {}
+            } else {
+                openCountRef.current = 0;
+                setOpenCount(0);
             }
         } catch (e: any) {
             addLog(`FAILED: ${e?.error?.message ?? e?.message ?? 'error'}`, 'loss');
-        } finally {
-            setIsTrading(false);
+            openCountRef.current = 0;
+            setOpenCount(0);
         }
     }, [stake, duration, addLog]);
 
-    // Manual execute
-    const handleManualExecute = useCallback(() => {
-        if (signal && signal.action === 'BUY') executeTradeNow(signal);
-    }, [signal, executeTradeNow]);
-
-    // Stop
-    const handleStop = useCallback(() => {
-        setIsRunning(false);
-        setSignal(null);
-        setBestSymbol('');
-        setSymbolStates(new Map());
-        addLog('Stopped', 'info');
-    }, [addLog]);
-
-    // Listen for contract settlement
+    // Listen for contract settlement — free up for next trade
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -195,6 +182,10 @@ export const TradeSignal: React.FC = () => {
                         const profit = Number(poc.profit ?? 0);
                         if (profit > 0) addLog(`WIN +$${profit.toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier})`, 'win');
                         else addLog(`LOSS -$${Math.abs(profit).toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier})`, 'loss');
+                        // Free up for next trade
+                        openCountRef.current = 0;
+                        setOpenCount(0);
+                        lastSignalRef.current = '';
                     });
                 }
             } catch {}
@@ -202,10 +193,20 @@ export const TradeSignal: React.FC = () => {
         return unsub;
     }, [addLog]);
 
+    // Stop
+    const handleStop = useCallback(() => {
+        setIsRunning(false);
+        setSignal(null);
+        setBestSymbol('');
+        setSymbolStates(new Map());
+        setOpenCount(0);
+        openCountRef.current = 0;
+        addLog('Stopped', 'info');
+    }, [addLog]);
+
     // Persist
     useEffect(() => { localStorage.setItem('mw_ts_stake', stake); }, [stake]);
     useEffect(() => { localStorage.setItem('mw_ts_duration', duration); }, [duration]);
-    useEffect(() => { localStorage.setItem('mw_ts_auto', String(autoTrade)); }, [autoTrade]);
 
     const confidence = signal?.confidence ?? 0;
     const isBuy = signal?.action === 'BUY';
@@ -215,7 +216,7 @@ export const TradeSignal: React.FC = () => {
 
     return (
         <div className='ts-page'>
-            {/* Header / Controls */}
+            {/* Controls */}
             <div className='ts-controls'>
                 <div className='ts-row'>
                     <div className='ts-field'>
@@ -234,12 +235,6 @@ export const TradeSignal: React.FC = () => {
                         )}
                     </div>
                 </div>
-                <div className='ts-row'>
-                    <label className='ts-auto-toggle'>
-                        <input type='checkbox' checked={autoTrade} onChange={e => setAutoTrade(e.target.checked)} />
-                        <span>Auto-Trade (50%+ confidence)</span>
-                    </label>
-                </div>
             </div>
 
             {/* Signal Card */}
@@ -247,9 +242,9 @@ export const TradeSignal: React.FC = () => {
                 <div className='ts-signal-card' style={{ borderColor: signalColor }}>
                     <div className='ts-signal-header'>
                         <span className='ts-signal-status' style={{ color: signalColor }}>
-                            {isBuy ? 'TARGET ACQUIRED' : 'SCANNING'}
+                            {openCount > 0 ? 'IN TRADE' : isBuy ? 'TARGET ACQUIRED' : 'SCANNING'}
                         </span>
-                        <span className='ts-signal-tick'>ticks: {totalTicks}</span>
+                        <span className='ts-signal-tick'>#{totalTicks}</span>
                     </div>
 
                     {isBuy && signal && (
@@ -269,15 +264,12 @@ export const TradeSignal: React.FC = () => {
                                 <span>{confidence.toFixed(0)}%</span>
                             </div>
                             <div className='ts-signal-reason'>{signal.reason}</div>
-                            <button className='ts-execute' disabled={isTrading} onClick={handleManualExecute}>
-                                {isTrading ? 'EXECUTING...' : `EXECUTE NOW`}
-                            </button>
                         </div>
                     )}
 
                     {!isBuy && (
                         <div className='ts-signal-body'>
-                            <div className='ts-signal-wait'>Scanning {ALL_SYMBOLS.length} markets for next tick...</div>
+                            <div className='ts-signal-wait'>Scanning {ALL_SYMBOLS.length} markets...</div>
                         </div>
                     )}
                 </div>
@@ -286,7 +278,7 @@ export const TradeSignal: React.FC = () => {
             {!isRunning && (
                 <div className='ts-idle'>
                     <div className='ts-idle-icon'>⚡</div>
-                    <div className='ts-idle-text'>Press START to scan all volatility markets simultaneously</div>
+                    <div className='ts-idle-text'>Press START — trades execute automatically on signal</div>
                 </div>
             )}
 
@@ -354,7 +346,7 @@ export const TradeSignal: React.FC = () => {
                 </div>
             )}
 
-            {/* Analysis Details */}
+            {/* Analysis */}
             {signal && signal.details.length > 0 && isBuy && (
                 <div className='ts-details'>
                     <div className='ts-details-title'>Analysis — {SYMBOL_LABELS[signal.symbol]}</div>

@@ -183,24 +183,33 @@ export function predictContract(analysis: DigitAnalysis, ticks: number[], symbol
     const sorted = digitScores.map((s, i) => ({ d: i, s })).sort((a, b) => b.s - a.s);
     details.push(`Top: ${sorted.slice(0, 3).map(x => `${x.d}(${x.s.toFixed(1)})`).join(' ')}`);
 
+    // Low-risk barriers only: OVER 1,2,3,4 / UNDER 5,6,7,9
+    // OVER X wins if next digit > X. UNDER X wins if next digit < X.
     let contractType: string;
     let barrier: number;
     let direction: string;
 
-    if (predictedDigit >= 7) {
+    if (predictedDigit >= 6) {
+        // High digit predicted — OVER is safe
         contractType = 'DIGITOVER'; direction = 'OVER';
-        barrier = predictedDigit === 9 ? 6 : predictedDigit - 1;
-    } else if (predictedDigit >= 6) {
-        contractType = 'DIGITOVER'; direction = 'OVER';
-        barrier = 4;
-    } else if (predictedDigit <= 2) {
-        contractType = 'DIGITUNDER'; direction = 'UNDER';
-        barrier = predictedDigit === 0 ? 3 : predictedDigit + 1;
+        if (predictedDigit >= 8) barrier = 4;       // predict 8,9 => OVER 4 (wins 5-9)
+        else if (predictedDigit >= 7) barrier = 3;   // predict 7 => OVER 3 (wins 4-9)
+        else barrier = 2;                            // predict 6 => OVER 2 (wins 3-9)
     } else if (predictedDigit <= 3) {
+        // Low digit predicted — UNDER is safe
         contractType = 'DIGITUNDER'; direction = 'UNDER';
-        barrier = 5;
+        if (predictedDigit <= 1) barrier = 9;        // predict 0,1 => UNDER 9 (wins 0-8)
+        else if (predictedDigit <= 2) barrier = 7;   // predict 2 => UNDER 7 (wins 0-6)
+        else barrier = 6;                            // predict 3 => UNDER 6 (wins 0-5)
     } else {
-        return { action: 'WAIT', contractType: 'NONE', barrier: 5, symbol, confidence, predictedDigit, reason: 'Middle digit', details };
+        // Middle digit 4,5 — pick side based on which is safer
+        if (digitScores[6] + digitScores[7] + digitScores[8] + digitScores[9] > digitScores[0] + digitScores[1] + digitScores[2] + digitScores[3]) {
+            contractType = 'DIGITOVER'; direction = 'OVER';
+            barrier = 1; // safest OVER — wins on 2-9
+        } else {
+            contractType = 'DIGITUNDER'; direction = 'UNDER';
+            barrier = 5; // safest UNDER — wins on 0-4
+        }
     }
 
     if (confidence < 50) {
