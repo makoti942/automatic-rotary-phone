@@ -222,6 +222,7 @@ export function useManualTrade() {
     const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const trackedContractsRef = useRef<Set<string>>(new Set());
     const buyHandledByWsRef = useRef(false);
+    const pendingBuyModeRef = useRef<ContractMode | null>(null);
 
     useEffect(() => {
         try { sessionStorage.setItem(SESSION_TRADES_KEY, JSON.stringify(tradeHistory)); } catch {}
@@ -309,15 +310,41 @@ export function useManualTrade() {
                 if (data.msg_type === 'buy') {
                     setIsBuying(false);
                     if (data.buy) {
+                        const contractId = Number(data.buy.contract_id);
+                        const wasAlreadyTracked = trackedContractsRef.current.has(String(contractId));
                         buyHandledByWsRef.current = true;
                         setBuyResult({
-                            contract_id: data.buy.contract_id,
+                            contract_id: contractId,
                             buyPrice: Number(data.buy.buy_price),
                             payout: Number(data.buy.payout),
                             balanceAfter: Number(data.buy.balance_after),
                         });
                         setBuyError(null);
                         setNotifications(p => p.filter(n => n.type !== 'error'));
+                        if (!wasAlreadyTracked) {
+                            trackedContractsRef.current.add(String(contractId));
+                            const buyMode = pendingBuyModeRef.current || 'DIGITMATCH';
+                            setTradeHistory(previous => [...previous, {
+                                contractId,
+                                symbol: symbolRef.current,
+                                contractType: buyMode,
+                                stake: Number(data.buy.buy_price),
+                                profit: null,
+                                status: 'open',
+                                executedAt: Date.now(),
+                            }]);
+                            const notif: TradeNotification = {
+                                type: 'opened',
+                                contractId,
+                                contractType: buyMode,
+                                stake: Number(data.buy.buy_price),
+                                payout: Number(data.buy.payout),
+                                key: Date.now(),
+                            };
+                            setNotifications(p => [...p, notif]);
+                            setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
+                            sendViaNewSystem({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+                        }
                     } else if (data.error) {
                         setBuyError(data.error.message ?? 'Buy failed');
                     }
@@ -605,47 +632,61 @@ export function useManualTrade() {
 
             const buyReqId = ++reqIdRef.current;
             buyHandledByWsRef.current = false;
+            pendingBuyModeRef.current = mode;
             const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params, req_id: buyReqId });
             if (buyRes?.buy) {
                 const contractId = Number(buyRes.buy.contract_id);
-                trackedContractsRef.current.add(String(contractId));
-                setBuyResult({
-                    contract_id: contractId,
-                    buyPrice: Number(buyRes.buy.buy_price),
-                    payout: Number(buyRes.buy.payout),
-                    balanceAfter: Number(buyRes.buy.balance_after),
-                });
-                setBuyError(null);
-                setActiveTrade({
-                    contractId,
-                    contractType: mode,
-                    selectedDigit,
-                    stake: Number(buyRes.buy.buy_price),
-                    openedAt: Date.now(),
-                });
-                setTradeHistory(previous => [...previous, {
-                    contractId,
-                    symbol: activeSymbol,
-                    contractType: mode,
-                    stake: Number(buyRes.buy.buy_price),
-                    profit: null,
-                    status: 'open',
-                    executedAt: Date.now(),
-                }]);
-                // Show opened notification
-                const notif: TradeNotification = {
-                    type: 'opened',
-                    contractId,
-                    contractType: mode,
-                    stake: Number(buyRes.buy.buy_price),
-                    payout: Number(buyRes.buy.payout),
-                    key: Date.now(),
-                };
-                setNotifications(p => [...p, notif]);
-                setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
-                // Subscribe directly to this contract. This avoids relying on
-                // another component's account-wide stream for settlement UI.
-                sendViaNewSystem({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+                if (!buyHandledByWsRef.current) {
+                    trackedContractsRef.current.add(String(contractId));
+                    setBuyResult({
+                        contract_id: contractId,
+                        buyPrice: Number(buyRes.buy.buy_price),
+                        payout: Number(buyRes.buy.payout),
+                        balanceAfter: Number(buyRes.buy.balance_after),
+                    });
+                    setBuyError(null);
+                    setActiveTrade({
+                        contractId,
+                        contractType: mode,
+                        selectedDigit,
+                        stake: Number(buyRes.buy.buy_price),
+                        openedAt: Date.now(),
+                    });
+                    setTradeHistory(previous => [...previous, {
+                        contractId,
+                        symbol: activeSymbol,
+                        contractType: mode,
+                        stake: Number(buyRes.buy.buy_price),
+                        profit: null,
+                        status: 'open',
+                        executedAt: Date.now(),
+                    }]);
+                    const notif: TradeNotification = {
+                        type: 'opened',
+                        contractId,
+                        contractType: mode,
+                        stake: Number(buyRes.buy.buy_price),
+                        payout: Number(buyRes.buy.payout),
+                        key: Date.now(),
+                    };
+                    setNotifications(p => [...p, notif]);
+                    setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
+                    sendViaNewSystem({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
+                } else {
+                    setBuyResult({
+                        contract_id: contractId,
+                        buyPrice: Number(buyRes.buy.buy_price),
+                        payout: Number(buyRes.buy.payout),
+                        balanceAfter: Number(buyRes.buy.balance_after),
+                    });
+                    setActiveTrade({
+                        contractId,
+                        contractType: mode,
+                        selectedDigit,
+                        stake: Number(buyRes.buy.buy_price),
+                        openedAt: Date.now(),
+                    });
+                }
             } else {
                 throw new Error(buyRes?.error?.message ?? 'Buy failed.');
             }
