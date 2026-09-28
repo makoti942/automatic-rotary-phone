@@ -197,7 +197,26 @@ const ManualTrade = observer(() => {
                         )}
                     </div>
 
-                    {/* Target digit hint for types that need one */}
+                    {needsTarget && (
+                        <div className='mt-field mt-barrier-field'>
+                            <label className='mt-label'>Prediction / Barrier Digit</label>
+                            <input
+                                className='mt-input'
+                                type='number'
+                                inputMode='numeric'
+                                min={0}
+                                max={9}
+                                step={1}
+                                value={selectedDigit}
+                                onChange={e => {
+                                    const next = Number(e.target.value);
+                                    if (Number.isFinite(next)) setSelectedDigit(Math.max(0, Math.min(9, Math.trunc(next))));
+                                }}
+                                aria-label='Prediction or barrier digit'
+                            />
+                        </div>
+                    )}
+
                     {/* Stake + Duration */}
                     <div className='mt-input-row'>
                         <div className='mt-field'>

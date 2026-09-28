@@ -46,12 +46,13 @@ export async function sendViaNewSystemWithPromise(msg) {
             return;
         }
         const msgType = Object.keys(msg).find(k => k !== 'passthrough' && k !== 'req_id');
+        const hasExplicitReqId = msg.req_id != null;
         const reqId = msg.req_id || Date.now();
         const toSend = { ...convertToNewFormat(msg), req_id: reqId };
         const handler = (event) => {
             try {
                 const data = JSON.parse(event.detail.data);
-                if (data.req_id === reqId || data.msg_type === msgType) {
+                if (data.req_id === reqId || (!hasExplicitReqId && data.msg_type === msgType)) {
                     window.removeEventListener('newSystemMessage', handler);
                     if (data.error) reject(data);
                     else resolve(data);

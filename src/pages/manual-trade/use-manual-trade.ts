@@ -500,32 +500,6 @@ export function useManualTrade() {
         setDigitTotal(stats.total);
     }, [pipSize]);
 
-    // Request proposal when trade params change
-    useEffect(() => {
-        if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current);
-        setProposal(null);
-        const amount = parseFloat(stake);
-        if (!amount || amount <= 0 || !duration) { setIsProposalLoading(false); return; }
-        setIsProposalLoading(true);
-        proposalTimerRef.current = setTimeout(() => {
-            const needsBarrier = contractMode !== 'DIGITEVEN' && contractMode !== 'DIGITODD';
-            const params: any = {
-                proposal: 1,
-                amount,
-                basis: 'stake',
-                contract_type: contractMode,
-                currency: 'USD',
-                duration,
-                duration_unit: 't',
-                symbol: activeSymbol,
-            };
-            if (needsBarrier) params.barrier = selectedDigit;
-            sendViaNewSystem(params);
-            setTimeout(() => { if (mountedRef.current) setIsProposalLoading(false); }, 5000);
-        }, 300);
-        return () => { if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current); };
-    }, [contractMode, selectedDigit, stake, duration, activeSymbol]);
-
     const setTradeType = useCallback((type: TradeType) => {
         setTradeTypeState(type);
         switch (type) {
@@ -560,7 +534,8 @@ export function useManualTrade() {
             };
             if (mode !== 'DIGITEVEN' && mode !== 'DIGITODD') params.barrier = selectedDigit;
 
-            const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params });
+            const buyReqId = ++reqIdRef.current;
+            const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params, req_id: buyReqId });
             if (buyRes?.buy) {
                 const contractId = Number(buyRes.buy.contract_id);
                 trackedContractsRef.current.add(String(contractId));
