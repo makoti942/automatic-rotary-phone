@@ -35,6 +35,7 @@ const ManualTrade = observer(() => {
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
+        entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
@@ -222,6 +223,39 @@ const ManualTrade = observer(() => {
                             />
                         </div>
                     )}
+
+                    {/* Entry Digit Toggle */}
+                    <div className='mt-entry-row'>
+                        <div className='mt-entry-switch-wrap'>
+                            <span className='mt-label'>Entry Digit</span>
+                            <button
+                                type='button'
+                                className={`mt-entry-toggle ${entryDigitEnabled ? 'is-on' : ''}`}
+                                onClick={() => setEntryDigitEnabled(e => !e)}
+                                aria-label='Toggle entry digit'
+                            >
+                                <span className='mt-entry-toggle-knob' />
+                            </button>
+                        </div>
+                        {entryDigitEnabled && (
+                            <div className='mt-field mt-entry-digit-field'>
+                                <input
+                                    className='mt-input'
+                                    type='number'
+                                    inputMode='numeric'
+                                    min={0}
+                                    max={9}
+                                    step={1}
+                                    value={entryDigitValue}
+                                    onChange={e => {
+                                        const next = Number(e.target.value);
+                                        if (Number.isFinite(next)) setEntryDigitValue(Math.max(0, Math.min(9, Math.trunc(next))));
+                                    }}
+                                    aria-label='Entry digit'
+                                />
+                            </div>
+                        )}
+                    </div>
 
                     {/* Stake + Duration */}
                     <div className='mt-input-row'>

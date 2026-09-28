@@ -185,17 +185,25 @@ export function useManualTrade() {
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
     const [tradeHistory, setTradeHistory] = useState<SessionTrade[]>(readSessionTrades);
 
+    const [entryDigitEnabled, setEntryDigitEnabled] = useState(_cfg.entryDigitEnabled ?? false);
+    const [entryDigitValue, setEntryDigitValue] = useState(_cfg.entryDigitValue ?? 5);
+
+    const entryDigitRef = useRef(entryDigitValue);
+    entryDigitRef.current = entryDigitValue;
+    const entryEnabledRef = useRef(entryDigitEnabled);
+    entryEnabledRef.current = entryDigitEnabled;
+
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const mountedRef = useRef(true);
 
     // Persist config to localStorage
     useEffect(() => {
-        saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration });
-    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration]);
+        saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue });
+    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue]);
     useEffect(() => {
-        return () => { saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration }); };
-    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration]);
+        return () => { saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue }); };
+    }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue]);
     const pipRef = useRef(pipSize);
     const pricesRef = useRef<number[]>([]);
     const symbolRef = useRef(activeSymbol);
@@ -563,6 +571,21 @@ export function useManualTrade() {
         isBuyingRef.current = true;
         setIsBuying(true);
         setBuyError(null);
+
+        if (entryEnabledRef.current) {
+            const targetDigit = entryDigitRef.current;
+            const timeout = Date.now() + 30000;
+            while (lastDigitOfPrice(pricesRef.current[pricesRef.current.length - 1] ?? 0) !== targetDigit) {
+                if (Date.now() > timeout) {
+                    isBuyingRef.current = false;
+                    if (mountedRef.current) setIsBuying(false);
+                    setBuyError('Entry digit timeout — digit ' + targetDigit + ' did not appear within 30s.');
+                    return;
+                }
+                await new Promise(r => setTimeout(r, 200));
+            }
+        }
+
         try {
             const params: any = {
                 amount,
@@ -652,5 +675,6 @@ export function useManualTrade() {
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
+        entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,
     };
 }
