@@ -1,0 +1,279 @@
+// ─── TRADE SIGNAL ─────────────────────────────────────────────────────────────
+
+$ts-bg:      #0f1117;
+$ts-bg2:     #181c27;
+$ts-bg3:     #1e2336;
+$ts-border:  rgba(249,115,22,0.2);
+$ts-text:    #e2e8f0;
+$ts-muted:   #64748b;
+$ts-accent:  #f97316;
+$ts-win:     #22c55e;
+$ts-loss:    #ef4444;
+$ts-warn:    #f59e0b;
+
+.ts-page {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    font-size: 11px;
+    color: $ts-text;
+    overflow-y: auto;
+    max-height: 100%;
+}
+
+// ─── SIGNAL CARD ──────────────────────────────────────────────────────────────
+
+.ts-signal-card {
+    background: $ts-bg2;
+    border: 2px solid $ts-border;
+    border-radius: 8px;
+    padding: 10px;
+    transition: border-color 0.3s;
+}
+
+.ts-signal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.ts-signal-status {
+    font-size: 13px;
+    font-weight: 800;
+    letter-spacing: 1px;
+}
+
+.ts-signal-tick {
+    font-size: 9px;
+    color: $ts-muted;
+    font-family: monospace;
+}
+
+.ts-signal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.ts-signal-action {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.ts-signal-contract {
+    font-size: 14px;
+    font-weight: 800;
+    color: $ts-accent;
+    font-family: monospace;
+}
+
+.ts-signal-symbol {
+    font-size: 10px;
+    color: $ts-muted;
+}
+
+.ts-signal-confidence {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.ts-confidence-bar {
+    flex: 1;
+    height: 6px;
+    background: $ts-bg3;
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.ts-confidence-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s, background 0.3s;
+}
+
+.ts-signal-reason {
+    font-size: 10px;
+    color: $ts-muted;
+    line-height: 1.3;
+}
+
+.ts-signal-wait {
+    color: $ts-muted;
+    font-size: 11px;
+    text-align: center;
+    padding: 4px 0;
+}
+
+// ─── CONTROLS ────────────────────────────────────────────────────────────────
+
+.ts-controls {
+    background: $ts-bg2;
+    border: 1px solid $ts-border;
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ts-row {
+    display: flex;
+    gap: 6px;
+}
+
+.ts-field {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+
+    label {
+        font-size: 9px;
+        color: $ts-muted;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+    }
+
+    select, input {
+        background: $ts-bg3;
+        border: 1px solid $ts-border;
+        border-radius: 5px;
+        color: $ts-text;
+        padding: 5px 6px;
+        font-size: 11px;
+        outline: none;
+        width: 100%;
+        box-sizing: border-box;
+
+        &:focus {
+            border-color: $ts-accent;
+            box-shadow: 0 0 0 2px rgba(249,115,22,0.15);
+        }
+    }
+
+    input[type='number'] {
+        -moz-appearance: textfield;
+        &::-webkit-outer-spin-button,
+        &::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+    }
+}
+
+.ts-execute {
+    flex: 1;
+    background: linear-gradient(135deg, $ts-accent, $ts-loss);
+    border: none;
+    border-radius: 6px;
+    color: #fff;
+    font-weight: 800;
+    font-size: 12px;
+    padding: 8px;
+    cursor: pointer;
+    letter-spacing: 1px;
+    transition: opacity 0.2s, transform 0.1s;
+
+    &:hover:not(:disabled) { opacity: 0.9; transform: scale(1.01); }
+    &:active:not(:disabled) { transform: scale(0.98); }
+    &:disabled { opacity: 0.35; cursor: not-allowed; }
+}
+
+.ts-auto-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10px;
+    color: $ts-muted;
+    cursor: pointer;
+    padding: 4px 0;
+
+    input[type='checkbox'] {
+        width: 14px;
+        height: 14px;
+        accent-color: $ts-accent;
+        cursor: pointer;
+    }
+}
+
+// ─── LAST TRADE ──────────────────────────────────────────────────────────────
+
+.ts-last-trade {
+    background: $ts-bg2;
+    border: 1px solid $ts-border;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 10px;
+    color: $ts-text;
+    display: flex;
+    gap: 4px;
+}
+
+.ts-last-trade-label {
+    color: $ts-muted;
+    font-weight: 700;
+}
+
+// ─── ANALYSIS DETAILS ────────────────────────────────────────────────────────
+
+.ts-details {
+    background: $ts-bg2;
+    border: 1px solid $ts-border;
+    border-radius: 8px;
+    padding: 8px 10px;
+}
+
+.ts-details-title {
+    font-size: 9px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: $ts-muted;
+    margin-bottom: 4px;
+    font-weight: 700;
+}
+
+.ts-detail-item {
+    font-size: 10px;
+    color: $ts-text;
+    padding: 2px 0;
+    line-height: 1.3;
+}
+
+// ─── LOGS ─────────────────────────────────────────────────────────────────────
+
+.ts-logs {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 140px;
+    overflow-y: auto;
+    background: $ts-bg2;
+    border: 1px solid $ts-border;
+    border-radius: 6px;
+    padding: 6px;
+}
+
+.ts-log {
+    display: flex;
+    gap: 6px;
+    font-size: 9px;
+    line-height: 1.3;
+}
+
+.ts-log-time {
+    color: $ts-muted;
+    white-space: nowrap;
+    font-family: monospace;
+}
+
+.ts-log-msg {
+    color: $ts-text;
+    word-break: break-word;
+}
+
+.ts-log--signal .ts-log-msg { color: $ts-accent; font-weight: 600; }
+.ts-log--trade .ts-log-msg { color: #60a5fa; font-weight: 600; }
+.ts-log--win   .ts-log-msg { color: $ts-win; font-weight: 700; }
+.ts-log--loss  .ts-log-msg { color: $ts-loss; font-weight: 700; }
+.ts-log--info  .ts-log-msg { color: $ts-muted; }

@@ -10,12 +10,13 @@ import { AiAnalystStrategy } from './ai-analyst-strategy';
 import { MultiKiller } from './MultiKiller';
 import { DigitHunter } from './digit-hunter';
 import { EvenOddKiller } from './even-odd-killer';
+import { TradeSignal } from './trade-signal';
 import { ALL_SYMBOLS } from './makoti-ws';
 import './makoti-widget.scss';
 
-type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer' | 'digit_hunter' | 'even_odd';
+type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer' | 'digit_hunter' | 'even_odd' | 'trade_signal';
 const PAD = 8;
-const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer', 'digit_hunter', 'even_odd'];
+const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer', 'digit_hunter', 'even_odd', 'trade_signal'];
 
 const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'scanner', label: 'Scanner' },
@@ -28,6 +29,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'multi_killer', label: 'Multi-Killer' },
     { value: 'digit_hunter', label: 'Digit Hunter' },
     { value: 'even_odd', label: 'EVEN & ODD' },
+    { value: 'trade_signal', label: 'Trade Signal' },
 ];
 
 function isLoggedIn(): boolean {
@@ -428,6 +430,7 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'multi_killer' && <MultiKiller />}
                     {tab === 'digit_hunter' && <DigitHunter />}
                     {tab === 'even_odd' && <EvenOddKiller />}
+                    {tab === 'trade_signal' && <TradeSignal />}
                 </div>
 
                 <div className='mw-resize-handle' onPointerDown={onResizePointerDown}>
