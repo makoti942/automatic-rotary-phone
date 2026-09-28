@@ -221,6 +221,7 @@ export function useManualTrade() {
     const pocSubIdRef = useRef<string | null>(null);
     const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const trackedContractsRef = useRef<Set<string>>(new Set());
+    const buyHandledByWsRef = useRef(false);
 
     useEffect(() => {
         try { sessionStorage.setItem(SESSION_TRADES_KEY, JSON.stringify(tradeHistory)); } catch {}
@@ -308,6 +309,7 @@ export function useManualTrade() {
                 if (data.msg_type === 'buy') {
                     setIsBuying(false);
                     if (data.buy) {
+                        buyHandledByWsRef.current = true;
                         setBuyResult({
                             contract_id: data.buy.contract_id,
                             buyPrice: Number(data.buy.buy_price),
@@ -601,6 +603,7 @@ export function useManualTrade() {
             if (mode !== 'DIGITEVEN' && mode !== 'DIGITODD') params.barrier = selectedDigit;
 
             const buyReqId = ++reqIdRef.current;
+            buyHandledByWsRef.current = false;
             const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params, req_id: buyReqId });
             if (buyRes?.buy) {
                 const contractId = Number(buyRes.buy.contract_id);
@@ -646,6 +649,11 @@ export function useManualTrade() {
                 throw new Error(buyRes?.error?.message ?? 'Buy failed.');
             }
         } catch (e: any) {
+            if (buyHandledByWsRef.current) {
+                isBuyingRef.current = false;
+                if (mountedRef.current) setIsBuying(false);
+                return;
+            }
             const msg = e?.error?.message ?? e?.message ?? 'Trade failed.';
             setBuyError(msg);
             const errNotif: TradeNotification = { type: 'error', message: msg, key: Date.now() };
