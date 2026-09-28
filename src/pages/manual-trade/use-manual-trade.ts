@@ -58,6 +58,14 @@ export interface TradeNotification {
     key: number;
 }
 
+export interface ActiveTrade {
+    contractId: number;
+    contractType: ContractMode;
+    selectedDigit: number;
+    stake: number;
+    openedAt: number;
+}
+
 function lastDigitOfPrice(v: number | string): number {
     const digits = String(v).match(/\d/g);
     return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
@@ -147,6 +155,7 @@ export function useManualTrade() {
     const [tradeFlash, setTradeFlash] = useState<TradeFlash | null>(null);
     const [notifications, setNotifications] = useState<TradeNotification[]>([]);
     const [exitDigit, setExitDigit] = useState<number | null>(null);
+    const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -174,6 +183,7 @@ export function useManualTrade() {
     const pocSubReqIdRef = useRef(0);
     const pocSubIdRef = useRef<string | null>(null);
     const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const trackedContractsRef = useRef<Set<string>>(new Set());
 
     pipRef.current = pipSize;
     symbolRef.current = activeSymbol;
@@ -280,10 +290,13 @@ export function useManualTrade() {
                     let freshFlash: TradeFlash | null = null;
                     let settledContract: any = null;
                     list.forEach((poc: any) => {
-                        if (!poc.is_sold || poc.exit_tick == null) return;
+                        const contractKey = String(poc?.contract_id ?? '');
+                        const isSold = poc?.is_sold === true || Number(poc?.is_sold) === 1 || poc?.status === 'sold';
+                        if (!isSold || poc.exit_tick == null || !trackedContractsRef.current.has(contractKey)) return;
                         const key = String(poc.contract_id);
                         if (seenSoldRef.current.has(key)) return;
                         seenSoldRef.current.add(key);
+                        trackedContractsRef.current.delete(key);
                         freshFlash = {
                             digit: lastDigitOfPrice(poc.exit_tick),
                             win: Number(poc.profit ?? 0) > 0,
@@ -295,6 +308,7 @@ export function useManualTrade() {
                     pocLoadedRef.current = true;
 
                     if (freshFlash && settledContract) {
+                        setActiveTrade(null);
                         setTradeFlash(freshFlash);
                         if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
                         flashTimerRef.current = setTimeout(() => {
@@ -518,8 +532,9 @@ export function useManualTrade() {
         }
     }, []);
 
-    // One-click execution: fetch a fresh proposal for THIS mode and buy it
-    // immediately — no separate mode-selection step.
+    // One-click execution: Deriv accepts buy(parameters) directly. Avoid the
+    // old proposal -> buy round trip because it added a visible delay after
+    // the user pressed the execution button.
     const buyWithMode = useCallback(async (mode: ContractMode) => {
         if (isBuyingRef.current) return;
         const amount = parseFloat(stake);
@@ -532,7 +547,6 @@ export function useManualTrade() {
         setBuyError(null);
         try {
             const params: any = {
-                proposal: 1,
                 amount,
                 basis: 'stake',
                 contract_type: mode,
@@ -543,30 +557,28 @@ export function useManualTrade() {
             };
             if (mode !== 'DIGITEVEN' && mode !== 'DIGITODD') params.barrier = selectedDigit;
 
-            const propRes: any = await sendViaNewSystemWithPromise(params);
-            const prop = propRes?.proposal;
-            if (!prop?.id) {
-                throw new Error(propRes?.error?.message ?? 'Could not get price.');
-            }
-            setProposal({
-                askPrice: Number(prop.ask_price),
-                payout: Number(prop.payout),
-                id: prop.id,
-            });
-
-            const buyRes: any = await sendViaNewSystemWithPromise({ buy: prop.id, price: prop.ask_price });
+            const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params });
             if (buyRes?.buy) {
+                const contractId = Number(buyRes.buy.contract_id);
+                trackedContractsRef.current.add(String(contractId));
                 setBuyResult({
-                    contract_id: buyRes.buy.contract_id,
+                    contract_id: contractId,
                     buyPrice: Number(buyRes.buy.buy_price),
                     payout: Number(buyRes.buy.payout),
                     balanceAfter: Number(buyRes.buy.balance_after),
                 });
                 setBuyError(null);
+                setActiveTrade({
+                    contractId,
+                    contractType: mode,
+                    selectedDigit,
+                    stake: Number(buyRes.buy.buy_price),
+                    openedAt: Date.now(),
+                });
                 // Show opened notification
                 const notif: TradeNotification = {
                     type: 'opened',
-                    contractId: buyRes.buy.contract_id,
+                    contractId,
                     contractType: mode,
                     stake: Number(buyRes.buy.buy_price),
                     payout: Number(buyRes.buy.payout),
@@ -574,13 +586,9 @@ export function useManualTrade() {
                 };
                 setNotifications(p => [...p, notif]);
                 setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
-                // Make sure a settlement stream exists so the win/loss flash
-                // fires even if our subscribe was passively shared earlier.
-                if (!pocSubIdRef.current && !pocSubReqIdRef.current) {
-                    const pocId = ++reqIdRef.current;
-                    pocSubReqIdRef.current = pocId;
-                    sendViaNewSystem({ proposal_open_contract: 1, subscribe: 1, req_id: pocId });
-                }
+                // Subscribe directly to this contract. This avoids relying on
+                // another component's account-wide stream for settlement UI.
+                sendViaNewSystem({ proposal_open_contract: 1, contract_id: contractId, subscribe: 1 });
             } else {
                 throw new Error(buyRes?.error?.message ?? 'Buy failed.');
             }
@@ -610,6 +618,6 @@ export function useManualTrade() {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, error, tradeFlash,
-        notifications, exitDigit,
+        notifications, exitDigit, activeTrade,
     };
 }

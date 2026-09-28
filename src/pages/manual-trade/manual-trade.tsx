@@ -34,7 +34,7 @@ const ManualTrade = observer(() => {
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
         isConnected, isLoading, tradeFlash,
-        notifications, exitDigit,
+        notifications, exitDigit, activeTrade,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
@@ -108,7 +108,12 @@ const ManualTrade = observer(() => {
 
                     <div className='mt-stats'>
                         <div className='mt-stats-header'>
-                            Digit Distribution (last {digitTotal} ticks)
+                            <span>Digit Distribution (last {digitTotal} ticks)</span>
+                            {activeTrade && (
+                                <span className='mt-running-trade'>
+                                    <i /> RUNNING · {activeTrade.contractType}{activeTrade.contractType !== 'DIGITEVEN' && activeTrade.contractType !== 'DIGITODD' ? ` ${activeTrade.selectedDigit}` : ''} · #{activeTrade.contractId}
+                                </span>
+                            )}
                         </div>
                         <div className='mt-bars'>
                             {digitLabels.map((label, i) => {
@@ -117,6 +122,7 @@ const ManualTrade = observer(() => {
                                 const isSelected = i === selectedDigit && needsTarget;
                                 const isLive = i === lastDigit;
                                 const isExit = i === exitDigit;
+                                const isRunningTarget = !!activeTrade && activeTrade.selectedDigit === i && activeTrade.contractType !== 'DIGITEVEN' && activeTrade.contractType !== 'DIGITODD';
                                 const flashCls =
                                     tradeFlash && tradeFlash.digit === i
                                         ? tradeFlash.win
@@ -135,12 +141,13 @@ const ManualTrade = observer(() => {
                                 return (
                                     <div
                                         key={i}
-                                        className={`mt-bar-col ${isSelected ? 'mt-bar-col--sel' : ''} ${isLive ? 'mt-bar-col--live' : ''} ${flashCls}`}
+                                        className={`mt-bar-col ${isSelected ? 'mt-bar-col--sel' : ''} ${isLive ? 'mt-bar-col--live' : ''} ${isRunningTarget ? 'mt-bar-col--running' : ''} ${flashCls}`}
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
                                         {isHot && <span className='mt-badge mt-badge--hot'>HOT</span>}
                                         {isLow && <span className='mt-badge mt-badge--low'>LOW</span>}
+                                        {isRunningTarget && <span className='mt-badge mt-badge--running'>TRADE</span>}
                                         <div className='mt-bar-top'>
                                             <span className='mt-bar-pct'>{pct.toFixed(1)}%</span>
                                             <span className={`mt-growth ${growthClass}`}>{growthIcon}</span>
