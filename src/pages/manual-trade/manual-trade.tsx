@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useManualTrade, TradeType, ContractMode } from './use-manual-trade';
 import { SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
@@ -40,6 +40,13 @@ const ManualTrade = observer(() => {
 
     const [ddOpen, setDdOpen] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
+    const [rawBarrier, setRawBarrier] = useState(String(selectedDigit));
+    const [rawEntry, setRawEntry] = useState(String(entryDigitValue));
+    const [rawDuration, setRawDuration] = useState(String(duration));
+
+    useEffect(() => setRawBarrier(String(selectedDigit)), [selectedDigit]);
+    useEffect(() => setRawEntry(String(entryDigitValue)), [entryDigitValue]);
+    useEffect(() => setRawDuration(String(duration)), [duration]);
 
     const digitLabels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const modeOptions = CONTRACT_MODE_OPTIONS[tradeType];
@@ -214,11 +221,13 @@ const ManualTrade = observer(() => {
                                 min={0}
                                 max={9}
                                 step={1}
-                                value={selectedDigit}
+                                value={rawBarrier}
                                 onChange={e => {
-                                    const next = Number(e.target.value);
-                                    if (Number.isFinite(next)) setSelectedDigit(Math.max(0, Math.min(9, Math.trunc(next))));
+                                    setRawBarrier(e.target.value);
+                                    const n = Number(e.target.value);
+                                    if (e.target.value !== '' && Number.isFinite(n)) setSelectedDigit(Math.max(0, Math.min(9, Math.trunc(n))));
                                 }}
+                                onBlur={() => { if (rawBarrier === '' || rawBarrier === '-') { setRawBarrier('0'); setSelectedDigit(0); } }}
                                 aria-label='Prediction or barrier digit'
                             />
                         </div>
@@ -246,11 +255,13 @@ const ManualTrade = observer(() => {
                                     min={0}
                                     max={9}
                                     step={1}
-                                    value={entryDigitValue}
+                                    value={rawEntry}
                                     onChange={e => {
-                                        const next = Number(e.target.value);
-                                        if (Number.isFinite(next)) setEntryDigitValue(Math.max(0, Math.min(9, Math.trunc(next))));
+                                        setRawEntry(e.target.value);
+                                        const n = Number(e.target.value);
+                                        if (e.target.value !== '' && Number.isFinite(n)) setEntryDigitValue(Math.max(0, Math.min(9, Math.trunc(n))));
                                     }}
+                                    onBlur={() => { if (rawEntry === '' || rawEntry === '-') { setRawEntry('0'); setEntryDigitValue(0); } }}
                                     aria-label='Entry digit'
                                 />
                             </div>
@@ -275,8 +286,13 @@ const ManualTrade = observer(() => {
                             <input
                                 className='mt-input'
                                 type='number'
-                                value={duration}
-                                onChange={e => setDuration(parseInt(e.target.value) || 1)}
+                                value={rawDuration}
+                                onChange={e => {
+                                    setRawDuration(e.target.value);
+                                    const n = parseInt(e.target.value);
+                                    if (e.target.value !== '' && Number.isFinite(n)) setDuration(Math.max(1, Math.min(10, n)));
+                                }}
+                                onBlur={() => { if (rawDuration === '' || rawDuration === '0') { setRawDuration('1'); setDuration(1); } }}
                                 min={1}
                                 max={10}
                                 step={1}
