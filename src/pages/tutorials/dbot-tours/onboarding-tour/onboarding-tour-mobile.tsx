@@ -46,17 +46,8 @@ const OnboardingTourMobile = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [tour_step]);
 
-    React.useEffect(() => {
-        const checkTokenForTour = () => {
-            // Onboarding tours are noise inside the App Builder preview — skip them.
-            if (isPreviewMode()) return;
-            const token = getSetting('onboard_tour_token');
-            if (!token && active_tab === 0) {
-                setActiveTour('onboarding');
-            }
-        };
-        checkTokenForTour();
-    }, [active_tab, active_tour]);
+    // Tour disabled — site loads directly
+    React.useEffect(() => {}, [active_tab]);
 
     if (!active_tour) {
         return null;

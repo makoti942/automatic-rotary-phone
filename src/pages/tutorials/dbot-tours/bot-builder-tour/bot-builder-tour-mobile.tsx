@@ -30,25 +30,11 @@ const BotBuilderTourMobile = observer(() => {
     });
     const test_id = tour_step === 3 ? 'finish-bot-builder-tour' : 'next-bot-builder-tour';
 
+    // Tour disabled — site loads directly
     React.useEffect(() => {
-        // Onboarding tours are noise inside the App Builder preview — skip them.
-        if (isPreviewMode()) return;
         setTourActiveStep(tour_step);
-        //component does not rerender so calling this to highlight
-        !show_mobile_tour_dialog && highlightLoadModalButton(active_tour, tour_step);
-        if (tour_step === 2) toggleTourLoadModal(true);
-        else if (active_tour !== '') toggleTourLoadModal(false);
-        const token = getSetting('bot_builder_token');
-        if (!token && active_tab === 1) {
-            if (is_open) {
-                setTourDialogVisibility(false);
-            } else {
-                setTourDialogVisibility(true);
-            }
-            setShowMobileTourDialog(true);
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [tour_step, show_mobile_tour_dialog]);
+        if (active_tour !== '') toggleTourLoadModal(false);
+    }, [tour_step]);
 
     const tour_button_text = tour_step === 3 ? localize('Finish') : localize('Next');
     const is_tour_active = active_tour === 'onboarding';
