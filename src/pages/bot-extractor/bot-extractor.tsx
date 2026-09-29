@@ -105,9 +105,10 @@ function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenCont
 }
 function guessNameFromChunkSource(source: string): string {
     try {
-        const chunk = decodeURIComponent(new URL(source).pathname.split('/').pop() || '')
-            .replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
-        if (!/(?:free|bot|strategy|scalper)/i.test(chunk)) return '';
+        const filename = decodeURIComponent(new URL(source).pathname.split('/').pop() || '');
+        const isXmlChunk = /-xml\.[a-f0-9]{6,}\.js$/i.test(filename);
+        const chunk = filename.replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
+        if (!isXmlChunk && !/(?:free|bot|strategy|scalper)/i.test(chunk)) return '';
         return chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '')
             .replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' ');
     } catch { return ''; }

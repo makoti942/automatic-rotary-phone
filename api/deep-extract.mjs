@@ -61,6 +61,12 @@ function nameFromContext(content, position, source) {
   if (!/\.(?:xml|json)(?:[?#]|$)/i.test(source)) {
     const chunk = decodeURIComponent(new URL(source).pathname.split('/').pop() || '')
       .replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
+    // Custom XML context chunks are often named after the bot itself, but
+    // names such as "Reborn-HnR" or "PATEL" do not contain bot/strategy.
+    // The `-xml` suffix is the reliable signal that this is a bot payload.
+    if (/-xml\./i.test(decodeURIComponent(new URL(source).pathname.split('/').pop() || ''))) {
+      return normalizeName(chunk);
+    }
     if (chunk && /(?:free|bot|strategy|scalper)/i.test(chunk)) {
       return normalizeName(chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '').replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' '));
     }
@@ -316,15 +322,36 @@ async function fastBundleScan(startUrl) {
     }
     const runtime = result.text.slice(Math.max(0, result.text.indexOf('static/js/async/')));
     const maps = [...runtime.matchAll(/\(\{([^{}]+)\}\)\[e\]/g)].map(match => match[1]);
-    if (maps.length < 2) continue;
     const parseMap = value => new Map([...value.matchAll(/(?:^|,)(\d+):["']([^"']+)["']/g)].map(match => [match[1], match[2]]));
-    const names = parseMap(maps[0]);
-    const hashes = parseMap(maps[1]);
+    const names = maps.length >= 1 ? parseMap(maps[0]) : new Map();
+    const hashes = maps.length >= 2 ? parseMap(maps[1]) : new Map();
+    // Some Rsbuild builds expose the same mapping in d.u directly instead of
+    // the older ({...})[e] runtime form. This is used by BinaryLab/GlobalTrades:
+    // d.u=e=>"static/js/async/"+({920:"EVEN_Autobot-(1)-xml"}[e])+"."+
+    // ({920:"hash"}[e])+".js".
+    const runtimeChunkNames = new Map();
+    const runtimeChunkHashes = new Map();
+    const chunkNameObject = result.text.match(/(?:d\.u|__webpack_require__\.u)\s*=.*?\(\{([^{}]+)\}\)\[e\]/s)?.[1];
+    const chunkHashObjects = [...result.text.matchAll(/\}\)\[e\]\|\|e\)\+"\."\+\(\{([^{}]+)\}\)\[e\]/gs)];
+    if (chunkNameObject) {
+      for (const [id, name] of parseMap(chunkNameObject)) runtimeChunkNames.set(id, name);
+    }
+    if (chunkHashObjects[0]) {
+      for (const [id, hash] of parseMap(chunkHashObjects[0][1])) runtimeChunkHashes.set(id, hash);
+    }
+    const addChunkForId = (chunkId) => {
+      const name = names.get(chunkId) || runtimeChunkNames.get(chunkId);
+      const hash = hashes.get(chunkId) || runtimeChunkHashes.get(chunkId);
+      if (name && hash) chunkUrls.add(new URL(`/static/js/async/${name}.${hash}.js`, url).href);
+    };
     const contextEntries = /["']([^"']+\.xml)["']:\[["'][^"']+["'],["'](\d+)["']\]/g;
     for (const match of result.text.matchAll(contextEntries)) {
-      const name = names.get(match[2]);
-      const hash = hashes.get(match[2]);
-      if (name && hash) chunkUrls.add(new URL(`/static/js/async/${name}.${hash}.js`, startUrl).href);
+      addChunkForId(match[2]);
+    }
+    // Also support the compact runtime mapping when the context map is
+    // minified differently and the XML filenames are still visible nearby.
+    for (const id of new Set([...runtimeChunkNames.keys(), ...runtimeChunkHashes.keys()])) {
+      if (result.text.includes(`"${id}"`) || result.text.includes(`:${id}`)) addChunkForId(id);
     }
   }
   const chunks = [...chunkUrls].slice(0, 220);
