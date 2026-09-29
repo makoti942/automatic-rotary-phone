@@ -11,6 +11,14 @@ interface ExtractedBot {
     fromTab: string;
 }
 
+function getBotSourceSite(source: string): string {
+    try {
+        const urlMatch = source.match(/https?:\/\/[^\s]+/i)?.[0];
+        if (urlMatch) return new URL(urlMatch).hostname.replace(/^www\./i, '');
+    } catch {}
+    return 'Current page';
+}
+
 const EXTRACTED_BOTS_STORAGE_KEY = 'bot-extractor:extracted-bots:v1';
 
 function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
@@ -848,6 +856,7 @@ const BotExtractor = () => {
                                 <div className='bot-extractor__bot-info'>
                                     <div className='bot-extractor__bot-name'>{bot.name}</div>
                                     <div className='bot-extractor__bot-meta'>
+                                        <span className='bot-extractor__bot-source'>From {getBotSourceSite(bot.source)}</span>
                                         <span className='bot-extractor__bot-tab'>{bot.fromTab}</span>
                                         <span className='bot-extractor__bot-size'>
                                             {(bot.size / 1024).toFixed(1)} KB
@@ -884,6 +893,7 @@ const BotExtractor = () => {
                                     <div className='bot-extractor__bot-info'>
                                         <div className='bot-extractor__bot-name'>{bot.name}</div>
                                         <div className='bot-extractor__bot-meta'>
+                                            <span className='bot-extractor__bot-source'>From {getBotSourceSite(bot.source)}</span>
                                             <span className='bot-extractor__bot-tab'>{bot.fromTab}</span>
                                             <span className='bot-extractor__bot-size'>{(bot.size / 1024).toFixed(1)} KB</span>
                                         </div>
