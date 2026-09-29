@@ -20,21 +20,12 @@ const OnboardingTourDesktop = observer(() => {
         }
     }, [is_close_tour, is_finished, setActiveTour, setIsCloseTour]);
 
-    // Check if tour should be shown with setTimeout to prevent showing on every reload
+    // Tour dialog disabled — site loads directly to dashboard
     React.useEffect(() => {
-        // Onboarding tours are noise inside the App Builder preview — skip them.
-        if (isPreviewMode()) return;
         if (active_tab === 0) {
-            const timeoutId = setTimeout(() => {
-                const token = getSetting('onboard_tour_token');
-                if (!token && !is_tour_dialog_visible) {
-                    setTourDialogVisibility(true);
-                }
-            }, 100);
-
-            return () => clearTimeout(timeoutId);
+            setTourDialogVisibility(false);
         }
-    }, [active_tab, is_tour_dialog_visible, setTourDialogVisibility]);
+    }, [active_tab, setTourDialogVisibility]);
 
     return (
         <>

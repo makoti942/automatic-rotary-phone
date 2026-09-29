@@ -15,21 +15,12 @@ const BotBuilderTourDesktop = observer(() => {
     const { dashboard, load_modal } = useStore();
     const { active_tab, active_tour, setActiveTour, setTourDialogVisibility, is_tour_dialog_visible } = dashboard;
     const { is_load_modal_open } = load_modal;
-    // Check if tour should be shown with setTimeout to prevent showing on every reload
+    // Tour dialog disabled — site loads directly to bot builder
     React.useEffect(() => {
-        // Onboarding tours are noise inside the App Builder preview — skip them.
-        if (isPreviewMode()) return;
         if (active_tab === 1) {
-            const timeoutId = setTimeout(() => {
-                const token = getSetting('bot_builder_token');
-                if (!token && !is_tour_dialog_visible) {
-                    setTourDialogVisibility(true);
-                }
-            }, 100);
-
-            return () => clearTimeout(timeoutId);
+            setTourDialogVisibility(false);
         }
-    }, [active_tab, is_tour_dialog_visible, setTourDialogVisibility]);
+    }, [active_tab, setTourDialogVisibility]);
 
     React.useEffect(() => {
         if (is_finished) {
