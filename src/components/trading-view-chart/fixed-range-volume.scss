@@ -1,0 +1,185 @@
+$frv-bg:     #0f1117;
+$frv-bg2:    #181c27;
+$frv-bg3:    #1e2336;
+$frv-border: rgba(249,115,22,0.2);
+$frv-text:   #e2e8f0;
+$frv-muted:  #64748b;
+$frv-accent: #f97316;
+$frv-hvn:    #22c55e;
+$frv-lvn:    #ef4444;
+$frv-normal: #3b82f6;
+
+/* ── Container ──────────────────────────────────────────────────────────────── */
+.frv-container {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 30;
+    pointer-events: none;
+    & > * { pointer-events: auto; }
+}
+
+/* ── Toggle Button ──────────────────────────────────────────────────────────── */
+.frv-toggle {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: $frv-bg2;
+    border: 1px solid $frv-border;
+    border-radius: 6px;
+    color: $frv-text;
+    padding: 5px 10px;
+    font-size: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    &:hover { border-color: $frv-accent; }
+    &--active {
+        background: $frv-accent;
+        border-color: $frv-accent;
+        color: #fff;
+    }
+}
+.frv-toggle-icon { font-size: 12px; }
+.frv-toggle-label { white-space: nowrap; }
+
+/* ── Panel ──────────────────────────────────────────────────────────────────── */
+.frv-panel {
+    margin-top: 6px;
+    width: 280px;
+    max-height: 70vh;
+    background: $frv-bg2;
+    border: 1px solid $frv-border;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.frv-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 10px;
+    border-bottom: 1px solid $frv-border;
+    background: $frv-bg3;
+}
+.frv-title { font-size: 11px; font-weight: 800; color: $frv-accent; }
+.frv-close {
+    background: none; border: none; color: $frv-muted; font-size: 16px;
+    cursor: pointer; padding: 0 4px; line-height: 1;
+    &:hover { color: $frv-text; }
+}
+
+/* ── Config ─────────────────────────────────────────────────────────────────── */
+.frv-config {
+    padding: 8px 10px;
+    border-bottom: 1px solid $frv-border;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.frv-config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    label { font-size: 9px; color: $frv-muted; text-transform: uppercase; letter-spacing: 0.5px; }
+    select, input {
+        background: $frv-bg3; border: 1px solid $frv-border; border-radius: 4px;
+        color: $frv-text; padding: 4px 6px; font-size: 11px; outline: none; width: 100%;
+        box-sizing: border-box;
+        &:focus { border-color: $frv-accent; }
+    }
+    input[type='number'] {
+        -moz-appearance: textfield;
+        &::-webkit-outer-spin-button, &::-webkit-inner-spin-button { -webkit-appearance: none; }
+    }
+}
+.frv-price-inputs { display: flex; gap: 4px; }
+.frv-analyze {
+    background: $frv-accent; border: none; border-radius: 4px;
+    color: #fff; font-weight: 700; font-size: 10px; padding: 5px; cursor: pointer;
+    &:disabled { opacity: 0.4; cursor: not-allowed; }
+}
+
+/* ── Stats ──────────────────────────────────────────────────────────────────── */
+.frv-stats {
+    padding: 6px 10px;
+    border-bottom: 1px solid $frv-border;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+.frv-stat { display: flex; justify-content: space-between; font-size: 10px; }
+.frv-stat-label { color: $frv-muted; }
+.frv-stat-value { color: $frv-text; font-weight: 700; font-family: monospace; }
+.frv-poc { color: $frv-accent; }
+
+/* ── Volume Bars ────────────────────────────────────────────────────────────── */
+.frv-bars {
+    padding: 6px 10px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+.frv-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    height: 14px;
+}
+.frv-bar-price {
+    font-size: 8px;
+    font-family: monospace;
+    color: $frv-muted;
+    width: 50px;
+    text-align: right;
+    flex-shrink: 0;
+}
+.frv-bar-track {
+    flex: 1;
+    height: 10px;
+    background: $frv-bg3;
+    border-radius: 2px;
+    overflow: hidden;
+}
+.frv-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+    min-width: 2px;
+    &--hvn  { background: linear-gradient(90deg, $frv-hvn, #4ade80); }
+    &--lvn  { background: linear-gradient(90deg, $frv-lvn, #f87171); opacity: 0.6; }
+    &--normal { background: linear-gradient(90deg, #334155, #475569); }
+}
+.frv-bar-count {
+    font-size: 8px;
+    font-family: monospace;
+    color: $frv-muted;
+    width: 30px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* ── Legend ──────────────────────────────────────────────────────────────────── */
+.frv-legend {
+    padding: 5px 10px;
+    border-top: 1px solid $frv-border;
+    display: flex;
+    gap: 10px;
+}
+.frv-legend-item {
+    font-size: 8px;
+    &--hvn { color: $frv-hvn; }
+    &--lvn { color: $frv-lvn; }
+}
+
+/* ── Mobile ─────────────────────────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .frv-panel { width: 260px; max-height: 50vh; }
+    .frv-bar-price { width: 42px; font-size: 7px; }
+}
