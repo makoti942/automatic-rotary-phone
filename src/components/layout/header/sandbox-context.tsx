@@ -124,6 +124,13 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } catch {}
     }, []);
 
+    // Broadcast sandbox state changes so observer-wrapped components (e.g. AccountSwitcher) re-render
+    useEffect(() => {
+        window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
+            detail: { isSandbox, sandboxBalance },
+        }));
+    }, [isSandbox, sandboxBalance]);
+
     // Persist sandbox balance to localStorage whenever it changes
     useEffect(() => {
         if (isSandbox) {

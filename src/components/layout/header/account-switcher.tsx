@@ -41,11 +41,34 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const { client, run_panel } = useStore() ?? {};
     const { isSandbox, sandboxBalance, enterSandbox, exitSandbox, getActualDemoBalance } = useSandbox();
 
-    // Force re-render when sandbox state changes (observer may not pick up context changes)
-    const [, forceRender] = useState(0);
+    // Mirror sandbox state in local state — observer (mobx) does NOT re-render on React context changes
+    const [localSandbox, setLocalSandbox] = useState(() => localStorage.getItem('sandbox_active') === 'true');
+    const [localSandboxBalance, setLocalSandboxBalance] = useState(() => {
+        const v = localStorage.getItem('sandbox_balance');
+        return v ? Number(v) : 0;
+    });
+
     useEffect(() => {
-        forceRender(n => n + 1);
-    }, [isSandbox, sandboxBalance]);
+        const handleSandboxChange = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            console.log('[AccountSwitcher] sandbox_state_changed:', detail);
+            if (detail) {
+                setLocalSandbox(!!detail.isSandbox);
+                setLocalSandboxBalance(Number(detail.sandboxBalance) || 0);
+            } else {
+                // Fallback: read from localStorage
+                setLocalSandbox(localStorage.getItem('sandbox_active') === 'true');
+                const v = localStorage.getItem('sandbox_balance');
+                setLocalSandboxBalance(v ? Number(v) : 0);
+            }
+        };
+        window.addEventListener('sandbox_state_changed', handleSandboxChange);
+        return () => window.removeEventListener('sandbox_state_changed', handleSandboxChange);
+    }, []);
+
+    // Use local mirrors everywhere instead of context values (which observer can't see)
+    const isSandboxActive = localSandbox;
+    const sandboxBal = localSandboxBalance;
 
     useEffect(() => {
         const handleIconChange = () => {
@@ -162,14 +185,14 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         }> = [];
 
         // Sandbox mode: show Demo (sandbox balance) + Real (actual Deriv demo balance)
-        if (isSandbox) {
+        if (isSandboxActive) {
             const virtualAccount = accountList.find(a => isDemoAccount(a.loginid));
             if (virtualAccount) {
                 const actualDemoBal = getActualDemoBalance();
                 results.push({
                     loginid: virtualAccount.loginid,
                     currency: virtualAccount.currency,
-                    balance: addComma(sandboxBalance.toFixed(getDecimalPlaces(virtualAccount.currency))),
+                    balance: addComma(sandboxBal.toFixed(getDecimalPlaces(virtualAccount.currency))),
                     isVirtual: true,
                     isActive: true,
                     _isSandbox: true,
@@ -223,10 +246,10 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
     const { currency, isVirtual, balance } = activeAccount;
     const showChevron = !isSingleAccount && !is_bot_running;
-    const displayBalance = isSandbox
-        ? addComma(sandboxBalance.toFixed(getDecimalPlaces(currency)))
+    const displayBalance = isSandboxActive
+        ? addComma(sandboxBal.toFixed(getDecimalPlaces(currency)))
         : balance;
-    const displayIsVirtual = isSandbox ? true : (isVirtual && !showAsReal);
+    const displayIsVirtual = isSandboxActive ? true : (isVirtual && !showAsReal);
 
     return (
         <div className='acc-info__wrapper' ref={wrapperRef}>
@@ -254,7 +277,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                     <div className='acc-info__content'>
                         <div className='acc-info__account-type-header'>
                             <Text as='p' size='xs' className='acc-info__account-type'>
-                                {isSandbox ? (
+                                {isSandboxActive ? (
                                     <Localize i18n_default_text='Demo account' />
                                 ) : showAsReal && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
@@ -360,11 +383,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     isFakeReal: account._isFakeReal,
                                     isSandboxEntry: account._isSandbox,
                                     showAsReal,
-                                    isSandbox,
+                                    isSandboxActive,
                                     fakeBalance,
                                 });
                                 if (account._isSandbox) return; // already in sandbox
-                                if (account._isFakeReal && isSandbox) {
+                                if (account._isFakeReal && isSandboxActive) {
                                     // Clicking "Real account" while in sandbox → exit sandbox
                                     console.log('[AccountSwitcher] Exiting sandbox');
                                     exitSandbox();
@@ -373,7 +396,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 }
                                 // Clicking "Demo account" while trick is active → enter sandbox
                                 // Use !account._isFakeReal as the primary check (more reliable than isVirtual)
-                                if (showAsReal && !isSandbox && !account._isFakeReal) {
+                                if (showAsReal && !isSandboxActive && !account._isFakeReal) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
