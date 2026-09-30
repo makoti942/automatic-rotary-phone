@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onNewSystemMessage, sendViaNewSystem, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
+import { useSandbox } from '@/components/layout/header/sandbox-context';
 
 export interface SymbolInfo {
     display_name: string;
@@ -181,6 +182,7 @@ export function useManualTrade() {
     const [isLoading, setIsLoading] = useState(true);
     const [error] = useState<string | null>(null);
     const [tradeFlash, setTradeFlash] = useState<TradeFlash | null>(null);
+    const { isSandbox, executeSandboxTrade } = useSandbox();
     const [notifications, setNotifications] = useState<TradeNotification[]>([]);
     const [exitDigit, setExitDigit] = useState<number | null>(null);
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
@@ -627,6 +629,48 @@ export function useManualTrade() {
                 await new Promise(r => setTimeout(r, 100));
             }
             if (mountedRef.current) setIsWaitingEntry(false);
+        }
+
+        // Sandbox mode: execute locally, don't send to Deriv
+        if (isSandbox) {
+            const trade = executeSandboxTrade({
+                symbol: activeSymbol,
+                contractType: mode,
+                barrier: mode !== 'DIGITEVEN' && mode !== 'DIGITODD' ? selectedDigit : 0,
+                stake: amount,
+                duration,
+                entryDigit: lastDigitRef.current ?? 0,
+            });
+            if (trade) {
+                setBuyResult({
+                    contract_id: trade.contractId,
+                    buyPrice: trade.stake,
+                    payout: trade.payout,
+                    balanceAfter: 0,
+                });
+                setBuyError(null);
+                setActiveTrade({
+                    contractId: trade.contractId,
+                    contractType: mode,
+                    selectedDigit,
+                    stake: trade.stake,
+                    openedAt: trade.openedAt,
+                });
+                setTradeHistory(previous => [...previous, {
+                    contractId: trade.contractId,
+                    symbol: activeSymbol,
+                    contractType: mode,
+                    stake: trade.stake,
+                    profit: null,
+                    status: 'open',
+                    executedAt: trade.openedAt,
+                }]);
+            } else {
+                setBuyError('Sandbox: insufficient balance or trade already open.');
+            }
+            isBuyingRef.current = false;
+            if (mountedRef.current) setIsBuying(false);
+            return;
         }
 
         try {

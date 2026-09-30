@@ -30,6 +30,7 @@ const useActiveAccount = ({
         // Use centralized utility to determine if demo account
         const isVirtual = isVirtualAccount(activeAccount.loginid);
         const isTrickActive = localStorage.getItem('is_custom_demo_icon_active') === 'true';
+        const isSandboxActive = localStorage.getItem('sandbox_active') === 'true';
 
         return {
             ...activeAccount,
@@ -38,9 +39,9 @@ const useActiveAccount = ({
                 : directBalance
                   ? addComma(parseFloat(directBalance).toFixed(getDecimalPlaces(activeAccount.currency)))
                   : addComma(parseFloat('0').toFixed(getDecimalPlaces(activeAccount.currency))),
-            currencyLabel: isVirtual && !isTrickActive ? 'Demo' : activeAccount?.currency,
+            currencyLabel: isSandboxActive ? 'Demo' : (isVirtual && !isTrickActive ? 'Demo' : activeAccount?.currency),
             icon: <CurrencyIcon currency={activeAccount?.currency?.toLowerCase()} isVirtual={isVirtual && !isTrickActive} />,
-            isVirtual: isVirtual && !isTrickActive,
+            isVirtual: isSandboxActive ? true : (isVirtual && !isTrickActive),
             isActive: activeAccount?.loginid === activeLoginid,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps

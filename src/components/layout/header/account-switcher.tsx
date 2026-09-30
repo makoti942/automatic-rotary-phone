@@ -11,6 +11,7 @@ import { useStore } from '@/hooks/useStore';
 import { DerivWSAccountsService } from '@/services/derivws-accounts.service';
 import { getAccountId, isDemoAccount } from '@/utils/account-helpers';
 import { isCustomDemoIconActive } from '@/utils/custom-demo-icon-utils';
+import { useSandbox } from '@/components/layout/header/sandbox-context';
 import { Localize } from '@deriv-com/translations';
 import { TAccountSwitcher } from './common/types';
 import AccountInfoWrapper from './account-info-wrapper';
@@ -38,6 +39,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const { accountList, activeLoginid } = useApiBase();
     const { client, run_panel } = useStore() ?? {};
+    const { isSandbox, sandboxBalance, enterSandbox, exitSandbox, getActualDemoBalance } = useSandbox();
 
     useEffect(() => {
         const handleIconChange = () => {
@@ -150,7 +152,33 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
             isVirtual: boolean;
             isActive: boolean;
             _isFakeReal?: boolean;
+            _isSandbox?: boolean;
         }> = [];
+
+        // Sandbox mode: show Demo (sandbox balance) + Real (actual Deriv demo balance)
+        if (isSandbox) {
+            const virtualAccount = accountList.find(a => isDemoAccount(a.loginid));
+            if (virtualAccount) {
+                const actualDemoBal = getActualDemoBalance();
+                results.push({
+                    loginid: virtualAccount.loginid,
+                    currency: virtualAccount.currency,
+                    balance: addComma(sandboxBalance.toFixed(getDecimalPlaces(virtualAccount.currency))),
+                    isVirtual: true,
+                    isActive: true,
+                    _isSandbox: true,
+                });
+                results.push({
+                    loginid: virtualAccount.loginid,
+                    currency: virtualAccount.currency,
+                    balance: addComma(actualDemoBal.toFixed(getDecimalPlaces(virtualAccount.currency))),
+                    isVirtual: false,
+                    isActive: false,
+                    _isFakeReal: true,
+                });
+            }
+            return results;
+        }
 
         for (const account of accountList) {
             const isVirtual = isDemoAccount(account.loginid);
@@ -189,6 +217,10 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
     const { currency, isVirtual, balance } = activeAccount;
     const showChevron = !isSingleAccount && !is_bot_running;
+    const displayBalance = isSandbox
+        ? addComma(sandboxBalance.toFixed(getDecimalPlaces(currency)))
+        : balance;
+    const displayIsVirtual = isSandbox ? true : (isVirtual && !showAsReal);
 
     return (
         <div className='acc-info__wrapper' ref={wrapperRef}>
@@ -201,7 +233,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                     aria-expanded={showChevron ? isOpen : undefined}
                     aria-haspopup={showChevron ? 'listbox' : undefined}
                     className={classNames('acc-info', {
-                        'acc-info--is-virtual': isVirtual && !showAsReal,
+                        'acc-info--is-virtual': displayIsVirtual,
                         'acc-info--interactive': showChevron,
                     })}
                     onClick={toggleDropdown}
@@ -216,7 +248,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                     <div className='acc-info__content'>
                         <div className='acc-info__account-type-header'>
                             <Text as='p' size='xs' className='acc-info__account-type'>
-                                {showAsReal && isVirtual ? (
+                                {isSandbox ? (
+                                    <Localize i18n_default_text='Demo account' />
+                                ) : showAsReal && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
                                 ) : isVirtual ? (
                                     <Localize i18n_default_text='Demo account' />
@@ -253,7 +287,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     {!currency ? (
                                         <Localize i18n_default_text='No currency assigned' />
                                     ) : (
-                                        `${balance} ${getCurrencyDisplayCode(currency)}`
+                                        `${displayBalance} ${getCurrencyDisplayCode(currency)}`
                                     )}
                                 </p>
                                 {isVirtual && !showAsReal && !trippleTrickActive && (
@@ -313,7 +347,22 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 'acc-dropdown__account--selected': account.isActive,
                                 'acc-dropdown__account--virtual': account.isVirtual && !account._isFakeReal,
                             })}
-                            onClick={() => !account.isActive && handleAccountSelect(account.loginid)}
+                            onClick={() => {
+                                if (account._isSandbox) return; // already in sandbox
+                                if (account._isFakeReal && isSandbox) {
+                                    // Clicking "Real account" while in sandbox → exit sandbox
+                                    exitSandbox();
+                                    setIsOpen(false);
+                                    return;
+                                }
+                                if (showAsReal && !isSandbox && account.isVirtual && !account._isFakeReal) {
+                                    // Clicking "Demo account" while trick is active → enter sandbox
+                                    enterSandbox(fakeBalance);
+                                    setIsOpen(false);
+                                    return;
+                                }
+                                if (!account.isActive) handleAccountSelect(account.loginid);
+                            }}
                             onKeyDown={e => {
                                 if (!account.isActive && (e.key === 'Enter' || e.key === ' ')) {
                                     e.preventDefault();
@@ -327,7 +376,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     'acc-dropdown__account-type--virtual': account.isVirtual && !account._isFakeReal,
                                 })}
                             >
-                                {account.isVirtual && !account._isFakeReal ? (
+                                {account._isSandbox ? (
+                                    <Localize i18n_default_text='Demo account' />
+                                ) : account.isVirtual && !account._isFakeReal ? (
                                     <Localize i18n_default_text='Demo account' />
                                 ) : (
                                     <Localize i18n_default_text='Real account' />

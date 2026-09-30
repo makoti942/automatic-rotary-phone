@@ -258,7 +258,12 @@ export default class JournalStore {
             // Use centralized utility to determine if demo account
             const isVirtual = isVirtualAccount(loginid);
             const isTrickActive = localStorage.getItem('is_custom_demo_icon_active') === 'true';
-            extra.current_currency = isVirtual && !isTrickActive ? 'Demo' : current_account?.currency;
+            const isSandboxActive = localStorage.getItem('sandbox_active') === 'true';
+            if (isSandboxActive) {
+                extra.current_currency = 'Demo';
+            } else {
+                extra.current_currency = isVirtual && !isTrickActive ? 'Demo' : current_account?.currency;
+            }
         } else if (message === LogTypes.WELCOME) {
             return;
         }

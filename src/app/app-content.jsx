@@ -15,6 +15,7 @@ import { useApiBase } from '@/hooks/useApiBase';
 import useDevMode from '@/hooks/useDevMode';
 import { useStore } from '@/hooks/useStore';
 import useThemeSwitcher from '@/hooks/useThemeSwitcher';
+import { SandboxProvider } from '@/components/layout/header/sandbox-context';
 import { isPreviewMode } from '@/utils/is-preview-mode';
 import { ThemeProvider } from '@deriv-com/quill-ui';
 import { setSmartChartsPublicPath } from '@deriv-com/smartcharts-champion';
@@ -195,17 +196,19 @@ const AppContent = observer(() => {
                 <MakotiLoaderGate message='Initializing Deriv Bot account' />
             ) : (
                 <AuthLoadingWrapper>
-                    <ThemeProvider theme={is_dark_mode_on ? 'dark' : 'light'}>
-                        <BlocklyLoading />
-                        <div className='bot-dashboard bot' data-testid='dt_bot_dashboard'>
-                            <Audio />
-                            <Main />
-                            <BotBuilder />
-                            <BotStopped />
-                            <TransactionDetailsModal />
-                            <ToastContainer limit={3} draggable={false} />
-                        </div>
-                    </ThemeProvider>
+                    <SandboxProvider>
+                        <ThemeProvider theme={is_dark_mode_on ? 'dark' : 'light'}>
+                            <BlocklyLoading />
+                            <div className='bot-dashboard bot' data-testid='dt_bot_dashboard'>
+                                <Audio />
+                                <Main />
+                                <BotBuilder />
+                                <BotStopped />
+                                <TransactionDetailsModal />
+                                <ToastContainer limit={3} draggable={false} />
+                            </div>
+                        </ThemeProvider>
+                    </SandboxProvider>
                 </AuthLoadingWrapper>
             )}
         </React.Fragment>
