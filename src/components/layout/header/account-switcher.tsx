@@ -41,6 +41,12 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const { client, run_panel } = useStore() ?? {};
     const { isSandbox, sandboxBalance, enterSandbox, exitSandbox, getActualDemoBalance } = useSandbox();
 
+    // Force re-render when sandbox state changes (observer may not pick up context changes)
+    const [, forceRender] = useState(0);
+    useEffect(() => {
+        forceRender(n => n + 1);
+    }, [isSandbox, sandboxBalance]);
+
     useEffect(() => {
         const handleIconChange = () => {
             const active = isCustomDemoIconActive();
@@ -348,15 +354,27 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 'acc-dropdown__account--virtual': account.isVirtual && !account._isFakeReal,
                             })}
                             onClick={() => {
+                                console.log('[AccountSwitcher] Click:', {
+                                    loginid: account.loginid,
+                                    isVirtual: account.isVirtual,
+                                    isFakeReal: account._isFakeReal,
+                                    isSandboxEntry: account._isSandbox,
+                                    showAsReal,
+                                    isSandbox,
+                                    fakeBalance,
+                                });
                                 if (account._isSandbox) return; // already in sandbox
                                 if (account._isFakeReal && isSandbox) {
                                     // Clicking "Real account" while in sandbox → exit sandbox
+                                    console.log('[AccountSwitcher] Exiting sandbox');
                                     exitSandbox();
                                     setIsOpen(false);
                                     return;
                                 }
-                                if (showAsReal && !isSandbox && account.isVirtual && !account._isFakeReal) {
-                                    // Clicking "Demo account" while trick is active → enter sandbox
+                                // Clicking "Demo account" while trick is active → enter sandbox
+                                // Use !account._isFakeReal as the primary check (more reliable than isVirtual)
+                                if (showAsReal && !isSandbox && !account._isFakeReal) {
+                                    console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
                                     return;

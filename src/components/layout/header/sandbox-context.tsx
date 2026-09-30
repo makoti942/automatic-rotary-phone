@@ -107,6 +107,30 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         return () => { mountedRef.current = false; };
     }, []);
 
+    // Restore sandbox state from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('sandbox_active');
+            if (saved === 'true') {
+                const savedBalance = localStorage.getItem('sandbox_balance');
+                const balance = savedBalance ? Number(savedBalance) : 0;
+                if (balance > 0) {
+                    setIsSandbox(true);
+                    setSandboxBalance(balance);
+                    isSandboxRef.current = true;
+                    balanceRef.current = balance;
+                }
+            }
+        } catch {}
+    }, []);
+
+    // Persist sandbox balance to localStorage whenever it changes
+    useEffect(() => {
+        if (isSandbox) {
+            localStorage.setItem('sandbox_balance', String(sandboxBalance));
+        }
+    }, [isSandbox, sandboxBalance]);
+
     // Listen for ticks to settle sandbox contracts
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
@@ -155,6 +179,7 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsSandbox(true);
         isSandboxRef.current = true;
         localStorage.setItem('sandbox_active', 'true');
+        localStorage.setItem('sandbox_balance', String(initialBalance));
         setSandboxTrades([]);
         setActiveSandboxContract(null);
         activeContractRef.current = null;
@@ -165,6 +190,7 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         setIsSandbox(false);
         isSandboxRef.current = false;
         localStorage.removeItem('sandbox_active');
+        localStorage.removeItem('sandbox_balance');
         setActiveSandboxContract(null);
         activeContractRef.current = null;
         tickBufferRef.current = [];
