@@ -378,40 +378,20 @@ export default class ClientStore {
                 const { DerivWSAccountsService } = await import('@/services/derivws-accounts.service');
                 DerivWSAccountsService.clearCache();
 
+                // DO NOT clear auth data (authToken, accountsList, clientAccounts)
+                // — only reset in-memory state. Clearing localStorage causes logout.
+
                 this.account_list = [];
-
                 this.accounts = {};
-                this.setIsLoggedIn(false);
-
-                this.balance = '0';
-                this.currency = 'USD';
-
                 this.all_accounts_balance = null;
 
-                localStorage.removeItem('accountsList');
-                localStorage.removeItem('authToken');
-                localStorage.removeItem('clientAccounts');
-                localStorage.removeItem('account_type'); // Clear account type on logout
-                removeCookies('client_information');
-
-                setIsAuthorized(false);
-                setAccountList([]);
-                setAuthData(null);
-
-                this.setIsLoggingOut(false);
-
-                // disable livechat
-                window.LC_API?.close_chat?.();
-                window.LiveChatWidget?.call('hide');
-
                 // Force create a new connection with the current active login ID
-                // Wrap the potentially failing init call in a try-catch
                 try {
-                    await api_base.init(true); // ✅ Await the async call
+                    await api_base.init(true);
                 } catch (initError) {
                     ErrorLogger.error('ClientStore', 'WebSocket initialization failed', initError);
                     this.setIsAccountRegenerating(false);
-                    throw initError; // Re-throw to be caught by outer catch if needed
+                    throw initError;
                 }
 
                 // Update the tracked WebSocket login ID
