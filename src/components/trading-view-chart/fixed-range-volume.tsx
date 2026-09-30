@@ -46,6 +46,7 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
     const [vaLow, setVaLow] = useState(0);
     const [tickCount, setTickCount] = useState(0);
     const [totalFetched, setTotalFetched] = useState(0);
+    const [fetchedProgress, setFetchedProgress] = useState(0);
     const [minP, setMinP] = useState(0);
     const [maxP, setMaxP] = useState(0);
     const [resultMsg, setResultMsg] = useState('');
@@ -87,7 +88,7 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
         setToTime(fmt(now));
     }, [isOpen]);
 
-    // Fetch + analyze
+    // Fetch + analyze with pagination
     const analyze = useCallback(async () => {
         if (!fromTime || !toTime) { setResultMsg('Select both times'); return; }
         const startEpoch = new Date(fromTime).getTime() / 1000;
@@ -95,55 +96,82 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
         if (startEpoch >= endEpoch) { setResultMsg('From must be before To'); return; }
         setIsAnalyzing(true);
         setResultMsg('');
+        setFetchedProgress(0);
 
         try {
-            // Fetch most recent ticks (API is reliable this way)
-            const res: any = await sendViaNewSystemWithPromise({
-                ticks_history: symbol, style: 'ticks', count: 5000, end: 'latest',
-            });
-            const prices = res?.ticks_history?.prices || [];
-            const epochs = res?.ticks_history?.epoch || [];
             const pip = PIP_SIZES[symbol] ?? 2;
-            const all: TickPoint[] = prices.map((p: number, i: number) => ({
-                price: Number(Number(p).toFixed(pip)),
-                epoch: epochs[i] || 0,
-            }));
+            const BATCH = 5000;
+            const MAX_TICKS = 500000000; // 500 million
+            const all: TickPoint[] = [];
+            let currentEnd = Math.floor(endEpoch);
+            let batchNum = 0;
+            let noDataStreak = 0;
 
-            // Show debug info
-            if (all.length > 0) {
-                const oldestTick = new Date(all[0].epoch * 1000);
-                const newestTick = new Date(all[all.length - 1].epoch * 1000);
-                console.log(`[FRV] Fetched ${all.length} ticks for ${symbol}`);
-                console.log(`[FRV] Oldest tick: ${oldestTick.toLocaleString()} (${all[0].epoch})`);
-                console.log(`[FRV] Newest tick: ${newestTick.toLocaleString()} (${all[all.length - 1].epoch})`);
-                console.log(`[FRV] Requested range: ${new Date(startEpoch * 1000).toLocaleString()} to ${new Date(endEpoch * 1000).toLocaleString()}`);
+            while (all.length < MAX_TICKS && noDataStreak < 3) {
+                batchNum++;
+                const res: any = await sendViaNewSystemWithPromise({
+                    ticks_history: symbol, style: 'ticks', count: BATCH, end: currentEnd,
+                });
+                const prices = res?.ticks_history?.prices || [];
+                const epochs = res?.ticks_history?.epoch || [];
+
+                if (prices.length === 0) {
+                    noDataStreak++;
+                    if (noDataStreak >= 3) break;
+                    // Try going further back
+                    currentEnd = currentEnd - BATCH;
+                    continue;
+                }
+                noDataStreak = 0;
+
+                for (let i = 0; i < prices.length; i++) {
+                    const epoch = epochs[i] || 0;
+                    if (epoch < startEpoch) continue; // Older than requested range
+                    all.push({ price: Number(Number(prices[i]).toFixed(pip)), epoch });
+                }
+
+                // Update progress
+                setFetchedProgress(all.length);
+                setTotalFetched(all.length);
+
+                // If oldest tick in batch is before startEpoch, we've gone far enough
+                const oldestInBatch = epochs[0] || 0;
+                if (oldestInBatch < startEpoch) break;
+
+                // Next batch ends where this one started
+                currentEnd = oldestInBatch - 1;
+
+                // Small delay to avoid rate limiting
+                if (batchNum % 10 === 0) {
+                    await new Promise(r => setTimeout(r, 100));
+                }
             }
 
-            // Filter to time range
-            const filtered = all.filter(t => t.epoch >= startEpoch && t.epoch <= endEpoch);
-            setTickCount(filtered.length);
-            setTotalFetched(all.length);
+            // Deduplicate by epoch (batches may overlap slightly)
+            const seen = new Set<number>();
+            const unique = all.filter(t => {
+                if (seen.has(t.epoch)) return false;
+                seen.add(t.epoch);
+                return true;
+            });
 
-            if (filtered.length < 5) {
+            console.log(`[FRV] Fetched ${unique.length} unique ticks in ${batchNum} batches for ${symbol}`);
+            setTickCount(unique.length);
+
+            if (unique.length < 5) {
                 setBuckets([]);
-                if (all.length === 0) {
-                    setResultMsg('No tick data received from API. Try again or change symbol.');
-                } else {
-                    const oldest = new Date(all[0].epoch * 1000);
-                    const newest = new Date(all[all.length - 1].epoch * 1000);
-                    setResultMsg(`0 ticks in range. Available data: ${oldest.toLocaleTimeString()} to ${newest.toLocaleTimeString()}. Select a time within this range.`);
-                }
+                setResultMsg(`Only ${unique.length} ticks found in range. API may not have data this far back.`);
                 return;
             }
 
-            const profile = buildVolumeProfile(filtered, 24);
+            const profile = buildVolumeProfile(unique, 24);
             setBuckets(profile);
 
             if (profile.length > 0) {
                 const poc = profile.reduce((a, b) => b.count > a.count ? b : a, profile[0]);
                 setPocPrice(poc.price);
-                setMinP(Math.min(...filtered.map(t => t.price)));
-                setMaxP(Math.max(...filtered.map(t => t.price)));
+                setMinP(Math.min(...unique.map(t => t.price)));
+                setMaxP(Math.max(...unique.map(t => t.price)));
 
                 // Value Area — 70% of volume around POC
                 const totalVol = profile.reduce((a, b) => a + b.count, 0);
@@ -202,7 +230,7 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
                             </div>
                         </div>
                         <button className='frv-analyze' onClick={analyze} disabled={isAnalyzing}>
-                            {isAnalyzing ? 'Analyzing...' : 'Analyze'}
+                            {isAnalyzing ? `Fetching... ${fetchedProgress.toLocaleString()} ticks` : 'Analyze'}
                         </button>
                     </div>
 
