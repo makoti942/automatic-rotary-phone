@@ -504,7 +504,8 @@ const AppWrapper = observer(() => {
                                 }
                                 id='id-trading-view'
                             >
-                                <Suspense fallback={<div style={{ padding: 12, color: '#999' }}>Loading...</div>}>
+                                <div className='trading-view-tab-placeholder' />
+                                <Suspense fallback={null}>
                                     <TradingViewTrading />
                                 </Suspense>
                             </div>
@@ -567,7 +568,7 @@ const AppWrapper = observer(() => {
                                 </div>
                             </div>
                         </Tabs>
-                        <div className={`trading-view-persistent${active_tab === TRADING_VIEW ? ' trading-view-persistent--hidden' : ''}`}>
+                        <div className={`trading-view-persistent${active_tab === TRADING_VIEW ? ' trading-view-persistent--visible' : ''}`}>
                             <TradingViewComponent />
                         </div>
                         {!isDesktop && right_tab_shadow && <span className='tabs-shadow tabs-shadow--right' />}{' '}
