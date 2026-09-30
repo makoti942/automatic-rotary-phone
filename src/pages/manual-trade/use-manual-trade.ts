@@ -615,7 +615,6 @@ export function useManualTrade() {
 
         if (entryEnabledRef.current) {
             const targetDigit = entryDigitRef.current;
-            const timeout = Date.now() + (entryTimeoutRef.current * 1000);
             cancelEntryRef.current = false;
             setIsWaitingEntry(true);
             while (lastDigitRef.current !== targetDigit) {
@@ -623,12 +622,6 @@ export function useManualTrade() {
                     isBuyingRef.current = false;
                     if (mountedRef.current) { setIsBuying(false); setIsWaitingEntry(false); }
                     setBuyError('Trade cancelled — waiting for entry digit.');
-                    return;
-                }
-                if (Date.now() > timeout) {
-                    isBuyingRef.current = false;
-                    if (mountedRef.current) { setIsBuying(false); setIsWaitingEntry(false); }
-                    setBuyError('Entry digit timeout — digit ' + targetDigit + ' did not appear within ' + entryTimeoutRef.current + 's.');
                     return;
                 }
                 await new Promise(r => setTimeout(r, 100));

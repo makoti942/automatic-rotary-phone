@@ -268,21 +268,6 @@ const ManualTrade = observer(() => {
                                 />
                             </div>
                         )}
-                        {entryDigitEnabled && (
-                            <div className='mt-field mt-entry-timeout-field'>
-                                <label className='mt-label'>Timeout (sec)</label>
-                                <input
-                                    className='mt-input'
-                                    type='number'
-                                    min={5}
-                                    max={600}
-                                    step={5}
-                                    value={entryTimeout}
-                                    onChange={e => setEntryTimeout(Math.max(5, Math.min(600, Number(e.target.value) || 120)))}
-                                    aria-label='Entry timeout seconds'
-                                />
-                            </div>
-                        )}
                     </div>
 
                     {/* Stake + Duration */}
