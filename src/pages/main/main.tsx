@@ -52,6 +52,7 @@ import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
 import TradingViewComponent from '@/components/trading-view-chart/trading-view';
+import TradingViewTrading from '@/components/trading-view-chart/trading-view-trading';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
 
 const ChartWrapper = lazy(() => import('../chart/chart-wrapper'));
@@ -503,7 +504,9 @@ const AppWrapper = observer(() => {
                                 }
                                 id='id-trading-view'
                             >
-                                <div className='trading-view-tab-placeholder' />
+                                <Suspense fallback={<div style={{ padding: 12, color: '#999' }}>Loading...</div>}>
+                                    <TradingViewTrading />
+                                </Suspense>
                             </div>
                             <div
                                 label={
@@ -564,7 +567,7 @@ const AppWrapper = observer(() => {
                                 </div>
                             </div>
                         </Tabs>
-                        <div className={`trading-view-persistent${active_tab === TRADING_VIEW ? ' trading-view-persistent--visible' : ''}`}>
+                        <div className={`trading-view-persistent${active_tab === TRADING_VIEW ? ' trading-view-persistent--hidden' : ''}`}>
                             <TradingViewComponent />
                         </div>
                         {!isDesktop && right_tab_shadow && <span className='tabs-shadow tabs-shadow--right' />}{' '}
