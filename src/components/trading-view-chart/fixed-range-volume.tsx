@@ -96,9 +96,10 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
         setResultMsg('');
 
         try {
-            // Fetch tick history
+            // Fetch tick history for the exact time range
             const res: any = await sendViaNewSystemWithPromise({
-                ticks_history: symbol, style: 'ticks', count: 5000, end: 'latest',
+                ticks_history: symbol, style: 'ticks', count: 5000,
+                start: Math.floor(startEpoch), end: Math.floor(endEpoch),
             });
             const prices = res?.ticks_history?.prices || [];
             const epochs = res?.ticks_history?.epoch || [];
@@ -108,7 +109,7 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
                 epoch: epochs[i] || 0,
             }));
 
-            // Filter to time range
+            // Filter to time range (API may return slightly outside)
             const filtered = all.filter(t => t.epoch >= startEpoch && t.epoch <= endEpoch);
             setTickCount(filtered.length);
 

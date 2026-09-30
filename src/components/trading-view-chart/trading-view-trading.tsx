@@ -42,6 +42,14 @@ const TradingViewTrading: React.FC = () => {
     useEffect(() => { localStorage.setItem('tvt_stake', stake); }, [stake]);
     useEffect(() => { localStorage.setItem('tvt_duration', duration); }, [duration]);
 
+    // Sync chart iframe when symbol changes
+    useEffect(() => {
+        const iframe = document.getElementById('trading-view-iframe') as HTMLIFrameElement | null;
+        if (iframe?.contentWindow) {
+            iframe.contentWindow.postMessage({ type: 'symbolChange', symbol: activeSymbol }, '*');
+        }
+    }, [activeSymbol]);
+
     // Subscribe to ticks
     useEffect(() => {
         mountedRef.current = true;
