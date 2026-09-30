@@ -573,6 +573,10 @@ $radius:   10px;
     width: 70px;
 }
 
+.mt-entry-timeout-field {
+    width: 80px;
+}
+
 .mt-exec {
     padding: 13px 8px;
     border-radius: $radius;
@@ -608,6 +612,22 @@ $radius:   10px;
         cursor: not-allowed;
         box-shadow: none;
     }
+
+    &--cancel {
+        grid-column: 1 / -1;
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        box-shadow: 0 0 18px rgba(245, 158, 11, 0.4);
+        animation: mt-pulse 1.5s ease-in-out infinite;
+        &:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 0 24px rgba(245, 158, 11, 0.6);
+        }
+    }
+}
+
+@keyframes mt-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.75; }
 }
 
 .mt-hint {

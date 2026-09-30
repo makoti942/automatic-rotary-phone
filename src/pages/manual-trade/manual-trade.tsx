@@ -36,6 +36,7 @@ const ManualTrade = observer(() => {
         isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
         entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,
+        entryTimeout, setEntryTimeout, isWaitingEntry, cancelEntryWait,
     } = useManualTrade();
 
     const [ddOpen, setDdOpen] = useState(false);
@@ -248,6 +249,7 @@ const ManualTrade = observer(() => {
                         </div>
                         {entryDigitEnabled && (
                             <div className='mt-field mt-entry-digit-field'>
+                                <label className='mt-label'>Entry Digit (0-9)</label>
                                 <input
                                     className='mt-input'
                                     type='number'
@@ -263,6 +265,21 @@ const ManualTrade = observer(() => {
                                     }}
                                     onBlur={() => { if (rawEntry === '' || rawEntry === '-') { setRawEntry('0'); setEntryDigitValue(0); } }}
                                     aria-label='Entry digit'
+                                />
+                            </div>
+                        )}
+                        {entryDigitEnabled && (
+                            <div className='mt-field mt-entry-timeout-field'>
+                                <label className='mt-label'>Timeout (sec)</label>
+                                <input
+                                    className='mt-input'
+                                    type='number'
+                                    min={5}
+                                    max={600}
+                                    step={5}
+                                    value={entryTimeout}
+                                    onChange={e => setEntryTimeout(Math.max(5, Math.min(600, Number(e.target.value) || 120)))}
+                                    aria-label='Entry timeout seconds'
                                 />
                             </div>
                         )}
@@ -302,24 +319,33 @@ const ManualTrade = observer(() => {
 
                     {/* Two direct execution buttons — click = instant buy */}
                     <div className='mt-exec-row'>
-                        {modeOptions.map((opt, idx) => {
-                            const showDigit =
-                                opt.value === 'DIGITOVER' ||
-                                opt.value === 'DIGITUNDER' ||
-                                opt.value === 'DIGITMATCH' ||
-                                opt.value === 'DIGITDIFF';
-                            const label = opt.label + (showDigit ? ` ${selectedDigit}` : '');
-                            return (
-                                <button
-                                    key={opt.value}
-                                    className={`mt-exec ${idx === 0 ? 'mt-exec--first' : 'mt-exec--second'}`}
-                                    disabled={isBuying || !isConnected || (showDigit && selectedDigit < 0)}
-                                    onClick={() => buyWithMode(opt.value)}
-                                >
-                                    {isBuying ? '…' : label}
-                                </button>
-                            );
-                        })}
+                        {isWaitingEntry ? (
+                            <button
+                                className='mt-exec mt-exec--cancel'
+                                onClick={cancelEntryWait}
+                            >
+                                ✕ Cancel — Waiting for digit {entryDigitValue}
+                            </button>
+                        ) : (
+                            modeOptions.map((opt, idx) => {
+                                const showDigit =
+                                    opt.value === 'DIGITOVER' ||
+                                    opt.value === 'DIGITUNDER' ||
+                                    opt.value === 'DIGITMATCH' ||
+                                    opt.value === 'DIGITDIFF';
+                                const label = opt.label + (showDigit ? ` ${selectedDigit}` : '');
+                                return (
+                                    <button
+                                        key={opt.value}
+                                        className={`mt-exec ${idx === 0 ? 'mt-exec--first' : 'mt-exec--second'}`}
+                                        disabled={isBuying || !isConnected || (showDigit && selectedDigit < 0)}
+                                        onClick={() => buyWithMode(opt.value)}
+                                    >
+                                        {isBuying ? '…' : label}
+                                    </button>
+                                );
+                            })
+                        )}
                     </div>
                 </div>
             </div>

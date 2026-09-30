@@ -174,6 +174,7 @@ export function useManualTrade() {
     const [proposal, setProposal] = useState<ProposalInfo | null>(null);
     const [isProposalLoading, setIsProposalLoading] = useState(false);
     const [isBuying, setIsBuying] = useState(false);
+    const [isWaitingEntry, setIsWaitingEntry] = useState(false);
     const [buyResult, setBuyResult] = useState<BuyResult | null>(null);
     const [buyError, setBuyError] = useState<string | null>(null);
     const [isConnected, setIsConnected] = useState(false);
@@ -187,9 +188,12 @@ export function useManualTrade() {
 
     const [entryDigitEnabled, setEntryDigitEnabled] = useState(_cfg.entryDigitEnabled ?? false);
     const [entryDigitValue, setEntryDigitValue] = useState(_cfg.entryDigitValue ?? 5);
+    const [entryTimeout, setEntryTimeout] = useState(_cfg.entryTimeout ?? 120);
 
     const entryDigitRef = useRef(entryDigitValue);
     entryDigitRef.current = entryDigitValue;
+    const entryTimeoutRef = useRef(entryTimeout);
+    entryTimeoutRef.current = entryTimeout;
     const entryEnabledRef = useRef(entryDigitEnabled);
     entryEnabledRef.current = entryDigitEnabled;
     const lastDigitRef = useRef<number | null>(null);
@@ -200,10 +204,10 @@ export function useManualTrade() {
 
     // Persist config to localStorage
     useEffect(() => {
-        saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue });
+        saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue, entryTimeout });
     }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue]);
     useEffect(() => {
-        return () => { saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue }); };
+        return () => { saveMtCfg({ activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue, entryTimeout }); };
     }, [activeSymbol, tradeType, contractMode, selectedDigit, stake, duration, entryDigitEnabled, entryDigitValue]);
     const pipRef = useRef(pipSize);
     const pricesRef = useRef<number[]>([]);
@@ -217,6 +221,7 @@ export function useManualTrade() {
     const pocLoadedRef = useRef(false);
     const flashTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const isBuyingRef = useRef(false);
+    const cancelEntryRef = useRef(false);
     const pocSubReqIdRef = useRef(0);
     const pocSubIdRef = useRef<string | null>(null);
     const exitDigitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -593,6 +598,10 @@ export function useManualTrade() {
     // One-click execution: Deriv accepts buy(parameters) directly. Avoid the
     // old proposal -> buy round trip because it added a visible delay after
     // the user pressed the execution button.
+    const cancelEntryWait = useCallback(() => {
+        cancelEntryRef.current = true;
+    }, []);
+
     const buyWithMode = useCallback(async (mode: ContractMode) => {
         if (isBuyingRef.current) return;
         const amount = parseFloat(stake);
@@ -606,16 +615,25 @@ export function useManualTrade() {
 
         if (entryEnabledRef.current) {
             const targetDigit = entryDigitRef.current;
-            const timeout = Date.now() + 30000;
+            const timeout = Date.now() + (entryTimeoutRef.current * 1000);
+            cancelEntryRef.current = false;
+            setIsWaitingEntry(true);
             while (lastDigitRef.current !== targetDigit) {
+                if (cancelEntryRef.current) {
+                    isBuyingRef.current = false;
+                    if (mountedRef.current) { setIsBuying(false); setIsWaitingEntry(false); }
+                    setBuyError('Trade cancelled — waiting for entry digit.');
+                    return;
+                }
                 if (Date.now() > timeout) {
                     isBuyingRef.current = false;
-                    if (mountedRef.current) setIsBuying(false);
-                    setBuyError('Entry digit timeout — digit ' + targetDigit + ' did not appear within 30s.');
+                    if (mountedRef.current) { setIsBuying(false); setIsWaitingEntry(false); }
+                    setBuyError('Entry digit timeout — digit ' + targetDigit + ' did not appear within ' + entryTimeoutRef.current + 's.');
                     return;
                 }
                 await new Promise(r => setTimeout(r, 100));
             }
+            if (mountedRef.current) setIsWaitingEntry(false);
         }
 
         try {
@@ -725,8 +743,9 @@ export function useManualTrade() {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
-        isConnected, isLoading, error, tradeFlash,
+        isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
         entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,
+        entryTimeout, setEntryTimeout, isWaitingEntry, cancelEntryWait,
     };
 }
