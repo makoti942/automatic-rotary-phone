@@ -45,6 +45,7 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
     const [vaHigh, setVaHigh] = useState(0);
     const [vaLow, setVaLow] = useState(0);
     const [tickCount, setTickCount] = useState(0);
+    const [totalFetched, setTotalFetched] = useState(0);
     const [minP, setMinP] = useState(0);
     const [maxP, setMaxP] = useState(0);
     const [resultMsg, setResultMsg] = useState('');
@@ -96,10 +97,9 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
         setResultMsg('');
 
         try {
-            // Fetch tick history for the exact time range
+            // Fetch most recent ticks (API is reliable this way)
             const res: any = await sendViaNewSystemWithPromise({
-                ticks_history: symbol, style: 'ticks', count: 5000,
-                start: Math.floor(startEpoch), end: Math.floor(endEpoch),
+                ticks_history: symbol, style: 'ticks', count: 5000, end: 'latest',
             });
             const prices = res?.ticks_history?.prices || [];
             const epochs = res?.ticks_history?.epoch || [];
@@ -109,13 +109,30 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
                 epoch: epochs[i] || 0,
             }));
 
-            // Filter to time range (API may return slightly outside)
+            // Show debug info
+            if (all.length > 0) {
+                const oldestTick = new Date(all[0].epoch * 1000);
+                const newestTick = new Date(all[all.length - 1].epoch * 1000);
+                console.log(`[FRV] Fetched ${all.length} ticks for ${symbol}`);
+                console.log(`[FRV] Oldest tick: ${oldestTick.toLocaleString()} (${all[0].epoch})`);
+                console.log(`[FRV] Newest tick: ${newestTick.toLocaleString()} (${all[all.length - 1].epoch})`);
+                console.log(`[FRV] Requested range: ${new Date(startEpoch * 1000).toLocaleString()} to ${new Date(endEpoch * 1000).toLocaleString()}`);
+            }
+
+            // Filter to time range
             const filtered = all.filter(t => t.epoch >= startEpoch && t.epoch <= endEpoch);
             setTickCount(filtered.length);
+            setTotalFetched(all.length);
 
             if (filtered.length < 5) {
                 setBuckets([]);
-                setResultMsg(`Only ${filtered.length} ticks in range — need at least 5. Try a wider time range.`);
+                if (all.length === 0) {
+                    setResultMsg('No tick data received from API. Try again or change symbol.');
+                } else {
+                    const oldest = new Date(all[0].epoch * 1000);
+                    const newest = new Date(all[all.length - 1].epoch * 1000);
+                    setResultMsg(`0 ticks in range. Available data: ${oldest.toLocaleTimeString()} to ${newest.toLocaleTimeString()}. Select a time within this range.`);
+                }
                 return;
             }
 
@@ -194,7 +211,8 @@ const FixedRangeVolume: React.FC<Props> = ({ symbol }) => {
                     {buckets.length > 0 && (
                         <>
                             <div className='frv-stats'>
-                                <div className='frv-stat'><span className='frv-stat-label'>Ticks</span><span className='frv-stat-value'>{tickCount}</span></div>
+                                <div className='frv-stat'><span className='frv-stat-label'>Ticks in range</span><span className='frv-stat-value'>{tickCount}</span></div>
+                                <div className='frv-stat'><span className='frv-stat-label'>Total fetched</span><span className='frv-stat-value'>{totalFetched}</span></div>
                                 <div className='frv-stat'><span className='frv-stat-label'>Range</span><span className='frv-stat-value'>{minP.toFixed(pips)} — {maxP.toFixed(pips)}</span></div>
                                 <div className='frv-stat'><span className='frv-stat-label'>POC</span><span className='frv-stat-value frv-poc'>{pocPrice.toFixed(pips)}</span></div>
                                 <div className='frv-stat'><span className='frv-stat-label'>Value Area</span><span className='frv-stat-value frv-poc'>{vaLow.toFixed(pips)} — {vaHigh.toFixed(pips)}</span></div>
