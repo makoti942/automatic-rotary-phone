@@ -71,8 +71,17 @@ const SandboxContext = createContext<SandboxContextValue | null>(null);
 
 export const useSandbox = () => {
     const ctx = useContext(SandboxContext);
-    if (!ctx) throw new Error('useSandbox must be used within SandboxProvider');
-    return ctx;
+    // Safe fallback if provider is missing (prevents crash)
+    return ctx ?? {
+        isSandbox: false,
+        sandboxBalance: 0,
+        sandboxTrades: [],
+        activeSandboxContract: null,
+        enterSandbox: () => {},
+        exitSandbox: () => {},
+        executeSandboxTrade: () => null,
+        getActualDemoBalance: () => 0,
+    };
 };
 
 let nextContractId = 900000;
