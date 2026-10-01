@@ -69,6 +69,10 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     // Use local mirrors everywhere instead of context values (which observer can't see)
     const isSandboxActive = localSandbox;
     const sandboxBal = localSandboxBalance;
+    // Older builds used tripple_trick_active while the current tab trick uses
+    // is_custom_demo_icon_active. Treat either flag as active so the visual
+    // Demo/Real entries and their click behavior stay in sync.
+    const trickModeActive = showAsReal || trippleTrickActive;
 
     useEffect(() => {
         const handleIconChange = () => {
@@ -106,7 +110,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     // Trick mode and sandbox mode create an additional visual account entry
     // even when Deriv returns only one underlying account. Do not disable the
     // switcher in that case, otherwise the Demo entry cannot be clicked.
-    const canOpenAccountMenu = !is_bot_running && (!isSingleAccount || showAsReal || isSandboxActive);
+    const canOpenAccountMenu = !is_bot_running && (!isSingleAccount || trickModeActive || isSandboxActive);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -225,13 +229,13 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                 isActive,
             };
 
-            if (showAsReal && isVirtual) {
+            if (trickModeActive && isVirtual) {
                 const fakeReal = { ...entry, isVirtual: false, isActive: entry.isActive, _isFakeReal: true };
                 entry.balance = addComma(fakeBalance.toFixed(getDecimalPlaces(account.currency)));
                 entry.isActive = false;
                 results.push(fakeReal);
                 results.push(entry);
-            } else if (!showAsReal) {
+            } else if (!trickModeActive) {
                 results.push(entry);
             }
         }
@@ -253,7 +257,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const displayBalance = isSandboxActive
         ? addComma(sandboxBal.toFixed(getDecimalPlaces(currency)))
         : balance;
-    const displayIsVirtual = isSandboxActive ? true : (isVirtual && !showAsReal);
+    const displayIsVirtual = isSandboxActive ? true : (isVirtual && !trickModeActive);
 
     return (
         <div className='acc-info__wrapper' ref={wrapperRef}>
@@ -283,7 +287,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                             <Text as='p' size='xs' className='acc-info__account-type'>
                                 {isSandboxActive ? (
                                     <Localize i18n_default_text='Demo account' />
-                                ) : showAsReal && isVirtual ? (
+        ) : trickModeActive && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
                                 ) : isVirtual ? (
                                     <Localize i18n_default_text='Demo account' />
@@ -323,7 +327,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                         `${displayBalance} ${getCurrencyDisplayCode(currency)}`
                                     )}
                                 </p>
-                                {isVirtual && !showAsReal && !trippleTrickActive && (
+                                {isVirtual && !trickModeActive && (
                                     <button
                                         type='button'
                                         className={`acc-info__reset-balance${resetBusy ? ' acc-info__reset-balance--busy' : ''}`}
@@ -400,7 +404,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 }
                                 // Clicking "Demo account" while trick is active → enter sandbox
                                 // Use !account._isFakeReal as the primary check (more reliable than isVirtual)
-                                if (showAsReal && !isSandboxActive && !account._isFakeReal) {
+                                if (trickModeActive && !isSandboxActive && account.isVirtual && !account._isFakeReal) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
