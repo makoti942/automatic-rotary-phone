@@ -103,6 +103,10 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
     const is_bot_running = run_panel?.is_running || api_base.is_running;
     const isSingleAccount = !accountList || accountList.length <= 1;
+    // Trick mode and sandbox mode create an additional visual account entry
+    // even when Deriv returns only one underlying account. Do not disable the
+    // switcher in that case, otherwise the Demo entry cannot be clicked.
+    const canOpenAccountMenu = !is_bot_running && (!isSingleAccount || showAsReal || isSandboxActive);
 
     useEffect(() => {
         const handleClickOutside = (e: MouseEvent) => {
@@ -122,9 +126,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     }, []);
 
     const toggleDropdown = useCallback(() => {
-        if (is_bot_running || isSingleAccount) return;
+        if (!canOpenAccountMenu) return;
         setIsOpen(prev => !prev);
-    }, [is_bot_running, isSingleAccount]);
+    }, [canOpenAccountMenu]);
 
     const handleResetBalance = useCallback(
         async (e: React.MouseEvent) => {
@@ -245,7 +249,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     if (!activeAccount) return null;
 
     const { currency, isVirtual, balance } = activeAccount;
-    const showChevron = !isSingleAccount && !is_bot_running;
+    const showChevron = canOpenAccountMenu;
     const displayBalance = isSandboxActive
         ? addComma(sandboxBal.toFixed(getDecimalPlaces(currency)))
         : balance;
