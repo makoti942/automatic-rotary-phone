@@ -72,7 +72,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     // Older builds used tripple_trick_active while the current tab trick uses
     // is_custom_demo_icon_active. Treat either flag as active so the visual
     // Demo/Real entries and their click behavior stay in sync.
-    const trickModeActive = showAsReal || trippleTrickActive;
+    const persistedTrickActive = typeof window !== 'undefined' && localStorage.getItem('is_custom_demo_icon_active') === 'true';
+    const persistedLegacyTrickActive = typeof window !== 'undefined' && localStorage.getItem('tripple_trick_active') === 'true';
+    const trickModeActive = showAsReal || trippleTrickActive || persistedTrickActive || persistedLegacyTrickActive;
+    const persistedSandboxActive = typeof window !== 'undefined' && localStorage.getItem('sandbox_active') === 'true';
+    const sandboxIsActive = isSandboxActive || isSandbox || persistedSandboxActive;
 
     useEffect(() => {
         const handleIconChange = () => {
@@ -193,7 +197,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         }> = [];
 
         // Sandbox mode: show Demo (sandbox balance) + Real (actual Deriv demo balance)
-        if (isSandboxActive) {
+        if (sandboxIsActive) {
             const virtualAccount = accountList.find(a => isDemoAccount(a.loginid));
             if (virtualAccount) {
                 const actualDemoBal = getActualDemoBalance();
@@ -250,13 +254,12 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     };
     const formattedAccounts = getFormattedAccounts();
     const hasTrickAccountPair = formattedAccounts.some(account => account._isFakeReal);
-    const sandboxIsActive = isSandboxActive || isSandbox;
 
     if (!activeAccount) return null;
 
     const { currency, isVirtual, balance } = activeAccount;
     const showChevron = canOpenAccountMenu;
-    const displayBalance = isSandboxActive
+    const displayBalance = sandboxIsActive
         ? addComma(sandboxBal.toFixed(getDecimalPlaces(currency)))
         : balance;
     const displayIsVirtual = isSandboxActive ? true : (isVirtual && !trickModeActive);
@@ -381,6 +384,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                             key={account._isFakeReal ? `${account.loginid}-real` : `${account.loginid}-${idx}`}
                             role='option'
                             aria-selected={account.isActive}
+                            data-sandbox-entry={account.isVirtual && !account._isFakeReal ? 'true' : undefined}
                             tabIndex={0}
                             className={classNames('acc-dropdown__account', {
                                 'acc-dropdown__account--selected': account.isActive,
