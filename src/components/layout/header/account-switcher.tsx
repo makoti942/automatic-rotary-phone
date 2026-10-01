@@ -249,6 +249,8 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         });
     };
     const formattedAccounts = getFormattedAccounts();
+    const hasTrickAccountPair = formattedAccounts.some(account => account._isFakeReal);
+    const sandboxIsActive = isSandboxActive || isSandbox;
 
     if (!activeAccount) return null;
 
@@ -395,7 +397,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     fakeBalance,
                                 });
                                 if (account._isSandbox) return; // already in sandbox
-                                if (account._isFakeReal && isSandboxActive) {
+                                if (account._isFakeReal && sandboxIsActive) {
                                     // Clicking "Real account" while in sandbox → exit sandbox
                                     console.log('[AccountSwitcher] Exiting sandbox');
                                     exitSandbox();
@@ -404,7 +406,12 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 }
                                 // Clicking "Demo account" while trick is active → enter sandbox
                                 // Use !account._isFakeReal as the primary check (more reliable than isVirtual)
-                                if (trickModeActive && !isSandboxActive && account.isVirtual && !account._isFakeReal) {
+                                const isSandboxDemoEntry =
+                                    !sandboxIsActive &&
+                                    !account._isFakeReal &&
+                                    account.isVirtual &&
+                                    (trickModeActive || hasTrickAccountPair);
+                                if (isSandboxDemoEntry) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
