@@ -9,39 +9,46 @@ type MultiKillerStrategy =
     | 'under'
     | 'rise'
     | 'fall'
+    | 'higher'
+    | 'lower'
     | 'differs'
     | 'only_ups'
     | 'only_downs';
 
 const LABELS: Record<MultiKillerStrategy, string> = {
     over: 'Over', under: 'Under', rise: 'Rise', fall: 'Fall',
+    higher: 'Higher', lower: 'Lower',
     differs: 'Differs',
     only_ups: 'Only Ups', only_downs: 'Only Downs',
 };
 
 const CONTRACT_TYPE: Record<MultiKillerStrategy, string> = {
     over: 'DIGITOVER', under: 'DIGITUNDER', rise: 'CALL', fall: 'PUT',
+    higher: 'CALL', lower: 'PUT',
     differs: 'DIGITDIFF',
     only_ups: 'RUNHIGH', only_downs: 'RUNLOW',
 };
 
 const DURATION: Record<MultiKillerStrategy, number> = {
-    over: 1, under: 1, rise: 1, fall: 1, differs: 1,
+    over: 1, under: 1, rise: 1, fall: 1, higher: 1, lower: 1, differs: 1,
     only_ups: 2, only_downs: 2,
 };
 
 const NEEDS_BARRIER: Record<MultiKillerStrategy, boolean> = {
     over: true, under: true, rise: false, fall: false,
+    higher: true, lower: true,
     differs: true, only_ups: false, only_downs: false,
 };
 
 const HAS_DELAY: Record<MultiKillerStrategy, boolean> = {
     over: false, under: false, rise: true, fall: true,
+    higher: false, lower: false,
     differs: false, only_ups: false, only_downs: false,
 };
 
 const USES_TICK_DIR: Record<MultiKillerStrategy, boolean> = {
     over: false, under: false, rise: true, fall: true,
+    higher: true, lower: true,
     differs: false, only_ups: true, only_downs: true,
 };
 
@@ -72,7 +79,7 @@ export const MultiKiller: React.FC = () => {
     const [selected, setSelected] = useState<MultiKillerStrategy[]>(cfg.selected || []);
     const [stakes, setStakes] = useState<Record<string, string>>(cfg.stakes || {});
     const [barriers, setBarriers] = useState<Record<string, string>>(cfg.barriers || {
-        over: '5', under: '5', differs: '5',
+        over: '5', under: '5', differs: '5', higher: '5', lower: '5',
     });
     const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
@@ -126,7 +133,7 @@ export const MultiKiller: React.FC = () => {
     const runningRef = useRef(false);
     const selectedRef = useRef<MultiKillerStrategy[]>([]);
     const stakesRef = useRef<Record<string, string>>({});
-    const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5' });
+    const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5', higher: '5', lower: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
@@ -164,7 +171,7 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { accuracyRef.current = accuracy; }, [accuracy]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
-    const hasDirectional = selected.some(s => ['rise', 'fall', 'ups', 'downs'].includes(s));
+    const hasDirectional = selected.some(s => ['rise', 'fall', 'higher', 'lower', 'ups', 'downs'].includes(s));
 
     // RSI(3) calculation from recent tick prices
     const calcRSI = useCallback((prices: number[]): number => {
