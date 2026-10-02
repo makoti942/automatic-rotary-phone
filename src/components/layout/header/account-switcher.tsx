@@ -26,12 +26,26 @@ const FAKE_BALANCES = [
 
 const FIXED_TRICK_BALANCE = 24654.67;
 
+// Persist fake balance to localStorage so it doesn't change on refresh
+function getStoredFakeBalance(): number {
+    try {
+        const v = localStorage.getItem('trick_fake_balance');
+        if (v) {
+            const n = Number(v);
+            if (!isNaN(n) && n > 0) return n;
+        }
+    } catch {}
+    return FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)];
+}
+
+function storeFakeBalance(v: number) {
+    try { localStorage.setItem('trick_fake_balance', String(v)); } catch {}
+}
+
 const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showAsReal, setShowAsReal] = useState(false);
-    const [fakeBalance, setFakeBalance] = useState(() =>
-        FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]
-    );
+    const [fakeBalance, setFakeBalance] = useState(() => getStoredFakeBalance());
     const [resetBusy, setResetBusy] = useState(false);
     const [isSandboxTransitioning, setIsSandboxTransitioning] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
@@ -45,6 +59,8 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         const v = localStorage.getItem('sandbox_balance');
         return v ? Number(v) : 0;
     });
+    // Track real demo balance via newSystemMessage so dropdown updates in sandbox
+    const [realDemoBalance, setRealDemoBalance] = useState<number | null>(null);
 
     useEffect(() => {
         const handleSandboxChange = (e: Event) => {
@@ -62,6 +78,23 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         };
         window.addEventListener('sandbox_state_changed', handleSandboxChange);
         return () => window.removeEventListener('sandbox_state_changed', handleSandboxChange);
+    }, []);
+
+    // Listen for balance messages so Real account balance updates in sandbox dropdown
+    useEffect(() => {
+        const handler = (event: any) => {
+            try {
+                const raw = event?.detail?.data;
+                if (!raw) return;
+                const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (data.msg_type === 'balance' && data.balance) {
+                    const bal = Number(data.balance?.balance ?? 0);
+                    if (bal > 0) setRealDemoBalance(bal);
+                }
+            } catch {}
+        };
+        window.addEventListener('newSystemMessage', handler);
+        return () => window.removeEventListener('newSystemMessage', handler);
     }, []);
 
     // Use local mirrors everywhere instead of context values (which observer can't see)
@@ -88,11 +121,20 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
             const active = isCustomDemoIconActive();
             setShowAsReal(active);
             if (active) {
-                setFakeBalance(FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]);
+                // Only randomize if no stored balance exists (first activation)
+                const stored = localStorage.getItem('trick_fake_balance');
+                if (!stored) {
+                    const newBal = FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)];
+                    setFakeBalance(newBal);
+                    storeFakeBalance(newBal);
+                } else {
+                    setFakeBalance(Number(stored));
+                }
             }
         };
         const handleFixedBalance = () => {
             setFakeBalance(FIXED_TRICK_BALANCE);
+            storeFakeBalance(FIXED_TRICK_BALANCE);
         };
         window.addEventListener('custom_demo_icon_changed', handleIconChange);
         window.addEventListener('trick_fixed_balance', handleFixedBalance);
@@ -196,7 +238,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
             if (virtualAccount) {
                 // Use live client-store balance (same source as trick mode),
                 // NOT getActualDemoBalance() which reads stale localStorage.
-                const rawBal = allBal[virtualAccount.loginid]?.balance ?? virtualAccount.balance ?? 0;
+                const storeBal = allBal[virtualAccount.loginid]?.balance ?? virtualAccount.balance ?? 0;
+                // Prefer realDemoBalance from balance stream, fall back to store
+                const rawBal = realDemoBalance ?? storeBal;
                 results.push({
                     loginid: virtualAccount.loginid,
                     currency: virtualAccount.currency,
