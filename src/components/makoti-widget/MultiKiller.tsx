@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
+import { ALL_SYMBOLS, PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
@@ -84,7 +84,7 @@ export const MultiKiller: React.FC = () => {
     const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
     });
-    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 1);
+    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 5);
     const [hlOffset, setHlOffset] = useState(cfg.hlOffset || '0.02');
     const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
@@ -137,7 +137,7 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5', higher: '5', lower: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
-    const hlDurationRef = useRef(1);
+    const hlDurationRef = useRef(5);
     const hlOffsetRef = useRef('0.02');
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
@@ -433,6 +433,7 @@ export const MultiKiller: React.FC = () => {
         const needBarrier = NEEDS_BARRIER[strategy];
 
         // Higher/Lower: relative barrier offset (e.g. "+0.02" / "-0.02")
+        //   Offset must match symbol pip-size decimal places (Deriv validates this)
         //   Uses proposal → buy flow (Deriv validates barrier in proposal step)
         // Over/Under/Differs: barrier = user-configured digit, direct buy
         let barrier: string | undefined;
@@ -443,14 +444,15 @@ export const MultiKiller: React.FC = () => {
                 log(`❌ ${LABELS[strategy]}: invalid offset "${rawOff}"`);
                 return null;
             }
-            const off = Math.abs(numOff).toFixed(6).replace(/\.?0+$/, '');
+            const pip = PIP_SIZES[market] ?? 2;
+            const off = Math.abs(numOff).toFixed(pip);
             barrier = strategy === 'higher' ? `+${off}` : `-${off}`;
         } else if (needBarrier) {
             const rawBarrier = barriersRef.current[strategy] ?? '5';
             barrier = String(parseInt(rawBarrier) || 5);
         }
 
-        log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}${isHL ? 'm' : 't'} $${stakeNum}`);
+        log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}t $${stakeNum}`);
 
         if (isHL) {
             // ── HL: proposal → buy via sendViaNewSystemWithPromise ──
@@ -462,7 +464,7 @@ export const MultiKiller: React.FC = () => {
                     contract_type: ct,
                     currency: 'USD',
                     duration: dur,
-                    duration_unit: 'm',
+                    duration_unit: 't',
                     symbol: market,
                     barrier: barrier!,
                 };
@@ -500,7 +502,10 @@ export const MultiKiller: React.FC = () => {
                 log(`✅ ${LABELS[strategy]} bought (#${cid})`);
                 return { cid, strategy };
             } catch (e: any) {
-                log(`❌ ${LABELS[strategy]}: ${e?.error?.message || e?.message || 'error'}`);
+                const errMsg = e?.error?.message || e?.message || String(e);
+                const errCode = e?.error?.code || '';
+                log(`❌ ${LABELS[strategy]}: ${errMsg}${errCode ? ` [${errCode}]` : ''}`);
+                log(`   Request: ${ct} @${barrier} ${dur}t ${market} $${stakeNum}`);
                 return null;
             }
         }
@@ -1263,10 +1268,10 @@ export const MultiKiller: React.FC = () => {
             {(selected.includes('higher') || selected.includes('lower')) && (
                 <div className='mw-killer__fields mw-killer__fields--hl'>
                     <div className='mw-field mw-field--grow'>
-                        <label className='mw-label'>H/L Duration (minutes)</label>
-                        <input className='mw-input' type='number' min='1' max='60' step='1'
+                        <label className='mw-label'>H/L Duration (ticks)</label>
+                        <input className='mw-input' type='number' min='1' max='50' step='1'
                             value={hlDuration}
-                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 1))} />
+                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 5))} />
                     </div>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>H/L Barrier Offset</label>
