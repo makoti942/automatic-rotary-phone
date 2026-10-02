@@ -9,6 +9,7 @@ import { useDevice } from '@deriv-com/ui';
 import { crypto_currencies_display_order, fiat_currencies_display_order } from '../shared';
 import Footer from './footer';
 import AppHeader from './header';
+import { SandboxProvider } from './header/sandbox-context';
 import Body from './main-body';
 import './layout.scss';
 
@@ -143,18 +144,20 @@ const Layout = observer(() => {
     }, [isAuthenticating, isInitialAuthCheckComplete]);
 
     return (
-        <div
-            className={clsx('layout', {
-                responsive: isDesktop,
-                'quick-strategy-active': is_quick_strategy_active && !isDesktop,
-            })}
-        >
-            {!isCallbackPage && <AppHeader isAuthenticating={isAuthenticating || !isInitialAuthCheckComplete} />}
-            <Body>
-                <Outlet />
-            </Body>
-            {!isCallbackPage && isDesktop && <Footer />}
-        </div>
+        <SandboxProvider>
+            <div
+                className={clsx('layout', {
+                    responsive: isDesktop,
+                    'quick-strategy-active': is_quick_strategy_active && !isDesktop,
+                })}
+            >
+                {!isCallbackPage && <AppHeader isAuthenticating={isAuthenticating || !isInitialAuthCheckComplete} />}
+                <Body>
+                    <Outlet />
+                </Body>
+                {!isCallbackPage && isDesktop && <Footer />}
+            </div>
+        </SandboxProvider>
     );
 });
 
