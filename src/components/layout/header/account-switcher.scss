@@ -153,10 +153,8 @@
     &__sandbox-spinner {
         width: 1.1rem;
         height: 1.1rem;
-        border: 0.15rem solid rgba(255, 255, 255, 0.28);
-        border-top-color: $color-yellow;
-        border-radius: 50%;
-        animation: acc-sandbox-spin 0.7s linear infinite;
+        color: $color-yellow;
+        animation: acc-sandbox-spin 0.9s linear infinite;
     }
 
     &--is-virtual {

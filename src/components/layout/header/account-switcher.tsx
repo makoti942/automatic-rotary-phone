@@ -77,6 +77,16 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const sandboxIsActive = isSandboxActive || isSandbox || persistedSandboxActive;
 
     useEffect(() => {
+        if (!isSandboxTransitioning) return;
+        if (sandboxIsActive || isSandbox) {
+            setIsSandboxTransitioning(false);
+            return;
+        }
+        const timeout = window.setTimeout(() => setIsSandboxTransitioning(false), 4000);
+        return () => window.clearTimeout(timeout);
+    }, [isSandboxTransitioning, sandboxIsActive, isSandbox]);
+
+    useEffect(() => {
         const handleIconChange = () => {
             const active = isCustomDemoIconActive();
             setShowAsReal(active);
@@ -279,7 +289,18 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                             <Text as='p' size='xs' className='acc-info__account-type'>
                                 {isSandboxTransitioning ? (
                                     <span className='acc-info__sandbox-loading' aria-label='Entering demo account'>
-                                        <span className='acc-info__sandbox-spinner' />
+                                        <svg className='acc-info__sandbox-spinner' viewBox='0 0 24 24' fill='none'>
+                                            <circle
+                                                cx='12'
+                                                cy='12'
+                                                r='10'
+                                                stroke='currentColor'
+                                                strokeWidth='2.5'
+                                                strokeLinecap='round'
+                                                strokeDasharray='31.416'
+                                                strokeDashoffset='10'
+                                            />
+                                        </svg>
                                         <Localize i18n_default_text='Loading demo account' />
                                     </span>
                                 ) : sandboxIsActive ? (
