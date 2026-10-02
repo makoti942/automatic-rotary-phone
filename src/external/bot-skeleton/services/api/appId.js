@@ -144,32 +144,36 @@ export const generateDerivApiInstance = async (forceNew = false) => {
                         // Direct buy with parameters — check sandbox
                         if ('buy' in request) {
                             if (request.parameters) {
-                                const fakeResponse = sandboxEngine.trySandboxBuy(request);
-                                if (fakeResponse) {
-                                    if (fakeResponse.error) {
-                                        return Promise.reject(fakeResponse);
+                                return sandboxEngine.trySandboxBuyAsync(request).then(fakeResponse => {
+                                    if (fakeResponse) {
+                                        if (fakeResponse.error) {
+                                            return Promise.reject(fakeResponse);
+                                        }
+                                        setTimeout(() => {
+                                            window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                                                detail: { data: JSON.stringify(fakeResponse) },
+                                            }));
+                                        }, 0);
+                                        return fakeResponse;
                                     }
-                                    setTimeout(() => {
-                                        window.dispatchEvent(new CustomEvent('newSystemMessage', {
-                                            detail: { data: JSON.stringify(fakeResponse) },
-                                        }));
-                                    }, 0);
-                                    return Promise.resolve(fakeResponse);
-                                }
+                                    return originalSend(request);
+                                });
                             } else if (!request.parameters && request.price) {
                                 // Proposal-based buy: { buy: proposalId, price }
-                                const fakeResponse = sandboxEngine.trySandboxBuy(request);
-                                if (fakeResponse) {
-                                    if (fakeResponse.error) {
-                                        return Promise.reject(fakeResponse);
+                                return sandboxEngine.trySandboxBuyAsync(request).then(fakeResponse => {
+                                    if (fakeResponse) {
+                                        if (fakeResponse.error) {
+                                            return Promise.reject(fakeResponse);
+                                        }
+                                        setTimeout(() => {
+                                            window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                                                detail: { data: JSON.stringify(fakeResponse) },
+                                            }));
+                                        }, 0);
+                                        return fakeResponse;
                                     }
-                                    setTimeout(() => {
-                                        window.dispatchEvent(new CustomEvent('newSystemMessage', {
-                                            detail: { data: JSON.stringify(fakeResponse) },
-                                        }));
-                                    }, 0);
-                                    return Promise.resolve(fakeResponse);
-                                }
+                                    return originalSend(request);
+                                });
                             }
                         }
                     }

@@ -50,6 +50,19 @@ export function isSandboxActive(): boolean {
     try { return localStorage.getItem('sandbox_active') === 'true'; } catch { return false; }
 }
 
+/** Remaining ms before the next trade on this symbol is allowed (0 if ready). */
+export function getRemainingDelayMs(symbol: string): number {
+    const lastSettle = lastSettlementTime.get(symbol);
+    if (!lastSettle) return 0;
+    const delay = getTradeDelay(symbol);
+    const remaining = delay - (Date.now() - lastSettle);
+    return remaining > 0 ? remaining : 0;
+}
+
+function sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export function getSandboxBalance(): number {
     try { return Number(localStorage.getItem('sandbox_balance') || '0'); } catch { return 0; }
 }
@@ -180,6 +193,37 @@ export function trySandboxBuy(msg: any): any | null {
         },
         echo_req: { buy: '1', price: stake },
     };
+}
+
+/**
+ * Async variant of trySandboxBuy that WAITS out the trade-spacing delay
+ * instead of rejecting with RateLimited. Returns a fake Deriv buy response
+ * after the delay, or null if sandbox is inactive / trade rejected.
+ */
+export async function trySandboxBuyAsync(msg: any): Promise<any | null> {
+    if (!isSandboxActive()) return null;
+
+    // Extract symbol to compute remaining delay
+    let symbol = '';
+    if (msg.buy && msg.parameters) {
+        symbol = msg.parameters.underlying_symbol || msg.parameters.symbol || '';
+    } else if (msg.buy && !msg.parameters && msg.price) {
+        const cached = proposalCache.get(String(msg.buy));
+        symbol = cached?.underlying_symbol || cached?.symbol || '';
+    } else if (msg.parameters && msg.parameters.contract_type) {
+        symbol = msg.parameters.underlying_symbol || msg.parameters.symbol || '';
+    }
+
+    // Wait out the trade-spacing delay instead of rejecting
+    if (symbol) {
+        const remaining = getRemainingDelayMs(symbol);
+        if (remaining > 0) {
+            console.log(`[SandboxEngine] Waiting ${Math.ceil(remaining / 1000)}s for trade spacing on ${symbol}...`);
+            await sleep(remaining + 50);
+        }
+    }
+
+    return trySandboxBuy(msg);
 }
 
 /**

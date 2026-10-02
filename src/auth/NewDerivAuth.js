@@ -49,7 +49,7 @@ export async function sendViaNewSystemWithPromise(msg) {
     // Sandbox interception: execute buys locally instead of sending to Deriv
     if (isBuyMessage(msg)) {
         if (sandboxEngine.isSandboxActive()) {
-            const fakeResponse = sandboxEngine.trySandboxBuy(msg);
+            const fakeResponse = await sandboxEngine.trySandboxBuyAsync(msg);
             if (fakeResponse) {
                 if (fakeResponse.error) return Promise.reject(fakeResponse);
                 // Dispatch the fake response so any WS listeners also see it
