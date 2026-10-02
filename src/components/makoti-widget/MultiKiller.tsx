@@ -474,7 +474,7 @@ export const MultiKiller: React.FC = () => {
                 const proposalMsg: Record<string, any> = {
                     proposal: 1,
                     amount: stakeNum,
-                    basis: 'stake',
+                    basis: 'payout',
                     contract_type: ct,
                     currency: 'USD',
                     duration: dur,
