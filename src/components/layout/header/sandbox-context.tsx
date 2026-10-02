@@ -269,10 +269,15 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const clientAccounts = localStorage.getItem('clientAccounts');
             if (clientAccounts) {
                 const accounts = JSON.parse(clientAccounts);
-                const activeLoginid = localStorage.getItem('active_loginid');
-                if (activeLoginid && accounts[activeLoginid]?.balance !== undefined) {
-                    return Number(accounts[activeLoginid].balance);
+                // Find the virtual/demo account specifically — not the active loginid
+                // (active loginid could be a real account CR...)
+                const demoLoginid = Object.keys(accounts).find(id =>
+                    id.startsWith('VRTC') || id.startsWith('VRW') || id.startsWith('DEM') || id.startsWith('DOT')
+                );
+                if (demoLoginid && accounts[demoLoginid]?.balance !== undefined) {
+                    return Number(accounts[demoLoginid].balance);
                 }
+                // Fallback: if no demo account found, return 0
             }
         } catch {}
         return 0;

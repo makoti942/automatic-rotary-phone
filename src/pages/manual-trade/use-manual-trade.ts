@@ -183,6 +183,10 @@ export function useManualTrade() {
     const [error] = useState<string | null>(null);
     const [tradeFlash, setTradeFlash] = useState<TradeFlash | null>(null);
     const { isSandbox, executeSandboxTrade } = useSandbox();
+    // Mirror isSandbox into a ref so buyWithMode's closure always sees the
+    // current value — isSandbox is NOT in buyWithMode's dependency array.
+    const isSandboxRef = useRef(isSandbox);
+    isSandboxRef.current = isSandbox;
     const [notifications, setNotifications] = useState<TradeNotification[]>([]);
     const [exitDigit, setExitDigit] = useState<number | null>(null);
     const [activeTrade, setActiveTrade] = useState<ActiveTrade | null>(null);
@@ -632,7 +636,8 @@ export function useManualTrade() {
         }
 
         // Sandbox mode: execute locally, don't send to Deriv
-        if (isSandbox) {
+        // Use ref because isSandbox is not in this callback's dependency array
+        if (isSandboxRef.current) {
             const trade = executeSandboxTrade({
                 symbol: activeSymbol,
                 contractType: mode,
