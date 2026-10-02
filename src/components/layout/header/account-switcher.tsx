@@ -37,7 +37,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const wrapperRef = useRef<HTMLDivElement>(null);
     const { accountList, activeLoginid } = useApiBase();
     const { client, run_panel } = useStore() ?? {};
-    const { isSandbox, sandboxBalance, enterSandbox, exitSandbox, getActualDemoBalance } = useSandbox();
+    const { isSandbox, sandboxBalance, enterSandbox, exitSandbox } = useSandbox();
 
     // Mirror sandbox state in local state — observer (mobx) does NOT re-render on React context changes
     const [localSandbox, setLocalSandbox] = useState(false);
@@ -199,7 +199,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         if (sandboxIsActive) {
             const virtualAccount = accountList.find(a => isDemoAccount(a.loginid));
             if (virtualAccount) {
-                const actualDemoBal = getActualDemoBalance();
+                // Use live client-store balance (same source as trick mode),
+                // NOT getActualDemoBalance() which reads stale localStorage.
+                const rawBal = allBal[virtualAccount.loginid]?.balance ?? virtualAccount.balance ?? 0;
                 results.push({
                     loginid: virtualAccount.loginid,
                     currency: virtualAccount.currency,
@@ -211,7 +213,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                 results.push({
                     loginid: virtualAccount.loginid,
                     currency: virtualAccount.currency,
-                    balance: addComma(actualDemoBal.toFixed(getDecimalPlaces(virtualAccount.currency))),
+                    balance: addComma(Number(rawBal).toFixed(getDecimalPlaces(virtualAccount.currency))),
                     isVirtual: false,
                     isActive: false,
                     _isFakeReal: true,
