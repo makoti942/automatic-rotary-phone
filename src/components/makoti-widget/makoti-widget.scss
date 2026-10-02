@@ -432,6 +432,33 @@ $mw-radius:   10px;
         min-width: 60px;
     }
 
+    .mw-killer__fields--hl {
+        flex-direction: column;
+        gap: 8px;
+
+        .mw-field {
+            flex-direction: column;
+            align-items: stretch;
+            gap: 2px;
+        }
+
+        .mw-field .mw-label {
+            flex-shrink: 0;
+            min-width: 0;
+        }
+
+        .mw-field .mw-input {
+            flex: 1 1 auto;
+            width: 100%;
+            min-width: 0;
+            font-size: 12px;
+        }
+
+        .mw-field .mw-hint {
+            flex-shrink: 0;
+        }
+    }
+
     .mw-types-row {
         gap: 4px;
     }

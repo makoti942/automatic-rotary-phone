@@ -542,10 +542,12 @@ export const MultiKiller: React.FC = () => {
             window.addEventListener('newSystemMessage', handler);
 
             if (isHL) {
-                // Step 1: proposal with relative barrier
+                // Step 1: proposal with relative barrier (new API requires underlying_symbol, not symbol)
+                const { symbol: _sym, ...proposalBase } = baseParams;
                 ws.send(JSON.stringify({
                     proposal: 1,
-                    ...baseParams,
+                    ...proposalBase,
+                    underlying_symbol: market,
                     req_id: reqId,
                 }));
             } else {
@@ -1246,7 +1248,7 @@ export const MultiKiller: React.FC = () => {
             )}
 
             {(selected.includes('higher') || selected.includes('lower')) && (
-                <div className='mw-killer__fields'>
+                <div className='mw-killer__fields mw-killer__fields--hl'>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>H/L Duration (ticks)</label>
                         <input className='mw-input' type='number' min='1' max='50' step='1'
