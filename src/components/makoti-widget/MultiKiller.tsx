@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ALL_SYMBOLS } from '@/components/makoti-widget/makoti-ws';
+import { ALL_SYMBOLS, PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
@@ -84,8 +84,7 @@ export const MultiKiller: React.FC = () => {
     const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
     });
-    const [hlOffset, setHlOffset] = useState(cfg.hlOffset || '0.34');
-    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 1);
+    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 5);
     const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
     const [accuracy, setAccuracy] = useState(cfg.accuracy ?? false);
@@ -102,7 +101,7 @@ export const MultiKiller: React.FC = () => {
     // Persist config to localStorage
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy,
+            market, selected, stakes, barriers, delays, hlDuration, tickDirection, tickDirMode, accuracy,
         }));
     }, [market, selected, stakes, barriers, delays, hlDuration, tickDirection, tickDirMode, accuracy]);
 
@@ -137,8 +136,8 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5', higher: '5', lower: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
-    const hlDurationRef = useRef(1);
-    const hlOffsetRef = useRef('0.34');
+    const hlDurationRef = useRef(5);
+    const currentPriceRef = useRef<number | null>(null);
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
@@ -172,9 +171,29 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
     useEffect(() => { hlDurationRef.current = hlDuration; }, [hlDuration]);
-    useEffect(() => { hlOffsetRef.current = hlOffset; }, [hlOffset]);
     useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
     useEffect(() => { accuracyRef.current = accuracy; }, [accuracy]);
+
+    // Always-on live price tracker for the selected market (used as Higher/Lower barrier)
+    useEffect(() => {
+        currentPriceRef.current = null;
+        const unsub = onNewSystemMessage((event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.msg_type !== 'tick') return;
+                if (data.tick?.symbol !== market) return;
+                const price = parseFloat(data.tick?.quote ?? data.tick?.bid ?? data.tick?.ask);
+                if (!isNaN(price)) currentPriceRef.current = price;
+            } catch {}
+        });
+        sendViaNewSystemWithPromise({ ticks_history: market, style: 'ticks', count: 1, end: 'latest' })
+            .then((d: any) => {
+                const p = parseFloat(d?.history?.prices?.[0] ?? d?.prices?.[0]);
+                if (!isNaN(p)) currentPriceRef.current = p;
+            })
+            .catch(() => {});
+        return unsub;
+    }, [market]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
     const hasDirectional = selected.some(s => ['rise', 'fall', 'higher', 'lower', 'ups', 'downs'].includes(s));
@@ -435,17 +454,19 @@ export const MultiKiller: React.FC = () => {
             const dur = isHL ? hlDurationRef.current : DURATION[strategy];
             const needBarrier = NEEDS_BARRIER[strategy];
 
-            // Higher/Lower: relative barrier offset from entry spot
-            //   Higher: barrier = "+0.34" → win if exit > entry + 0.34
-            //   Lower:  barrier = "-0.34" → win if exit < entry - 0.34
+            // Higher/Lower: absolute barrier = live tick price (Deriv synthetic indices accept absolute barriers)
+            //   Higher wins if exit spot > barrier; Lower wins if exit spot < barrier
             // Over/Under/Differs: barrier = user-configured digit
             let barrier: string | undefined;
             if (isHL) {
-                const off = hlOffsetRef.current.trim() || '0.34';
-                const sign = strategy === 'higher' ? '+' : '-';
-                barrier = off.startsWith('+') || off.startsWith('-')
-                    ? (strategy === 'lower' && off.startsWith('+') ? '-' + off.slice(1) : strategy === 'higher' && off.startsWith('-') ? '+' + off.slice(1) : off)
-                    : sign + off;
+                const px = currentPriceRef.current;
+                if (px == null) {
+                    log(`❌ ${LABELS[strategy]}: no live price yet`);
+                    resolve(null);
+                    return;
+                }
+                const pip = PIP_SIZES[market] ?? 2;
+                barrier = px.toFixed(pip);
             } else if (needBarrier) {
                 const rawBarrier = barriersRef.current[strategy] ?? '5';
                 barrier = String(parseInt(rawBarrier) || 5);
@@ -1214,17 +1235,17 @@ export const MultiKiller: React.FC = () => {
                 <div className='mw-killer__fields'>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>H/L Duration (ticks)</label>
-                        <input className='mw-input' type='number' min='1' max='10' step='1'
+                        <input className='mw-input' type='number' min='1' max='50' step='1'
                             value={hlDuration}
-                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 1))} />
+                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 5))} />
                     </div>
                     <div className='mw-field mw-field--grow'>
-                        <label className='mw-label'>H/L Barrier Offset</label>
-                        <input className='mw-input' type='number' step='0.01'
-                            placeholder='e.g. 0.34'
-                            value={hlOffset}
-                            onChange={e => setHlOffset(e.target.value)} />
-                        <span className='mw-hint'>Higher: +offset · Lower: −offset (relative to entry)</span>
+                        <label className='mw-label'>H/L Barrier</label>
+                        <input className='mw-input' type='text'
+                            readOnly
+                            value={currentPriceRef.current != null
+                                ? currentPriceRef.current.toFixed(PIP_SIZES[market] ?? 2)
+                                : 'Waiting...'} />
                     </div>
                 </div>
             )}
