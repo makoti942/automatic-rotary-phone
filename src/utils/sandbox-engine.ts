@@ -12,16 +12,24 @@ export interface SandboxTradeRecord {
     stake: number;
     payout: number;
     entryDigit: number;
+    entrySpot: number | null;
+    entryTime: number | null;
     resultDigit: number | null;
+    exitSpot: number | null;
+    exitTime: number | null;
     profit: number | null;
     status: 'open' | 'won' | 'lost';
     openedAt: number;
     settledAt: number | null;
     duration: number;
+    tickCount: number;
 }
 
 let nextContractId = 910000;
-const openTrades = new Map<number, { trade: SandboxTradeRecord; tickBuffer: number[] }>();
+const openTrades = new Map<number, {
+    trade: SandboxTradeRecord;
+    tickBuffer: Array<{ digit: number; quote: number; time: number }>;
+}>();
 const seenTicks = new Set<string>();
 
 // Cache proposals by id so proposal-based buys can be resolved locally
@@ -120,12 +128,17 @@ export function trySandboxBuy(msg: any): any | null {
         stake,
         payout,
         entryDigit: 0,
+        entrySpot: null,
+        entryTime: null,
         resultDigit: null,
+        exitSpot: null,
+        exitTime: null,
         profit: null,
         status: 'open',
         openedAt: Date.now(),
         settledAt: null,
         duration,
+        tickCount: 0,
     };
 
     openTrades.set(contractId, { trade, tickBuffer: [] });
@@ -148,17 +161,29 @@ export function trySandboxBuy(msg: any): any | null {
 /**
  * Feed a tick into the sandbox engine. Settles any open trade whose
  * symbol matches and whose duration has been reached.
+ * Captures real tick quotes for entry/exit spots.
  */
 export function feedSandboxTick(symbol: string, quote: number): void {
     if (openTrades.size === 0) return;
     const digit = lastDigitOfPrice(quote);
+    const now = Date.now();
 
     for (const [id, entry] of openTrades) {
         if (entry.trade.symbol !== symbol) continue;
-        entry.tickBuffer.push(digit);
+
+        // Capture entry spot on first tick
+        if (entry.trade.entrySpot === null) {
+            entry.trade.entrySpot = quote;
+            entry.trade.entryTime = now;
+            entry.trade.entryDigit = digit;
+        }
+
+        entry.tickBuffer.push({ digit, quote, time: now });
+        entry.trade.tickCount = entry.tickBuffer.length;
 
         if (entry.tickBuffer.length >= entry.trade.duration) {
-            const resultDigit = entry.tickBuffer[entry.tickBuffer.length - 1];
+            const lastTick = entry.tickBuffer[entry.tickBuffer.length - 1];
+            const resultDigit = lastTick.digit;
             const won = getWinCondition(entry.trade.contractType, entry.trade.barrier, resultDigit);
             const profit = won ? entry.trade.payout - entry.trade.stake : -entry.trade.stake;
             const currentBal = getSandboxBalance();
@@ -167,95 +192,129 @@ export function feedSandboxTick(symbol: string, quote: number): void {
             const settled: SandboxTradeRecord = {
                 ...entry.trade,
                 resultDigit,
+                exitSpot: lastTick.quote,
+                exitTime: lastTick.time,
                 profit,
                 status: won ? 'won' : 'lost',
-                settledAt: Date.now(),
+                settledAt: now,
             };
 
             openTrades.delete(id);
             setSandboxBalance(newBal);
 
-            // Dispatch settlement event for UI
+            // Dispatch settlement event for UI (manual trade, sandbox context)
             window.dispatchEvent(new CustomEvent('sandbox_trade_settled', {
                 detail: settled,
             }));
 
-            // Emit bot.contract event so bot builder results panel updates
-            emitBotContractEvent(settled);
+            // Inject fake POC into DerivAPIBasic's event stream so:
+            // 1. Bot engine's OpenContract sees settlement → dispatches sell() → next trade
+            // 2. broadcastContract emits bot.contract → results panel records entry/exit ticks
+            injectPOCIntoBotEngine(settled);
 
-            // Dispatch fake proposal_open_contract via newSystemMessage
-            // so widget engines (which listen on newSystemMessage) can see settlements
+            // Also dispatch via newSystemMessage for widget engines
             dispatchFakePOC(settled);
         }
     }
 }
 
 /**
- * Emit a bot.contract event via the global observer so the bot builder's
- * results panel (run-panel-store, transactions, summary-card) receives it.
- * This bridges sandbox settlements into the bot engine's expected event stream.
+ * Inject a fake proposal_open_contract message directly into
+ * DerivAPIBasic's internal event stream (api_base.api.events.next()).
+ * This is the ONLY channel the bot engine's OpenContract listens on.
+ * One injection fixes both the trade loop AND results panel tick recording.
  */
-function emitBotContractEvent(settled: SandboxTradeRecord): void {
+function injectPOCIntoBotEngine(settled: SandboxTradeRecord): void {
     try {
-        // Dynamically import to avoid circular deps at module load time
-        // The observer is a simple singleton — access via global
-        const observer = (window as any).__botObserver || null;
-        if (observer && typeof observer.emit === 'function') {
-            const contractData = {
-                accountID: 'sandbox',
+        const api = (window as any)._derivApi;
+        if (!api || !api.events || typeof api.events.next !== 'function') {
+            console.warn('[SandboxEngine] _derivApi not available for POC injection');
+            return;
+        }
+
+        const won = settled.status === 'won';
+        const pocData = {
+            msg_type: 'proposal_open_contract',
+            proposal_open_contract: {
                 contract_id: settled.contractId,
                 is_sold: true,
+                is_expired: true,
+                is_valid_to_sell: false,
                 is_virtual: true,
+                is_completed: true,
+                status: settled.status,
                 profit: settled.profit,
-                sell_price: settled.status === 'won' ? settled.payout : 0,
                 buy_price: settled.stake,
-                entry_tick: settled.entryDigit,
-                exit_tick: settled.resultDigit,
+                sell_price: won ? settled.payout : 0,
+                payout: settled.payout,
+                bid_price: won ? settled.payout : 0,
+                currency: 'USD',
                 symbol: settled.symbol,
                 contract_type: settled.contractType,
                 barrier: settled.barrier ? String(settled.barrier) : undefined,
-                transaction_ids: { buy: `sandbox_buy_${settled.contractId}`, sell: `sandbox_sell_${settled.contractId}` },
+                underlying: settled.symbol,
+                display_name: settled.symbol,
+                transaction_ids: {
+                    buy: `sandbox_buy_${settled.contractId}`,
+                    sell: `sandbox_sell_${settled.contractId}`,
+                },
+                // Results-panel tick fields — real spot prices, not digits
+                entry_spot: settled.entrySpot,
+                exit_spot: settled.exitSpot,
+                entry_tick: settled.entrySpot,
+                exit_tick: settled.exitSpot,
+                entry_tick_time: settled.entryTime ? Math.floor(settled.entryTime / 1000) : Math.floor(settled.openedAt / 1000),
+                exit_tick_time: settled.exitTime ? Math.floor(settled.exitTime / 1000) : Math.floor((settled.settledAt || Date.now()) / 1000),
+                tick_count: settled.tickCount,
                 date_start: Math.floor(settled.openedAt / 1000),
                 date_expiry: Math.floor((settled.settledAt || Date.now()) / 1000),
-                status: settled.status,
-            };
-            observer.emit('bot.contract', contractData);
-            observer.emit('contract.status', {
-                id: 'contract.sold',
-                data: contractData.transaction_ids.sell,
-                contract: contractData,
-            });
-        }
+            },
+        };
+
+        // Push into DerivAPIBasic's event stream — this is what onMessage() listens to
+        api.events.next({ name: 'message', data: pocData });
+        console.log('[SandboxEngine] Injected POC into bot engine for contract', settled.contractId);
     } catch (e) {
-        console.warn('[SandboxEngine] Failed to emit bot.contract:', e);
+        console.warn('[SandboxEngine] Failed to inject POC into bot engine:', e);
     }
 }
 
 /**
  * Dispatch a fake proposal_open_contract message via newSystemMessage.
- * Widget engines listen on newSystemMessage for settlements — this bridges
- * sandbox settlements into their expected event stream.
+ * Widget engines listen on newSystemMessage for settlements.
  */
 function dispatchFakePOC(settled: SandboxTradeRecord): void {
     try {
+        const won = settled.status === 'won';
         const pocData = {
             msg_type: 'proposal_open_contract',
             proposal_open_contract: {
                 contract_id: settled.contractId,
                 is_sold: true,
                 is_virtual: true,
+                is_completed: true,
+                status: settled.status,
                 profit: settled.profit,
-                sell_price: settled.status === 'won' ? settled.payout : 0,
                 buy_price: settled.stake,
-                entry_tick: settled.entryDigit,
-                exit_tick: settled.resultDigit,
+                sell_price: won ? settled.payout : 0,
+                payout: settled.payout,
+                currency: 'USD',
                 symbol: settled.symbol,
                 contract_type: settled.contractType,
                 barrier: settled.barrier ? String(settled.barrier) : undefined,
-                transaction_ids: { buy: `sandbox_buy_${settled.contractId}`, sell: `sandbox_sell_${settled.contractId}` },
+                transaction_ids: {
+                    buy: `sandbox_buy_${settled.contractId}`,
+                    sell: `sandbox_sell_${settled.contractId}`,
+                },
+                entry_spot: settled.entrySpot,
+                exit_spot: settled.exitSpot,
+                entry_tick: settled.entrySpot,
+                exit_tick: settled.exitSpot,
+                entry_tick_time: settled.entryTime ? Math.floor(settled.entryTime / 1000) : Math.floor(settled.openedAt / 1000),
+                exit_tick_time: settled.exitTime ? Math.floor(settled.exitTime / 1000) : Math.floor((settled.settledAt || Date.now()) / 1000),
+                tick_count: settled.tickCount,
                 date_start: Math.floor(settled.openedAt / 1000),
                 date_expiry: Math.floor((settled.settledAt || Date.now()) / 1000),
-                status: settled.status,
             },
         };
         window.dispatchEvent(new CustomEvent('newSystemMessage', {

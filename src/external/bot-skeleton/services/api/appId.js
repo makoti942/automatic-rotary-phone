@@ -101,6 +101,8 @@ export const generateDerivApiInstance = async (forceNew = false) => {
                 connection: deriv_socket,
                 middleware: new APIMiddleware({}),
             });
+            // Expose on window so sandbox engine can inject fake POC messages
+            window._derivApi = deriv_api;
 
             // Sandbox interception: patch api.send to intercept buy requests
             const originalSend = deriv_api.send.bind(deriv_api);
