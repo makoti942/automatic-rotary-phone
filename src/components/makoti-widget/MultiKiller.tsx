@@ -84,7 +84,7 @@ export const MultiKiller: React.FC = () => {
     const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
     });
-    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 5);
+    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 1);
     const [hlOffset, setHlOffset] = useState(cfg.hlOffset || '0.02');
     const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
@@ -137,7 +137,7 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5', higher: '5', lower: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
-    const hlDurationRef = useRef(5);
+    const hlDurationRef = useRef(1);
     const hlOffsetRef = useRef('0.02');
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
@@ -450,7 +450,7 @@ export const MultiKiller: React.FC = () => {
             barrier = String(parseInt(rawBarrier) || 5);
         }
 
-        log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}t $${stakeNum}`);
+        log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}${isHL ? 'm' : 't'} $${stakeNum}`);
 
         if (isHL) {
             // ── HL: proposal → buy via sendViaNewSystemWithPromise ──
@@ -462,7 +462,7 @@ export const MultiKiller: React.FC = () => {
                     contract_type: ct,
                     currency: 'USD',
                     duration: dur,
-                    duration_unit: 't',
+                    duration_unit: 'm',
                     symbol: market,
                     barrier: barrier!,
                 };
@@ -1263,10 +1263,10 @@ export const MultiKiller: React.FC = () => {
             {(selected.includes('higher') || selected.includes('lower')) && (
                 <div className='mw-killer__fields mw-killer__fields--hl'>
                     <div className='mw-field mw-field--grow'>
-                        <label className='mw-label'>H/L Duration (ticks)</label>
-                        <input className='mw-input' type='number' min='1' max='50' step='1'
+                        <label className='mw-label'>H/L Duration (minutes)</label>
+                        <input className='mw-input' type='number' min='1' max='60' step='1'
                             value={hlDuration}
-                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 5))} />
+                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 1))} />
                     </div>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>H/L Barrier Offset</label>
