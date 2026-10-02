@@ -53,7 +53,6 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
             if (detail) {
                 setLocalSandbox(!!detail.isSandbox);
                 setLocalSandboxBalance(Number(detail.sandboxBalance) || 0);
-                setIsSandboxTransitioning(false);
             } else {
                 // Fallback: read from localStorage
                 setLocalSandbox(localStorage.getItem('sandbox_active') === 'true');
@@ -80,13 +79,9 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
 
     useEffect(() => {
         if (!isSandboxTransitioning) return;
-        if (sandboxIsActive || isSandbox) {
-            setIsSandboxTransitioning(false);
-            return;
-        }
-        const timeout = window.setTimeout(() => setIsSandboxTransitioning(false), 4000);
+        const timeout = window.setTimeout(() => setIsSandboxTransitioning(false), 3000);
         return () => window.clearTimeout(timeout);
-    }, [isSandboxTransitioning, sandboxIsActive, isSandbox]);
+    }, [isSandboxTransitioning]);
 
     useEffect(() => {
         const handleIconChange = () => {
@@ -289,11 +284,33 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                 >
                     <span className='acc-info__id' aria-hidden='true'></span>
                     <div className='acc-info__content'>
+                        {isSandboxTransitioning ? (
+                            <div className='acc-info__sandbox-loading'>
+                                <svg
+                                    className='acc-info__sandbox-spinner'
+                                    viewBox='0 0 24 24'
+                                    fill='none'
+                                    xmlns='http://www.w3.org/2000/svg'
+                                >
+                                    <circle
+                                        cx='12'
+                                        cy='12'
+                                        r='10'
+                                        stroke='currentColor'
+                                        strokeWidth='2.5'
+                                        strokeLinecap='round'
+                                        strokeDasharray='31.416'
+                                        strokeDashoffset='10'
+                                    />
+                                </svg>
+                            </div>
+                        ) : (
+                        <>
                         <div className='acc-info__account-type-header'>
                             <Text as='p' size='xs' className='acc-info__account-type'>
                                 {sandboxIsActive ? (
                                     <Localize i18n_default_text='Demo account' />
-        ) : trickModeActive && isVirtual ? (
+                                ) : trickModeActive && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
                                 ) : isVirtual ? (
                                     <Localize i18n_default_text='Demo account' />
@@ -375,6 +392,8 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 )}
                             </div>
                         )}
+                        </>
+                        )}
                     </div>
                 </div>
             </AccountInfoWrapper>
@@ -405,6 +424,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 if (account._isFakeReal && sandboxIsActive) {
                                     // Clicking "Real account" while in sandbox → exit sandbox
                                     console.log('[AccountSwitcher] Exiting sandbox');
+                                    setIsSandboxTransitioning(true);
                                     exitSandbox();
                                     setIsOpen(false);
                                     return;
