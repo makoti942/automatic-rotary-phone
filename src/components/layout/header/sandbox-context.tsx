@@ -119,6 +119,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
                     setSandboxBalance(balance);
                     isSandboxRef.current = true;
                     balanceRef.current = balance;
+                } else {
+                    localStorage.removeItem('sandbox_active');
+                    localStorage.removeItem('sandbox_balance');
                 }
             }
         } catch {}

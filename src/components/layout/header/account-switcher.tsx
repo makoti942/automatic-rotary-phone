@@ -40,7 +40,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const { isSandbox, sandboxBalance, enterSandbox, exitSandbox, getActualDemoBalance } = useSandbox();
 
     // Mirror sandbox state in local state — observer (mobx) does NOT re-render on React context changes
-    const [localSandbox, setLocalSandbox] = useState(() => localStorage.getItem('sandbox_active') === 'true');
+    const [localSandbox, setLocalSandbox] = useState(false);
     const [localSandboxBalance, setLocalSandboxBalance] = useState(() => {
         const v = localStorage.getItem('sandbox_balance');
         return v ? Number(v) : 0;
@@ -73,8 +73,10 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     // Demo/Real entries and their click behavior stay in sync.
     const persistedTrickActive = typeof window !== 'undefined' && localStorage.getItem('is_custom_demo_icon_active') === 'true';
     const trickModeActive = showAsReal || persistedTrickActive;
-    const persistedSandboxActive = typeof window !== 'undefined' && localStorage.getItem('sandbox_active') === 'true';
-    const sandboxIsActive = isSandboxActive || isSandbox || persistedSandboxActive;
+    // The provider is authoritative. localStorage is only persistence, not a
+    // live transition signal; trusting it here can leave a stale Demo row that
+    // returns early and makes the account appear unclickable.
+    const sandboxIsActive = isSandboxActive || isSandbox;
 
     useEffect(() => {
         if (!isSandboxTransitioning) return;
@@ -397,7 +399,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     isSandboxActive,
                                     fakeBalance,
                                 });
-                                if (account._isSandbox) return; // already in sandbox
+                                if (account._isSandbox && isSandbox) return; // already in sandbox
                                 if (account._isFakeReal && sandboxIsActive) {
                                     // Clicking "Real account" while in sandbox → exit sandbox
                                     console.log('[AccountSwitcher] Exiting sandbox');
