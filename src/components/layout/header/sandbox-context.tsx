@@ -1,6 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { calcPayout, getWinCondition } from '@/utils/sandbox-payout';
+import * as sandboxEngine from '@/utils/sandbox-engine';
 
 // Re-export for backward compatibility
 export { calcPayout, getWinCondition };
@@ -57,23 +57,12 @@ export const useSandbox = () => {
     };
 };
 
-let nextContractId = 900000;
-
 export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
     const [isSandbox, setIsSandbox] = useState(false);
     const [sandboxBalance, setSandboxBalance] = useState(0);
     const [sandboxTrades, setSandboxTrades] = useState<SandboxTrade[]>([]);
     const [activeSandboxContract, setActiveSandboxContract] = useState<SandboxTrade | null>(null);
-
-    const isSandboxRef = useRef(false);
-    const balanceRef = useRef(0);
-    const activeContractRef = useRef<SandboxTrade | null>(null);
-    const tickBufferRef = useRef<number[]>([]);
     const mountedRef = useRef(true);
-
-    isSandboxRef.current = isSandbox;
-    balanceRef.current = sandboxBalance;
-    activeContractRef.current = activeSandboxContract;
 
     useEffect(() => {
         mountedRef.current = true;
@@ -90,8 +79,6 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
                 if (balance > 0) {
                     setIsSandbox(true);
                     setSandboxBalance(balance);
-                    isSandboxRef.current = true;
-                    balanceRef.current = balance;
                 } else {
                     localStorage.removeItem('sandbox_active');
                     localStorage.removeItem('sandbox_balance');
@@ -100,100 +87,55 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         } catch {}
     }, []);
 
-    // Broadcast sandbox state changes so observer-wrapped components (e.g. AccountSwitcher) re-render
+    // Listen for balance changes dispatched by the sandbox engine
     useEffect(() => {
-        window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
-            detail: { isSandbox, sandboxBalance },
-        }));
-        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
-            detail: { isTransitioning: false },
-        }));
-    }, [isSandbox, sandboxBalance]);
+        const handler = (e: Event) => {
+            const detail = (e as CustomEvent).detail;
+            if (!mountedRef.current || !detail) return;
+            if (typeof detail.isSandbox === 'boolean') setIsSandbox(detail.isSandbox);
+            if (typeof detail.sandboxBalance === 'number') setSandboxBalance(detail.sandboxBalance);
+        };
+        window.addEventListener('sandbox_state_changed', handler);
+        return () => window.removeEventListener('sandbox_state_changed', handler);
+    }, []);
 
-    // Persist sandbox balance to localStorage whenever it changes
+    // Listen for trade settlements from the sandbox engine
     useEffect(() => {
-        if (isSandbox) {
-            localStorage.setItem('sandbox_balance', String(sandboxBalance));
-        }
-    }, [isSandbox, sandboxBalance]);
-
-    // Listen for ticks to settle sandbox contracts
-    useEffect(() => {
-        const unsub = onNewSystemMessage((event: MessageEvent) => {
-            if (!mountedRef.current) return;
-            try {
-                const data = JSON.parse(event.data);
-                if (!data.tick) return;
-
-                const contract = activeContractRef.current;
-                if (!contract || contract.status !== 'open') return;
-                if (data.tick.symbol !== contract.symbol) return;
-
-                const digit = Number(String(data.tick.quote).slice(-1));
-                tickBufferRef.current.push(digit);
-
-                if (tickBufferRef.current.length >= contract.duration) {
-                    const resultDigit = tickBufferRef.current[tickBufferRef.current.length - 1];
-                    const won = getWinCondition(contract.contractType, contract.barrier, resultDigit);
-                    const profit = won ? contract.payout - contract.stake : -contract.stake;
-                    const newBalance = balanceRef.current + (won ? contract.payout : 0);
-
-                    const settled: SandboxTrade = {
-                        ...contract,
-                        resultDigit,
-                        profit,
-                        status: won ? 'won' : 'lost',
-                        settledAt: Date.now(),
-                    };
-
-                    if (mountedRef.current) {
-                        setSandboxBalance(newBalance);
-                        setActiveSandboxContract(null);
-                        setSandboxTrades(prev => prev.map(t => t.contractId === contract.contractId ? settled : t));
-                    }
-                    activeContractRef.current = null;
-                    tickBufferRef.current = [];
-                }
-            } catch {}
-        });
-        return unsub;
+        const handler = (e: Event) => {
+            const settled = (e as CustomEvent).detail as SandboxTrade;
+            if (!mountedRef.current || !settled) return;
+            setActiveSandboxContract(null);
+            setSandboxTrades(prev => prev.map(t => t.contractId === settled.contractId ? settled : t));
+        };
+        window.addEventListener('sandbox_trade_settled', handler);
+        return () => window.removeEventListener('sandbox_trade_settled', handler);
     }, []);
 
     const enterSandbox = useCallback((initialBalance: number) => {
-        setSandboxBalance(initialBalance);
-        balanceRef.current = initialBalance;
-        setIsSandbox(true);
-        isSandboxRef.current = true;
         localStorage.setItem('sandbox_active', 'true');
         localStorage.setItem('sandbox_balance', String(initialBalance));
+        setIsSandbox(true);
+        setSandboxBalance(initialBalance);
+        setSandboxTrades([]);
+        setActiveSandboxContract(null);
         window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
             detail: { isSandbox: true, sandboxBalance: initialBalance },
         }));
-        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
-            detail: { isTransitioning: false },
-        }));
-        setSandboxTrades([]);
-        setActiveSandboxContract(null);
-        activeContractRef.current = null;
-        tickBufferRef.current = [];
     }, []);
 
     const exitSandbox = useCallback(() => {
-        setIsSandbox(false);
-        isSandboxRef.current = false;
         localStorage.removeItem('sandbox_active');
         localStorage.removeItem('sandbox_balance');
+        setIsSandbox(false);
+        setSandboxBalance(0);
+        setActiveSandboxContract(null);
+        setSandboxTrades([]);
         window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
             detail: { isSandbox: false, sandboxBalance: 0 },
         }));
-        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
-            detail: { isTransitioning: false },
-        }));
-        setActiveSandboxContract(null);
-        activeContractRef.current = null;
-        tickBufferRef.current = [];
     }, []);
 
+    // Delegate trade execution to the sandbox engine (single source of truth)
     const executeSandboxTrade = useCallback((params: {
         symbol: string;
         contractType: string;
@@ -202,20 +144,39 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         duration: number;
         entryDigit: number;
     }): SandboxTrade | null => {
-        if (!isSandboxRef.current) return null;
-        if (activeContractRef.current) return null; // one trade at a time
-        if (balanceRef.current < params.stake) return null;
+        if (!sandboxEngine.isSandboxActive()) return null;
+
+        const balance = sandboxEngine.getSandboxBalance();
+        if (balance < params.stake) return null;
 
         const payout = calcPayout(params.contractType, params.barrier, params.stake);
-        const newBalance = balanceRef.current - params.stake;
+        const newBalance = balance - params.stake;
 
+        // Build a fake buy message the sandbox engine can process
+        const fakeMsg = {
+            buy: 1,
+            price: params.stake,
+            parameters: {
+                contract_type: params.contractType,
+                barrier: params.barrier,
+                amount: params.stake,
+                underlying_symbol: params.symbol,
+                symbol: params.symbol,
+                duration: params.duration,
+            },
+        };
+
+        const response = sandboxEngine.trySandboxBuy(fakeMsg);
+        if (!response || response.error) return null;
+
+        const contractId = Number(response.buy.contract_id);
         const trade: SandboxTrade = {
-            contractId: nextContractId++,
+            contractId,
             symbol: params.symbol,
             contractType: params.contractType,
             barrier: params.barrier,
             stake: params.stake,
-            payout,
+            payout: response.buy.payout,
             entryDigit: params.entryDigit,
             resultDigit: null,
             profit: null,
@@ -225,14 +186,10 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
             duration: params.duration,
         };
 
-        tickBufferRef.current = [];
-        activeContractRef.current = trade;
-
-        if (mountedRef.current) {
-            setSandboxBalance(newBalance);
-            setActiveSandboxContract(trade);
-            setSandboxTrades(prev => [...prev, trade]);
-        }
+        // Sync React state from engine
+        setSandboxBalance(response.buy.balance_after);
+        setActiveSandboxContract(trade);
+        setSandboxTrades(prev => [...prev, trade]);
 
         return trade;
     }, []);
@@ -242,15 +199,12 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
             const clientAccounts = localStorage.getItem('clientAccounts');
             if (clientAccounts) {
                 const accounts = JSON.parse(clientAccounts);
-                // Find the virtual/demo account specifically — not the active loginid
-                // (active loginid could be a real account CR...)
                 const demoLoginid = Object.keys(accounts).find(id =>
                     id.startsWith('VRTC') || id.startsWith('VRW') || id.startsWith('DEM') || id.startsWith('DOT')
                 );
                 if (demoLoginid && accounts[demoLoginid]?.balance !== undefined) {
                     return Number(accounts[demoLoginid].balance);
                 }
-                // Fallback: if no demo account found, return 0
             }
         } catch {}
         return 0;

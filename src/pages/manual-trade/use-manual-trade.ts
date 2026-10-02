@@ -245,6 +245,57 @@ export function useManualTrade() {
 
     useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
 
+    // Listen for sandbox trade settlements (from sandbox engine)
+    useEffect(() => {
+        const handler = (e: Event) => {
+            const settled = (e as CustomEvent).detail;
+            if (!mountedRef.current || !settled) return;
+            const settledId = Number(settled.contractId);
+            const profit = Number(settled.profit ?? 0);
+            const won = settled.status === 'won';
+            const exitDigitVal = settled.resultDigit != null ? Number(settled.resultDigit) : -1;
+
+            setActiveTrade(null);
+            setTradeHistory(previous => previous.map(trade => trade.contractId === settledId ? {
+                ...trade,
+                profit,
+                status: won ? 'won' : 'lost',
+                closedAt: Date.now(),
+                exitDigit: exitDigitVal >= 0 ? exitDigitVal : undefined,
+            } : trade));
+
+            const flash: TradeFlash = {
+                digit: exitDigitVal,
+                win: won,
+                key: Date.now(),
+            };
+            setTradeFlash(flash);
+            if (flashTimerRef.current) clearTimeout(flashTimerRef.current);
+            flashTimerRef.current = setTimeout(() => {
+                if (mountedRef.current) setTradeFlash(null);
+            }, 4000);
+            if (exitDigitVal >= 0) setExitDigit(exitDigitVal);
+            if (exitDigitTimerRef.current) clearTimeout(exitDigitTimerRef.current);
+            exitDigitTimerRef.current = setTimeout(() => {
+                if (mountedRef.current) setExitDigit(null);
+            }, 3000);
+
+            const notif: TradeNotification = {
+                type: 'closed',
+                contractId: settledId,
+                profit,
+                exitDigit: exitDigitVal >= 0 ? exitDigitVal : undefined,
+                win: won,
+                stake: settled.stake,
+                key: Date.now(),
+            };
+            setNotifications(p => [...p, notif]);
+            setTimeout(() => setNotifications(p => p.filter(n => n.key !== notif.key)), 3000);
+        };
+        window.addEventListener('sandbox_trade_settled', handler);
+        return () => window.removeEventListener('sandbox_trade_settled', handler);
+    }, []);
+
     // Subscribe to WS messages
     useEffect(() => {
         const unsub = onNewSystemMessage((event: MessageEvent) => {
