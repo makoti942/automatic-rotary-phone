@@ -106,21 +106,65 @@ export const generateDerivApiInstance = async (forceNew = false) => {
             const originalSend = deriv_api.send.bind(deriv_api);
             deriv_api.send = function (request) {
                 try {
-                    if (request && typeof request === 'object' && 'buy' in request && request.parameters) {
+                    if (request && typeof request === 'object' && sandboxEngine.isSandboxActive()) {
+                        // Intercept proposal_open_contract polling — return fake settled response
+                        if (request.proposal_open_contract && request.contract_id) {
+                            const trade = sandboxEngine.getSandboxTrade(Number(request.contract_id));
+                            if (trade) {
+                                // Trade still open — return open contract
+                                return Promise.resolve({
+                                    msg_type: 'proposal_open_contract',
+                                    proposal_open_contract: {
+                                        contract_id: trade.contractId,
+                                        is_sold: false,
+                                        profit: 0,
+                                        buy_price: trade.stake,
+                                        entry_tick: trade.entryDigit,
+                                        symbol: trade.symbol,
+                                        contract_type: trade.contractType,
+                                        barrier: trade.barrier ? String(trade.barrier) : undefined,
+                                        transaction_ids: { buy: `sandbox_buy_${trade.contractId}` },
+                                    },
+                                    echo_req: request,
+                                });
+                            }
+                            // Not found — trade already settled, return empty
+                            return Promise.resolve({
+                                msg_type: 'proposal_open_contract',
+                                proposal_open_contract: null,
+                                echo_req: request,
+                            });
+                        }
+
                         // Direct buy with parameters — check sandbox
-                        if (sandboxEngine.isSandboxActive()) {
-                            const fakeResponse = sandboxEngine.trySandboxBuy(request);
-                            if (fakeResponse) {
-                                if (fakeResponse.error) {
-                                    return Promise.reject(fakeResponse);
+                        if ('buy' in request) {
+                            if (request.parameters) {
+                                const fakeResponse = sandboxEngine.trySandboxBuy(request);
+                                if (fakeResponse) {
+                                    if (fakeResponse.error) {
+                                        return Promise.reject(fakeResponse);
+                                    }
+                                    setTimeout(() => {
+                                        window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                                            detail: { data: JSON.stringify(fakeResponse) },
+                                        }));
+                                    }, 0);
+                                    return Promise.resolve(fakeResponse);
                                 }
-                                // Dispatch fake response so WS listeners see it
-                                setTimeout(() => {
-                                    window.dispatchEvent(new CustomEvent('newSystemMessage', {
-                                        detail: { data: JSON.stringify(fakeResponse) },
-                                    }));
-                                }, 0);
-                                return Promise.resolve(fakeResponse);
+                            } else if (!request.parameters && request.price) {
+                                // Proposal-based buy: { buy: proposalId, price }
+                                const fakeResponse = sandboxEngine.trySandboxBuy(request);
+                                if (fakeResponse) {
+                                    if (fakeResponse.error) {
+                                        return Promise.reject(fakeResponse);
+                                    }
+                                    setTimeout(() => {
+                                        window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                                            detail: { data: JSON.stringify(fakeResponse) },
+                                        }));
+                                    }, 0);
+                                    return Promise.resolve(fakeResponse);
+                                }
                             }
                         }
                     }

@@ -109,3 +109,8 @@ export default class Observer {
 }
 
 export const observer = new Observer();
+
+// Expose on window so sandbox engine can emit bot.contract events
+if (typeof window !== 'undefined') {
+    window.__botObserver = observer;
+}
