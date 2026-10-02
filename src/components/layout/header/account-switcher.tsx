@@ -410,16 +410,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 const isSandboxDemoEntry =
                                     !sandboxIsActive &&
                                     !account._isFakeReal &&
-                                    account.isVirtual &&
+                                    isDemoAccount(account.loginid) &&
                                     (trickModeActive || hasTrickAccountPair);
                                 if (isSandboxDemoEntry) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     setIsSandboxTransitioning(true);
-                                    window.dispatchEvent(
-                                        new CustomEvent('sandbox_transition_changed', {
-                                            detail: { isTransitioning: true },
-                                        })
-                                    );
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
                                     return;
