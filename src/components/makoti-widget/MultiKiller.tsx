@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { ALL_SYMBOLS, PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
+import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import './makoti-widget.scss';
@@ -456,6 +456,20 @@ export const MultiKiller: React.FC = () => {
 
         if (isHL) {
             // ── HL: proposal → buy via sendViaNewSystemWithPromise ──
+            const tag = `[MK-HL|${strategy}|${market}]`;
+            const pipSize = PIP_SIZES[market] ?? 2;
+            console.log(`${tag} Market=${market} pip_size=${pipSize} contract_type=${ct} duration=${dur}t barrier=${barrier} stake=$${stakeNum}`);
+
+            // Raw WS capture — logs EVERY message Deriv sends back during this trade
+            const rawCapture = (event: any) => {
+                try {
+                    const raw = event.detail?.data ?? event.data;
+                    const data = JSON.parse(raw);
+                    console.log(`${tag} RAW WS ←`, JSON.stringify(data, null, 2));
+                } catch {}
+            };
+            window.addEventListener('newSystemMessage', rawCapture);
+
             try {
                 const proposalMsg: Record<string, any> = {
                     proposal: 1,
@@ -468,18 +482,22 @@ export const MultiKiller: React.FC = () => {
                     symbol: market,
                     barrier: barrier!,
                 };
+                console.log(`${tag} STEP1 proposal request:`, JSON.stringify(proposalMsg, null, 2));
                 const proposalResp: any = await sendViaNewSystemWithPromise(proposalMsg);
+                console.log(`${tag} STEP1 proposal response:`, JSON.stringify(proposalResp, null, 2));
                 const proposalId = proposalResp?.proposal?.id;
                 if (!proposalId) {
+                    console.error(`${tag} STEP1 FAILED — no proposal id. Full response:`, proposalResp);
                     log(`❌ ${LABELS[strategy]}: no proposal id`);
                     return null;
                 }
-                const buyResp: any = await sendViaNewSystemWithPromise({
-                    buy: proposalId,
-                    price: stakeNum,
-                });
+                const buyReq = { buy: proposalId, price: stakeNum };
+                console.log(`${tag} STEP2 buy request:`, JSON.stringify(buyReq, null, 2));
+                const buyResp: any = await sendViaNewSystemWithPromise(buyReq);
+                console.log(`${tag} STEP2 buy response:`, JSON.stringify(buyResp, null, 2));
                 const cid = String(buyResp?.buy?.contract_id ?? buyResp?.contract_id);
                 if (!cid || cid === 'undefined') {
+                    console.error(`${tag} STEP2 FAILED — no contract_id. Full response:`, buyResp);
                     log(`⚠️ ${LABELS[strategy]}: no contract_id`);
                     return null;
                 }
@@ -499,13 +517,19 @@ export const MultiKiller: React.FC = () => {
                         entry_tick_time: buyResp?.buy?.entry_tick_time,
                     } as any);
                 } catch {}
+                console.log(`${tag} ✅ SUCCESS contract_id=${cid}`);
                 log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                window.removeEventListener('newSystemMessage', rawCapture);
                 return { cid, strategy };
             } catch (e: any) {
+                console.error(`${tag} CAUGHT ERROR:`, JSON.stringify(e, null, 2));
+                console.error(`${tag} error.message:`, e?.message);
+                console.error(`${tag} error.error:`, e?.error);
                 const errMsg = e?.error?.message || e?.message || String(e);
                 const errCode = e?.error?.code || '';
                 log(`❌ ${LABELS[strategy]}: ${errMsg}${errCode ? ` [${errCode}]` : ''}`);
                 log(`   Request: ${ct} @${barrier} ${dur}t ${market} $${stakeNum}`);
+                window.removeEventListener('newSystemMessage', rawCapture);
                 return null;
             }
         }
@@ -1153,7 +1177,7 @@ export const MultiKiller: React.FC = () => {
                 <label className='mw-label'>Market</label>
                 <div className='mw-select-wrap'>
                     <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
-                        {ALL_SYMBOLS.map(s => <option key={s} value={s}>{s}</option>)}
+                        {ALL_SYMBOLS.map(s => <option key={s} value={s}>{SYMBOL_LABELS[s] || s}</option>)}
                     </select>
                     <span className='mw-select-arrow'></span>
                 </div>
