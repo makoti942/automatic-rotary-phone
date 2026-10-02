@@ -170,10 +170,13 @@ export function trySandboxBuy(msg: any): any | null {
         msg_type: 'buy',
         buy: {
             contract_id: contractId,
+            transaction_id: `sandbox_buy_${contractId}`,
             buy_price: stake,
             payout: payout,
             balance_after: newBalance,
             currency: 'USD',
+            start_time: Math.floor(Date.now() / 1000),
+            shortcode: `${contractType}${barrier || ''}:${symbol}:${duration}:${stake}`,
         },
         echo_req: { buy: '1', price: stake },
     };
@@ -266,7 +269,6 @@ function injectPOCIntoBotEngine(settled: SandboxTradeRecord): void {
                 is_sold: true,
                 is_expired: true,
                 is_valid_to_sell: false,
-                is_virtual: true,
                 is_completed: true,
                 status: settled.status,
                 profit: settled.profit,
@@ -318,7 +320,6 @@ function dispatchFakePOC(settled: SandboxTradeRecord): void {
             proposal_open_contract: {
                 contract_id: settled.contractId,
                 is_sold: true,
-                is_virtual: true,
                 is_completed: true,
                 status: settled.status,
                 profit: settled.profit,
