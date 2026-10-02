@@ -420,40 +420,94 @@ export const MultiKiller: React.FC = () => {
     }, []);
 
     // Buy a single contract
-    const buyOne = useCallback((strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
-        return new Promise((resolve) => {
-            const ws = window._newSystemWS;
-            if (!ws || ws.readyState !== WebSocket.OPEN) {
-                log('❌ WS not open');
-                resolve(null);
-                return;
+    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
+        const ws = window._newSystemWS;
+        if (!ws || ws.readyState !== WebSocket.OPEN) {
+            log('❌ WS not open');
+            return null;
+        }
+
+        const ct = CONTRACT_TYPE[strategy];
+        const isHL = strategy === 'higher' || strategy === 'lower';
+        const dur = isHL ? hlDurationRef.current : DURATION[strategy];
+        const needBarrier = NEEDS_BARRIER[strategy];
+
+        // Higher/Lower: relative barrier offset (e.g. "+0.02" / "-0.02")
+        //   Uses proposal → buy flow (Deriv validates barrier in proposal step)
+        // Over/Under/Differs: barrier = user-configured digit, direct buy
+        let barrier: string | undefined;
+        if (isHL) {
+            const rawOff = (hlOffsetRef.current || '').trim() || '0.02';
+            const numOff = parseFloat(rawOff);
+            if (isNaN(numOff) || numOff <= 0) {
+                log(`❌ ${LABELS[strategy]}: invalid offset "${rawOff}"`);
+                return null;
             }
+            const off = Math.abs(numOff).toFixed(6).replace(/\.?0+$/, '');
+            barrier = strategy === 'higher' ? `+${off}` : `-${off}`;
+        } else if (needBarrier) {
+            const rawBarrier = barriersRef.current[strategy] ?? '5';
+            barrier = String(parseInt(rawBarrier) || 5);
+        }
 
-            const reqId = Date.now() * 1000 + (++_buySeq);
-            const ct = CONTRACT_TYPE[strategy];
-            const isHL = strategy === 'higher' || strategy === 'lower';
-            const dur = isHL ? hlDurationRef.current : DURATION[strategy];
-            const needBarrier = NEEDS_BARRIER[strategy];
+        log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}t $${stakeNum}`);
 
-            // Higher/Lower: relative barrier offset (e.g. "+0.02" / "-0.02")
-            //   Uses proposal → buy flow (Deriv validates barrier in proposal step)
-            // Over/Under/Differs: barrier = user-configured digit, direct buy
-            let barrier: string | undefined;
-            if (isHL) {
-                const rawOff = (hlOffsetRef.current || '').trim() || '0.02';
-                const numOff = parseFloat(rawOff);
-                if (isNaN(numOff) || numOff <= 0) {
-                    log(`❌ ${LABELS[strategy]}: invalid offset "${rawOff}"`);
-                    resolve(null);
-                    return;
+        if (isHL) {
+            // ── HL: proposal → buy via sendViaNewSystemWithPromise ──
+            try {
+                const proposalMsg: Record<string, any> = {
+                    proposal: 1,
+                    amount: stakeNum,
+                    basis: 'stake',
+                    contract_type: ct,
+                    currency: 'USD',
+                    duration: dur,
+                    duration_unit: 't',
+                    symbol: market,
+                    barrier: barrier!,
+                };
+                const proposalResp: any = await sendViaNewSystemWithPromise(proposalMsg);
+                const proposalId = proposalResp?.proposal?.id;
+                if (!proposalId) {
+                    log(`❌ ${LABELS[strategy]}: no proposal id`);
+                    return null;
                 }
-                const off = Math.abs(numOff).toFixed(6).replace(/\.?0+$/, '');
-                barrier = strategy === 'higher' ? `+${off}` : `-${off}`;
-            } else if (needBarrier) {
-                const rawBarrier = barriersRef.current[strategy] ?? '5';
-                barrier = String(parseInt(rawBarrier) || 5);
+                const buyResp: any = await sendViaNewSystemWithPromise({
+                    buy: proposalId,
+                    price: stakeNum,
+                });
+                const cid = String(buyResp?.buy?.contract_id ?? buyResp?.contract_id);
+                if (!cid || cid === 'undefined') {
+                    log(`⚠️ ${LABELS[strategy]}: no contract_id`);
+                    return null;
+                }
+                ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+                try {
+                    transactions.onBotContractEvent({
+                        contract_id: Number(cid),
+                        transaction_ids: { buy: buyResp?.buy?.transaction_id ?? Number(cid) },
+                        buy_price: stakeNum,
+                        currency: 'USD',
+                        contract_type: ct,
+                        underlying: market,
+                        display_name: market,
+                        date_start: Math.floor(Date.now() / 1000),
+                        status: 'open',
+                        entry_tick: buyResp?.buy?.entry_tick,
+                        entry_tick_time: buyResp?.buy?.entry_tick_time,
+                    } as any);
+                } catch {}
+                log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                return { cid, strategy };
+            } catch (e: any) {
+                log(`❌ ${LABELS[strategy]}: ${e?.error?.message || e?.message || 'error'}`);
+                return null;
             }
+        }
 
+        // ── Non-HL: direct buy via raw WS ──
+        return new Promise((resolve) => {
+            const reqId = Date.now() * 1000 + (++_buySeq);
             const baseParams: Record<string, any> = {
                 amount: stakeNum,
                 basis: 'stake',
@@ -465,100 +519,59 @@ export const MultiKiller: React.FC = () => {
             };
             if (barrier !== undefined) baseParams.barrier = barrier;
 
-            log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}t $${stakeNum}`);
-
             const cleanup = () => {
                 window.removeEventListener('newSystemMessage', handler);
                 const idx = buyListenersRef.current.indexOf(cleanup);
                 if (idx !== -1) buyListenersRef.current.splice(idx, 1);
             };
 
-            let stage: 'proposal' | 'buy' = isHL ? 'proposal' : 'buy';
-            let proposalId: string | null = null;
-
             const handler = (event: any) => {
                 try {
                     const data = JSON.parse(event.detail?.data ?? event.data);
                     if (data.req_id !== reqId) return;
+                    cleanup();
 
                     if (data.error) {
-                        cleanup();
                         log(`❌ ${LABELS[strategy]}: ${data.error.message || 'error'}`);
                         resolve(null);
                         return;
                     }
 
-                    if (stage === 'proposal' && data.msg_type === 'proposal') {
-                        proposalId = data.proposal?.id;
-                        if (!proposalId) {
-                            cleanup();
-                            log(`❌ ${LABELS[strategy]}: no proposal id`);
-                            resolve(null);
-                            return;
-                        }
-                        // Step 2: buy with proposal ID
-                        stage = 'buy';
-                        ws.send(JSON.stringify({
-                            buy: proposalId,
-                            price: stakeNum,
-                            req_id: reqId,
-                        }));
-                        return;
-                    }
-
-                    if (stage === 'buy' || data.msg_type === 'buy') {
-                        cleanup();
-                        const cid = String(data.buy?.contract_id ?? data.contract_id);
-                        if (cid && cid !== 'undefined') {
-                            ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
-
-                            try {
-                                transactions.onBotContractEvent({
-                                    contract_id: Number(cid),
-                                    transaction_ids: { buy: data.buy?.transaction_id ?? Number(cid) },
-                                    buy_price: stakeNum,
-                                    currency: 'USD',
-                                    contract_type: ct,
-                                    underlying: market,
-                                    display_name: market,
-                                    date_start: Math.floor(Date.now() / 1000),
-                                    status: 'open',
-                                    entry_tick: data.buy?.entry_tick,
-                                    entry_tick_time: data.buy?.entry_tick_time,
-                                } as any);
-                            } catch {}
-
-                            log(`✅ ${LABELS[strategy]} bought (#${cid})`);
-                            resolve({ cid, strategy });
-                        } else {
-                            log(`⚠️ ${LABELS[strategy]}: no contract_id`);
-                            resolve(null);
-                        }
+                    const cid = String(data.buy?.contract_id ?? data.contract_id);
+                    if (cid && cid !== 'undefined') {
+                        ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+                        try {
+                            transactions.onBotContractEvent({
+                                contract_id: Number(cid),
+                                transaction_ids: { buy: data.buy?.transaction_id ?? Number(cid) },
+                                buy_price: stakeNum,
+                                currency: 'USD',
+                                contract_type: ct,
+                                underlying: market,
+                                display_name: market,
+                                date_start: Math.floor(Date.now() / 1000),
+                                status: 'open',
+                                entry_tick: data.buy?.entry_tick,
+                                entry_tick_time: data.buy?.entry_tick_time,
+                            } as any);
+                        } catch {}
+                        log(`✅ ${LABELS[strategy]} bought (#${cid})`);
+                        resolve({ cid, strategy });
+                    } else {
+                        log(`⚠️ ${LABELS[strategy]}: no contract_id`);
+                        resolve(null);
                     }
                 } catch {}
             };
 
             buyListenersRef.current.push(cleanup);
             window.addEventListener('newSystemMessage', handler);
-
-            if (isHL) {
-                // Step 1: proposal with relative barrier (new API requires underlying_symbol, not symbol)
-                const { symbol: _sym, ...proposalBase } = baseParams;
-                ws.send(JSON.stringify({
-                    proposal: 1,
-                    ...proposalBase,
-                    underlying_symbol: market,
-                    req_id: reqId,
-                }));
-            } else {
-                // Direct buy for non-HL contracts
-                ws.send(JSON.stringify({
-                    buy: '1',
-                    price: stakeNum,
-                    parameters: { ...baseParams, underlying_symbol: baseParams.symbol },
-                    req_id: reqId,
-                }));
-            }
+            ws.send(JSON.stringify({
+                buy: '1',
+                price: stakeNum,
+                parameters: { ...baseParams, underlying_symbol: baseParams.symbol },
+                req_id: reqId,
+            }));
 
             setTimeout(() => {
                 cleanup();
