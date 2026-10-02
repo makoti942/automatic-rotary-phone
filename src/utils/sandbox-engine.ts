@@ -35,6 +35,17 @@ const seenTicks = new Set<string>();
 // Cache proposals by id so proposal-based buys can be resolved locally
 const proposalCache = new Map<string, any>();
 
+// Trade spacing: track last settlement time per symbol
+const lastSettlementTime = new Map<string, number>();
+
+// Get required delay after settlement based on symbol type
+function getTradeDelay(symbol: string): number {
+    // 1s volatilities (1HZ10V, 1HZ25V, etc.): 2 seconds
+    if (symbol.startsWith('1HZ')) return 2000;
+    // Plain volatilities (R_10, R_25, etc.): 4 seconds
+    return 4000;
+}
+
 export function isSandboxActive(): boolean {
     try { return localStorage.getItem('sandbox_active') === 'true'; } catch { return false; }
 }
@@ -110,6 +121,16 @@ export function trySandboxBuy(msg: any): any | null {
 
     if (!contractType || !stake || stake <= 0) return null;
     if (!symbol) return null;
+
+    // Trade spacing: check if we're still in the delay period after last settlement
+    const lastSettle = lastSettlementTime.get(symbol);
+    if (lastSettle) {
+        const delay = getTradeDelay(symbol);
+        if (Date.now() - lastSettle < delay) {
+            const remaining = Math.ceil((delay - (Date.now() - lastSettle)) / 1000);
+            return { error: { code: 'RateLimited', message: `Sandbox: wait ${remaining}s before next trade on ${symbol}.` } };
+        }
+    }
 
     const balance = getSandboxBalance();
     if (balance < stake) {
@@ -202,6 +223,9 @@ export function feedSandboxTick(symbol: string, quote: number): void {
             openTrades.delete(id);
             setSandboxBalance(newBal);
 
+            // Record settlement time for trade spacing
+            lastSettlementTime.set(symbol, now);
+
             // Dispatch settlement event for UI (manual trade, sandbox context)
             window.dispatchEvent(new CustomEvent('sandbox_trade_settled', {
                 detail: settled,
@@ -233,6 +257,8 @@ function injectPOCIntoBotEngine(settled: SandboxTradeRecord): void {
         }
 
         const won = settled.status === 'won';
+        const sellPrice = won ? settled.payout : 0;
+        const shortcode = `${settled.contractType}${settled.barrier || ''}:${settled.symbol}:${settled.duration}:${settled.stake}`;
         const pocData = {
             msg_type: 'proposal_open_contract',
             proposal_open_contract: {
@@ -245,15 +271,16 @@ function injectPOCIntoBotEngine(settled: SandboxTradeRecord): void {
                 status: settled.status,
                 profit: settled.profit,
                 buy_price: settled.stake,
-                sell_price: won ? settled.payout : 0,
+                sell_price: sellPrice,
                 payout: settled.payout,
-                bid_price: won ? settled.payout : 0,
+                bid_price: sellPrice,
                 currency: 'USD',
                 symbol: settled.symbol,
                 contract_type: settled.contractType,
                 barrier: settled.barrier ? String(settled.barrier) : undefined,
                 underlying: settled.symbol,
                 display_name: settled.symbol,
+                shortcode,
                 transaction_ids: {
                     buy: `sandbox_buy_${settled.contractId}`,
                     sell: `sandbox_sell_${settled.contractId}`,
