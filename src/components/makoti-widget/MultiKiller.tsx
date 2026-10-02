@@ -84,6 +84,7 @@ export const MultiKiller: React.FC = () => {
     const [delays, setDelays] = useState<Record<string, number>>(cfg.delays || {
         rise: 0, fall: 0,
     });
+    const [hlDuration, setHlDuration] = useState(cfg.hlDuration || 1);
     const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
     const [accuracy, setAccuracy] = useState(cfg.accuracy ?? false);
@@ -100,9 +101,9 @@ export const MultiKiller: React.FC = () => {
     // Persist config to localStorage
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            market, selected, stakes, barriers, delays, tickDirection, tickDirMode, accuracy,
+            market, selected, stakes, barriers, delays, hlDuration, tickDirection, tickDirMode, accuracy,
         }));
-    }, [market, selected, stakes, barriers, delays, tickDirection, tickDirMode, accuracy]);
+    }, [market, selected, stakes, barriers, delays, hlDuration, tickDirection, tickDirMode, accuracy]);
 
     // Auto-sync paired contracts: rise↔fall share delays, ups↔downs share stakes
     useEffect(() => {
@@ -135,6 +136,8 @@ export const MultiKiller: React.FC = () => {
     const stakesRef = useRef<Record<string, string>>({});
     const barriersRef = useRef<Record<string, string>>({ over: '5', under: '5', differs: '5', higher: '5', lower: '5' });
     const delaysRef = useRef<Record<string, number>>({ rise: 0, fall: 0 });
+    const hlDurationRef = useRef(1);
+    const currentPriceRef = useRef<number | null>(null);
     const genRef = useRef(0);
     const roundIdRef = useRef(0);
     const pendingDelaysRef = useRef<PendingDelay[]>([]);
@@ -167,8 +170,31 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { stakesRef.current = stakes; }, [stakes]);
     useEffect(() => { barriersRef.current = barriers; }, [barriers]);
     useEffect(() => { delaysRef.current = delays; }, [delays]);
+    useEffect(() => { hlDurationRef.current = hlDuration; }, [hlDuration]);
     useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
     useEffect(() => { accuracyRef.current = accuracy; }, [accuracy]);
+
+    // Always-on live price tracker for the selected market (used as Higher/Lower barrier)
+    useEffect(() => {
+        currentPriceRef.current = null;
+        const unsub = onNewSystemMessage((event: MessageEvent) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.msg_type !== 'tick') return;
+                if (data.tick?.symbol !== market) return;
+                const price = parseFloat(data.tick?.quote ?? data.tick?.bid ?? data.tick?.ask);
+                if (!isNaN(price)) currentPriceRef.current = price;
+            } catch {}
+        });
+        // Seed with a one-shot history fetch
+        sendViaNewSystemWithPromise({ ticks_history: market, style: 'ticks', count: 1, end: 'latest' })
+            .then((d: any) => {
+                const p = parseFloat(d?.history?.prices?.[0] ?? d?.prices?.[0]);
+                if (!isNaN(p)) currentPriceRef.current = p;
+            })
+            .catch(() => {});
+        return unsub;
+    }, [market]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
     const hasDirectional = selected.some(s => ['rise', 'fall', 'higher', 'lower', 'ups', 'downs'].includes(s));
@@ -425,10 +451,25 @@ export const MultiKiller: React.FC = () => {
 
             const reqId = Date.now() * 1000 + (++_buySeq);
             const ct = CONTRACT_TYPE[strategy];
-            const dur = DURATION[strategy];
+            const isHL = strategy === 'higher' || strategy === 'lower';
+            const dur = isHL ? hlDurationRef.current : DURATION[strategy];
             const needBarrier = NEEDS_BARRIER[strategy];
-            const rawBarrier = barriersRef.current[strategy] ?? '5';
-            const barrier = needBarrier ? String(parseInt(rawBarrier) || 5) : undefined;
+
+            // Higher/Lower: barrier = current live tick price
+            // Over/Under/Differs: barrier = user-configured digit
+            let barrier: string | undefined;
+            if (isHL) {
+                const px = currentPriceRef.current;
+                if (px == null) {
+                    log(`❌ ${LABELS[strategy]}: no live price yet`);
+                    resolve(null);
+                    return;
+                }
+                barrier = String(px);
+            } else if (needBarrier) {
+                const rawBarrier = barriersRef.current[strategy] ?? '5';
+                barrier = String(parseInt(rawBarrier) || 5);
+            }
 
             const params: Record<string, any> = {
                 amount: stakeNum,
@@ -449,7 +490,7 @@ export const MultiKiller: React.FC = () => {
             };
             delete toSend.parameters.symbol;
 
-            log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' B' + barrier : ''} ${dur}t $${stakeNum}`);
+            log(`📤 ${LABELS[strategy]} ${ct}${barrier !== undefined ? ' @' + barrier : ''} ${dur}t $${stakeNum}`);
 
             const cleanup = () => {
                 window.removeEventListener('newSystemMessage', handler);
@@ -746,7 +787,9 @@ export const MultiKiller: React.FC = () => {
         const VOL_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100', '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
         const hasDowns = selected.includes('downs');
         const hasUps = selected.includes('ups');
-        const needBB = hasDowns || hasUps;
+        const hasHigher = selected.includes('higher');
+        const hasLower = selected.includes('lower');
+        const needBB = hasDowns || hasUps || hasHigher || hasLower;
 
         const fetchTicks = async (sym: string): Promise<number[]> => {
             try {
@@ -852,12 +895,16 @@ export const MultiKiller: React.FC = () => {
                     else if (nearLower) bbPosition = '🟡 mid-lower';
                     else bbPosition = '⚪ middle';
 
-                    if (hasDowns) {
+                    // Upper band wanted by: downs (mean reversion), higher (momentum)
+                    // Lower band wanted by: ups (mean reversion), lower (momentum)
+                    const wantsUpper = hasDowns || hasHigher;
+                    const wantsLower = hasUps || hasLower;
+                    if (wantsUpper) {
                         if (touchedUpper) bbScore = 100;
                         else if (almostUpper) bbScore = 90;
                         else if (nearUpper) bbScore = 70;
                         else bbScore = 20;
-                    } else if (hasUps) {
+                    } else if (wantsLower) {
                         if (touchedLower) bbScore = 100;
                         else if (almostLower) bbScore = 90;
                         else if (nearLower) bbScore = 70;
@@ -932,8 +979,8 @@ export const MultiKiller: React.FC = () => {
                 const isLower = bbPosition === '🟢 LOWER' || bbPosition === '🟢 near lower';
                 const isMiddle = bbPosition === '⚪ middle' || bbPosition === '🟡 mid-upper' || bbPosition === '🟡 mid-lower' || bbPosition === 'N/A';
                 if (isMiddle) bbPassesFilter = false;
-                if (hasDowns && !isUpper) bbPassesFilter = false;
-                if (hasUps && !isLower) bbPassesFilter = false;
+                if ((hasDowns || hasHigher) && !isUpper) bbPassesFilter = false;
+                if ((hasUps || hasLower) && !isLower) bbPassesFilter = false;
             }
 
             const adjustedScore = !bbPassesFilter ? 0 : totalScore;
@@ -944,8 +991,14 @@ export const MultiKiller: React.FC = () => {
         results.sort((a, b) => b.totalScore - a.totalScore);
 
         let mode = 'Tick direction';
-        if (hasDowns) mode = 'Only Downs → looking for upper BB';
-        else if (hasUps) mode = 'Only Ups → looking for lower BB';
+        const upperWanters: string[] = [];
+        const lowerWanters: string[] = [];
+        if (hasDowns) upperWanters.push('Only Downs');
+        if (hasHigher) upperWanters.push('Higher');
+        if (hasUps) lowerWanters.push('Only Ups');
+        if (hasLower) lowerWanters.push('Lower');
+        if (upperWanters.length) mode = `${upperWanters.join(', ')} → looking for upper BB`;
+        if (lowerWanters.length) mode += `${upperWanters.length ? ' | ' : ''}${lowerWanters.join(', ')} → looking for lower BB`;
         if (accuracy) mode += ' + Accuracy (30% weight)';
 
         let msg = `📊 ANALYSIS — ${mode}\n`;
@@ -986,30 +1039,45 @@ export const MultiKiller: React.FC = () => {
             const hasFall = selected.includes('fall');
             const hasUps = selected.includes('ups');
             const hasDowns = selected.includes('downs');
+            const hasHigher = selected.includes('higher');
+            const hasLower = selected.includes('lower');
 
-            // Contracts needing upper BB: rise, downs
-            const needsUpper = hasRise || hasDowns;
-            // Contracts needing lower BB: fall, ups
-            const needsLower = hasFall || hasUps;
+            // Contracts needing upper BB: rise, downs, higher
+            const needsUpper = hasRise || hasDowns || hasHigher;
+            // Contracts needing lower BB: fall, ups, lower
+            const needsLower = hasFall || hasUps || hasLower;
+
+            // Flip mapping for auto-switch
+            const flip = (s: MultiKillerStrategy): MultiKillerStrategy => {
+                if (s === 'rise') return 'fall';
+                if (s === 'fall') return 'rise';
+                if (s === 'ups') return 'downs';
+                if (s === 'downs') return 'ups';
+                if (s === 'higher') return 'lower';
+                if (s === 'lower') return 'higher';
+                return s;
+            };
+            const flipLabel = (s: MultiKillerStrategy): string => {
+                if (s === 'rise') return 'Fall';
+                if (s === 'fall') return 'Rise';
+                if (s === 'ups') return 'Only Downs';
+                if (s === 'downs') return 'Only Ups';
+                if (s === 'higher') return 'Lower';
+                if (s === 'lower') return 'Higher';
+                return LABELS[s];
+            };
 
             if (needsUpper && upperVol) {
-                // All upper-needing contracts found upper BB — use it
                 setMarket(upperVol.sym);
                 setLogs(p => [`📊 ${upperVol.label} (${upperVol.bbPosition}) — auto-selected`, ...p].slice(0, 80));
             } else if (needsUpper && lowerVol) {
-                // No upper BB — flip ALL to opposite
-                const newSelected = selected.map(s => {
-                    if (s === 'rise') return 'fall';
-                    if (s === 'fall') return 'rise';
-                    if (s === 'ups') return 'downs';
-                    if (s === 'downs') return 'ups';
-                    return s;
-                });
+                const upperStrats = selected.filter(s => s === 'rise' || s === 'downs' || s === 'higher');
+                const newSelected = selected.map(s => upperStrats.includes(s) ? flip(s) : s);
                 setSelected(newSelected);
-                if (hasDowns) setTickDirMode('ups');
-                if (hasUps) setTickDirMode('downs');
+                if (hasDowns || hasHigher) setTickDirMode('ups');
+                if (hasUps || hasLower) setTickDirMode('downs');
                 setMarket(lowerVol.sym);
-                const switched = selected.filter(s => s === 'rise' || s === 'downs').map(s => s === 'rise' ? 'Fall' : 'Only Ups').join(', ');
+                const switched = upperStrats.map(flipLabel).join(', ');
                 setLogs(p => [`🔄 No upper BB → switched ${switched} → ${lowerVol.label} (${lowerVol.bbPosition})`, ...p].slice(0, 80));
                 msg += `\n\n🔄 AUTO-SWITCH: No upper BB → ${switched} → ${lowerVol.label}`;
                 setAnalyzeResult(msg);
@@ -1017,18 +1085,13 @@ export const MultiKiller: React.FC = () => {
                 setMarket(lowerVol.sym);
                 setLogs(p => [`📊 ${lowerVol.label} (${lowerVol.bbPosition}) — auto-selected`, ...p].slice(0, 80));
             } else if (needsLower && upperVol) {
-                const newSelected = selected.map(s => {
-                    if (s === 'rise') return 'fall';
-                    if (s === 'fall') return 'rise';
-                    if (s === 'ups') return 'downs';
-                    if (s === 'downs') return 'ups';
-                    return s;
-                });
+                const lowerStrats = selected.filter(s => s === 'fall' || s === 'ups' || s === 'lower');
+                const newSelected = selected.map(s => lowerStrats.includes(s) ? flip(s) : s);
                 setSelected(newSelected);
-                if (hasUps) setTickDirMode('downs');
-                if (hasDowns) setTickDirMode('ups');
+                if (hasUps || hasLower) setTickDirMode('downs');
+                if (hasDowns || hasHigher) setTickDirMode('ups');
                 setMarket(upperVol.sym);
-                const switched = selected.filter(s => s === 'fall' || s === 'ups').map(s => s === 'fall' ? 'Rise' : 'Only Downs').join(', ');
+                const switched = lowerStrats.map(flipLabel).join(', ');
                 setLogs(p => [`🔄 No lower BB → switched ${switched} → ${upperVol.label} (${upperVol.bbPosition})`, ...p].slice(0, 80));
                 msg += `\n\n🔄 AUTO-SWITCH: No lower BB → ${switched} → ${upperVol.label}`;
                 setAnalyzeResult(msg);
@@ -1168,9 +1231,9 @@ export const MultiKiller: React.FC = () => {
                 </div>
             )}
 
-            {selected.some(s => NEEDS_BARRIER[s]) && (
+            {selected.some(s => NEEDS_BARRIER[s] && s !== 'higher' && s !== 'lower') && (
                 <div className='mw-killer__fields'>
-                    {selected.filter(s => NEEDS_BARRIER[s]).map(s => (
+                    {selected.filter(s => NEEDS_BARRIER[s] && s !== 'higher' && s !== 'lower').map(s => (
                         <div key={s} className='mw-field mw-field--grow'>
                             <label className='mw-label'>{LABELS[s]} Barrier</label>
                             <input className='mw-input' type='number' min='0' max='9' step='1'
@@ -1178,6 +1241,22 @@ export const MultiKiller: React.FC = () => {
                                 onChange={e => setBarriers(p => ({ ...p, [s]: e.target.value }))} />
                         </div>
                     ))}
+                </div>
+            )}
+
+            {(selected.includes('higher') || selected.includes('lower')) && (
+                <div className='mw-killer__fields'>
+                    <div className='mw-field mw-field--grow'>
+                        <label className='mw-label'>H/L Duration (ticks)</label>
+                        <input className='mw-input' type='number' min='1' max='10' step='1'
+                            value={hlDuration}
+                            onChange={e => setHlDuration(Math.max(1, parseInt(e.target.value) || 1))} />
+                        <span className='mw-hint'>
+                            {currentPriceRef.current != null
+                                ? `Live: ${currentPriceRef.current}`
+                                : 'Waiting for live price...'}
+                        </span>
+                    </div>
                 </div>
             )}
 
