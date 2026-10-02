@@ -143,6 +143,22 @@
         font-size: var(--text-size-xxs);
     }
 
+    &__sandbox-loading {
+        align-items: center;
+        display: inline-flex;
+        gap: 0.4rem;
+        white-space: nowrap;
+    }
+
+    &__sandbox-spinner {
+        width: 1.1rem;
+        height: 1.1rem;
+        border: 0.15rem solid rgba(255, 255, 255, 0.28);
+        border-top-color: $color-yellow;
+        border-radius: 50%;
+        animation: acc-sandbox-spin 0.7s linear infinite;
+    }
+
     &--is-virtual {
         .acc-info__account-type {
             color: $color-yellow;
@@ -752,6 +768,10 @@
         opacity: 0.5;
         cursor: not-allowed;
     }
+}
+
+@keyframes acc-sandbox-spin {
+    to { transform: rotate(360deg); }
 }
 
 /** @define acc-dropdown */

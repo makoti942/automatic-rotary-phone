@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 /* [AI] - Analytics removed - utility functions moved to @/utils/account-helpers */
 import { isVirtualAccount } from '@/utils/account-helpers';
 /* [/AI] */
@@ -16,6 +16,17 @@ const useActiveAccount = ({
     directBalance?: string;
 }) => {
     const { accountList, activeLoginid } = useApiBase();
+    const [modeRevision, setModeRevision] = useState(0);
+
+    useEffect(() => {
+        const refresh = () => setModeRevision(value => value + 1);
+        window.addEventListener('custom_demo_icon_changed', refresh);
+        window.addEventListener('sandbox_state_changed', refresh);
+        return () => {
+            window.removeEventListener('custom_demo_icon_changed', refresh);
+            window.removeEventListener('sandbox_state_changed', refresh);
+        };
+    }, []);
 
     const activeAccount = useMemo(
         () => accountList?.find(account => account.loginid === activeLoginid),
@@ -45,7 +56,7 @@ const useActiveAccount = ({
             isActive: activeAccount?.loginid === activeLoginid,
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [activeAccount, activeLoginid, allBalanceData, directBalance]);
+    }, [activeAccount, activeLoginid, allBalanceData, directBalance, modeRevision]);
 
     return {
         /** User's current active account. */

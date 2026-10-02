@@ -29,13 +29,11 @@ const FIXED_TRICK_BALANCE = 24654.67;
 const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const [isOpen, setIsOpen] = useState(false);
     const [showAsReal, setShowAsReal] = useState(false);
-    const [trippleTrickActive, setTrippleTrickActive] = useState(
-        () => localStorage.getItem('tripple_trick_active') === 'true'
-    );
     const [fakeBalance, setFakeBalance] = useState(() =>
         FAKE_BALANCES[Math.floor(Math.random() * FAKE_BALANCES.length)]
     );
     const [resetBusy, setResetBusy] = useState(false);
+    const [isSandboxTransitioning, setIsSandboxTransitioning] = useState(false);
     const wrapperRef = useRef<HTMLDivElement>(null);
     const { accountList, activeLoginid } = useApiBase();
     const { client, run_panel } = useStore() ?? {};
@@ -55,6 +53,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
             if (detail) {
                 setLocalSandbox(!!detail.isSandbox);
                 setLocalSandboxBalance(Number(detail.sandboxBalance) || 0);
+                setIsSandboxTransitioning(false);
             } else {
                 // Fallback: read from localStorage
                 setLocalSandbox(localStorage.getItem('sandbox_active') === 'true');
@@ -73,8 +72,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     // is_custom_demo_icon_active. Treat either flag as active so the visual
     // Demo/Real entries and their click behavior stay in sync.
     const persistedTrickActive = typeof window !== 'undefined' && localStorage.getItem('is_custom_demo_icon_active') === 'true';
-    const persistedLegacyTrickActive = typeof window !== 'undefined' && localStorage.getItem('tripple_trick_active') === 'true';
-    const trickModeActive = showAsReal || trippleTrickActive || persistedTrickActive || persistedLegacyTrickActive;
+    const trickModeActive = showAsReal || persistedTrickActive;
     const persistedSandboxActive = typeof window !== 'undefined' && localStorage.getItem('sandbox_active') === 'true';
     const sandboxIsActive = isSandboxActive || isSandbox || persistedSandboxActive;
 
@@ -95,17 +93,6 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
         return () => {
             window.removeEventListener('custom_demo_icon_changed', handleIconChange);
             window.removeEventListener('trick_fixed_balance', handleFixedBalance);
-        };
-    }, []);
-
-    useEffect(() => {
-        const checkTrippleTrick = () =>
-            setTrippleTrickActive(localStorage.getItem('tripple_trick_active') === 'true');
-        const interval = setInterval(checkTrippleTrick, 1000);
-        window.addEventListener('storage', checkTrippleTrick);
-        return () => {
-            clearInterval(interval);
-            window.removeEventListener('storage', checkTrippleTrick);
         };
     }, []);
 
@@ -262,7 +249,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
     const displayBalance = sandboxIsActive
         ? addComma(sandboxBal.toFixed(getDecimalPlaces(currency)))
         : balance;
-    const displayIsVirtual = isSandboxActive ? true : (isVirtual && !trickModeActive);
+    const displayIsVirtual = sandboxIsActive ? true : (isVirtual && !trickModeActive);
 
     return (
         <div className='acc-info__wrapper' ref={wrapperRef}>
@@ -290,7 +277,12 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                     <div className='acc-info__content'>
                         <div className='acc-info__account-type-header'>
                             <Text as='p' size='xs' className='acc-info__account-type'>
-                                {isSandboxActive ? (
+                                {isSandboxTransitioning ? (
+                                    <span className='acc-info__sandbox-loading' aria-label='Entering demo account'>
+                                        <span className='acc-info__sandbox-spinner' />
+                                        <Localize i18n_default_text='Loading demo account' />
+                                    </span>
+                                ) : sandboxIsActive ? (
                                     <Localize i18n_default_text='Demo account' />
         ) : trickModeActive && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
@@ -417,6 +409,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                     (trickModeActive || hasTrickAccountPair);
                                 if (isSandboxDemoEntry) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
+                                    setIsSandboxTransitioning(true);
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
                                     return;

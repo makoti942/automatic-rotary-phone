@@ -187,6 +187,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isSandboxRef.current = true;
         localStorage.setItem('sandbox_active', 'true');
         localStorage.setItem('sandbox_balance', String(initialBalance));
+        window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
+            detail: { isSandbox: true, sandboxBalance: initialBalance },
+        }));
         setSandboxTrades([]);
         setActiveSandboxContract(null);
         activeContractRef.current = null;
@@ -198,6 +201,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         isSandboxRef.current = false;
         localStorage.removeItem('sandbox_active');
         localStorage.removeItem('sandbox_balance');
+        window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
+            detail: { isSandbox: false, sandboxBalance: 0 },
+        }));
         setActiveSandboxContract(null);
         activeContractRef.current = null;
         tickBufferRef.current = [];
