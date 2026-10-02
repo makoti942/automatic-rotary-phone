@@ -1,3 +1,5 @@
+import * as sandboxEngine from '@/utils/sandbox-engine';
+
 function convertToNewFormat(data) {
     if (!data || typeof data !== 'object') return data
     const out = Array.isArray(data) ? data.map(convertToNewFormat) : { ...data }
@@ -22,6 +24,10 @@ function convertToNewFormat(data) {
     return out
 }
 
+function isBuyMessage(msg) {
+    return msg && typeof msg === 'object' && ('buy' in msg) && msg.buy !== undefined && msg.buy !== null;
+}
+
 export function onNewSystemMessage(callback) {
     if (typeof window === 'undefined') return () => {};
     const handler = (event) => { try { callback(event.detail); } catch (_) {} };
@@ -40,6 +46,22 @@ export function isNewLoggedIn() {
 }
 
 export async function sendViaNewSystemWithPromise(msg) {
+    // Sandbox interception: execute buys locally instead of sending to Deriv
+    if (isBuyMessage(msg)) {
+        if (sandboxEngine.isSandboxActive()) {
+            const fakeResponse = sandboxEngine.trySandboxBuy(msg);
+            if (fakeResponse) {
+                if (fakeResponse.error) return Promise.reject(fakeResponse);
+                // Dispatch the fake response so any WS listeners also see it
+                try {
+                    window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                        detail: { data: JSON.stringify(fakeResponse) },
+                    }));
+                } catch (_) {}
+                return Promise.resolve(fakeResponse);
+            }
+        }
+    }
     return new Promise((resolve, reject) => {
         if (!window._newSystemWS || window._newSystemWS.readyState !== WebSocket.OPEN) {
             reject(new Error('WebSocket not open'));
@@ -66,6 +88,22 @@ export async function sendViaNewSystemWithPromise(msg) {
 }
 
 export function sendViaNewSystem(data) {
+    // Sandbox interception: execute buys locally instead of sending to Deriv
+    if (isBuyMessage(data)) {
+        if (sandboxEngine.isSandboxActive()) {
+            const fakeResponse = sandboxEngine.trySandboxBuy(data);
+            if (fakeResponse) {
+                if (!fakeResponse.error) {
+                    try {
+                        window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                            detail: { data: JSON.stringify(fakeResponse) },
+                        }));
+                    } catch (_) {}
+                }
+                return true;
+            }
+        }
+    }
     if (window._newSystemWS?.readyState === WebSocket.OPEN) {
         window._newSystemWS.send(JSON.stringify(convertToNewFormat(data)))
         return true

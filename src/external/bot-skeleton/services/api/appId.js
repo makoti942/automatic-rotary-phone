@@ -1,6 +1,7 @@
 import { getSocketURL, enablePublicSocketFallback } from '@/components/shared';
 import DerivAPIBasic from '@deriv/deriv-api/dist/DerivAPIBasic';
 import APIMiddleware from './api-middleware';
+import * as sandboxEngine from '@/utils/sandbox-engine';
 
 /**
  * Singleton instance management for DerivAPI
@@ -100,6 +101,32 @@ export const generateDerivApiInstance = async (forceNew = false) => {
                 connection: deriv_socket,
                 middleware: new APIMiddleware({}),
             });
+
+            // Sandbox interception: patch api.send to intercept buy requests
+            const originalSend = deriv_api.send.bind(deriv_api);
+            deriv_api.send = function (request) {
+                try {
+                    if (request && typeof request === 'object' && 'buy' in request && request.parameters) {
+                        // Direct buy with parameters — check sandbox
+                        if (sandboxEngine.isSandboxActive()) {
+                            const fakeResponse = sandboxEngine.trySandboxBuy(request);
+                            if (fakeResponse) {
+                                if (fakeResponse.error) {
+                                    return Promise.reject(fakeResponse);
+                                }
+                                // Dispatch fake response so WS listeners see it
+                                setTimeout(() => {
+                                    window.dispatchEvent(new CustomEvent('newSystemMessage', {
+                                        detail: { data: JSON.stringify(fakeResponse) },
+                                    }));
+                                }, 0);
+                                return Promise.resolve(fakeResponse);
+                            }
+                        }
+                    }
+                } catch (_) {}
+                return originalSend(request);
+            };
 
             // Store the instance immediately (don't wait for connection)
             derivApiInstance = deriv_api;

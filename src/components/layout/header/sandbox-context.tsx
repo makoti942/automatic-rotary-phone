@@ -1,36 +1,9 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { onNewSystemMessage } from '@/auth/NewDerivAuth';
+import { calcPayout, getWinCondition } from '@/utils/sandbox-payout';
 
-// ─── Payout Calculator ────────────────────────────────────────────────────────
-// Deriv digit contract payouts (approximate, ~5% house edge)
-// payout = (1 / probability) * 0.95
-
-export function calcPayout(contractType: string, barrier: number, stake: number): number {
-    let probability = 0.5;
-    switch (contractType) {
-        case 'DIGITMATCH': probability = 0.1; break;
-        case 'DIGITDIFF': probability = 0.9; break;
-        case 'DIGITOVER': probability = (9 - barrier) / 10; break;
-        case 'DIGITUNDER': probability = barrier / 10; break;
-        case 'DIGITEVEN':
-        case 'DIGITODD': probability = 0.5; break;
-    }
-    if (probability <= 0) probability = 0.01;
-    const multiplier = (1 / probability) * 0.95;
-    return Math.round(stake * multiplier * 100) / 100;
-}
-
-export function getWinCondition(contractType: string, barrier: number, resultDigit: number): boolean {
-    switch (contractType) {
-        case 'DIGITMATCH': return resultDigit === barrier;
-        case 'DIGITDIFF': return resultDigit !== barrier;
-        case 'DIGITOVER': return resultDigit > barrier;
-        case 'DIGITUNDER': return resultDigit < barrier;
-        case 'DIGITEVEN': return resultDigit % 2 === 0;
-        case 'DIGITODD': return resultDigit % 2 === 1;
-        default: return false;
-    }
-}
+// Re-export for backward compatibility
+export { calcPayout, getWinCondition };
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 export interface SandboxTrade {
