@@ -193,6 +193,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
             detail: { isSandbox: true, sandboxBalance: initialBalance },
         }));
+        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
+            detail: { isTransitioning: false },
+        }));
         setSandboxTrades([]);
         setActiveSandboxContract(null);
         activeContractRef.current = null;
@@ -206,6 +209,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         localStorage.removeItem('sandbox_balance');
         window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
             detail: { isSandbox: false, sandboxBalance: 0 },
+        }));
+        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
+            detail: { isTransitioning: false },
         }));
         setActiveSandboxContract(null);
         activeContractRef.current = null;

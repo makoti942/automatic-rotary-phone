@@ -28,8 +28,16 @@ const AppHeader = observer(() => {
             const detail = (event as CustomEvent).detail;
             setIsSandboxTransitioning(Boolean(detail?.isTransitioning));
         };
+        const handleSandboxState = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            if (detail?.isSandbox === true) setIsSandboxTransitioning(false);
+        };
         window.addEventListener('sandbox_transition_changed', handleSandboxTransition);
-        return () => window.removeEventListener('sandbox_transition_changed', handleSandboxTransition);
+        window.addEventListener('sandbox_state_changed', handleSandboxState);
+        return () => {
+            window.removeEventListener('sandbox_transition_changed', handleSandboxTransition);
+            window.removeEventListener('sandbox_state_changed', handleSandboxState);
+        };
     }, []);
 
     const [isOAuthPending, setIsOAuthPending] = useState(() => {
