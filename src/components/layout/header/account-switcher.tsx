@@ -287,23 +287,7 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                     <div className='acc-info__content'>
                         <div className='acc-info__account-type-header'>
                             <Text as='p' size='xs' className='acc-info__account-type'>
-                                {isSandboxTransitioning ? (
-                                    <span className='acc-info__sandbox-loading' aria-label='Entering demo account'>
-                                        <svg className='acc-info__sandbox-spinner' viewBox='0 0 24 24' fill='none'>
-                                            <circle
-                                                cx='12'
-                                                cy='12'
-                                                r='10'
-                                                stroke='currentColor'
-                                                strokeWidth='2.5'
-                                                strokeLinecap='round'
-                                                strokeDasharray='31.416'
-                                                strokeDashoffset='10'
-                                            />
-                                        </svg>
-                                        <Localize i18n_default_text='Loading demo account' />
-                                    </span>
-                                ) : sandboxIsActive ? (
+                                {sandboxIsActive ? (
                                     <Localize i18n_default_text='Demo account' />
         ) : trickModeActive && isVirtual ? (
                                     <Localize i18n_default_text='Real account' />
@@ -431,6 +415,11 @@ const AccountSwitcher = observer(({ activeAccount }: TAccountSwitcher) => {
                                 if (isSandboxDemoEntry) {
                                     console.log('[AccountSwitcher] Entering sandbox with balance:', fakeBalance);
                                     setIsSandboxTransitioning(true);
+                                    window.dispatchEvent(
+                                        new CustomEvent('sandbox_transition_changed', {
+                                            detail: { isTransitioning: true },
+                                        })
+                                    );
                                     enterSandbox(fakeBalance);
                                     setIsOpen(false);
                                     return;

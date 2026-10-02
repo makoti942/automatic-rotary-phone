@@ -42,14 +42,18 @@ const useActiveAccount = ({
         const isVirtual = isVirtualAccount(activeAccount.loginid);
         const isTrickActive = localStorage.getItem('is_custom_demo_icon_active') === 'true';
         const isSandboxActive = localStorage.getItem('sandbox_active') === 'true';
+        const sandboxBalance = Number(localStorage.getItem('sandbox_balance') ?? 0);
+        const displayedBalance = isSandboxActive && sandboxBalance > 0
+            ? sandboxBalance
+            : currentBalanceData?.balance
+              ? currentBalanceData.balance
+              : directBalance
+                ? parseFloat(directBalance)
+                : 0;
 
         return {
             ...activeAccount,
-            balance: currentBalanceData?.balance
-                ? addComma(currentBalanceData.balance.toFixed(getDecimalPlaces(currentBalanceData.currency)))
-                : directBalance
-                  ? addComma(parseFloat(directBalance).toFixed(getDecimalPlaces(activeAccount.currency)))
-                  : addComma(parseFloat('0').toFixed(getDecimalPlaces(activeAccount.currency))),
+            balance: addComma(displayedBalance.toFixed(getDecimalPlaces(activeAccount.currency))),
             currencyLabel: isSandboxActive ? 'Demo' : (isVirtual && !isTrickActive ? 'Demo' : activeAccount?.currency),
             icon: <CurrencyIcon currency={activeAccount?.currency?.toLowerCase()} isVirtual={isVirtual && !isTrickActive} />,
             isVirtual: isSandboxActive ? true : (isVirtual && !isTrickActive),

@@ -20,7 +20,17 @@ const AppHeader = observer(() => {
     const { isAuthorizing, activeLoginid, setIsAuthorizing } = useApiBase();
     const { client } = useStore() ?? {};
     const [authTimeout, setAuthTimeout] = useState(false);
+    const [isSandboxTransitioning, setIsSandboxTransitioning] = useState(false);
     const is_account_regenerating = client?.is_account_regenerating || false;
+
+    useEffect(() => {
+        const handleSandboxTransition = (event: Event) => {
+            const detail = (event as CustomEvent).detail;
+            setIsSandboxTransitioning(Boolean(detail?.isTransitioning));
+        };
+        window.addEventListener('sandbox_transition_changed', handleSandboxTransition);
+        return () => window.removeEventListener('sandbox_transition_changed', handleSandboxTransition);
+    }, []);
 
     const [isOAuthPending, setIsOAuthPending] = useState(() => {
         const params = new URLSearchParams(window.location.search);
@@ -113,7 +123,7 @@ const AppHeader = observer(() => {
     const renderAccountSection = useCallback(
         (position: 'left' | 'right' = 'right') => {
             // Show account switcher and logout when user is fully authenticated
-            if (activeLoginid && !is_account_regenerating) {
+            if (activeLoginid && !is_account_regenerating && !isSandboxTransitioning) {
                 if (position === 'left' && !isDesktop) {
                     return null;
                 } else if (position === 'right') {
@@ -130,7 +140,7 @@ const AppHeader = observer(() => {
             else if (
                 position === 'right' &&
                 !isOAuthPending &&
-                ((!is_account_regenerating && !isAuthorizing && !activeLoginid) || authTimeout)
+                ((!is_account_regenerating && !isSandboxTransitioning && !isAuthorizing && !activeLoginid) || authTimeout)
             ) {
                 // Disable auth buttons until the OAuth app id is configured, so the
                 // click handlers (which would otherwise log "Failed to generate OAuth
@@ -182,6 +192,7 @@ const AppHeader = observer(() => {
             activeAccount,
             authTimeout,
             is_account_regenerating,
+            isSandboxTransitioning,
             isOAuthPending,
             handleLogin,
             handleSignup,

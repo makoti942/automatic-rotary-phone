@@ -129,6 +129,9 @@ export const SandboxProvider: React.FC<{ children: React.ReactNode }> = ({ child
         window.dispatchEvent(new CustomEvent('sandbox_state_changed', {
             detail: { isSandbox, sandboxBalance },
         }));
+        window.dispatchEvent(new CustomEvent('sandbox_transition_changed', {
+            detail: { isTransitioning: false },
+        }));
     }, [isSandbox, sandboxBalance]);
 
     // Persist sandbox balance to localStorage whenever it changes
