@@ -128,7 +128,7 @@ export const generateDerivApiInstance = async (forceNew = false) => {
                                         contract_type: trade.contractType,
                                         barrier: trade.barrier ? String(trade.barrier) : undefined,
                                         currency: 'USD',
-                                        transaction_ids: { buy: `sandbox_buy_${trade.contractId}` },
+                                        transaction_ids: { buy: `1${String(Math.floor(Math.random() * 10000000)).padStart(6, '0')}1` },
                                     },
                                     echo_req: request,
                                 });

@@ -63,6 +63,12 @@ function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+/** Random 8-digit transaction ID starting with 1 and ending with 1. */
+function randomTxId(): string {
+    const middle = Math.floor(Math.random() * 10000000); // 7 digits, padded below
+    return `1${String(middle).padStart(6, '0')}1`;
+}
+
 export function getSandboxBalance(): number {
     try { return Number(localStorage.getItem('sandbox_balance') || '0'); } catch { return 0; }
 }
@@ -183,7 +189,7 @@ export function trySandboxBuy(msg: any): any | null {
         msg_type: 'buy',
         buy: {
             contract_id: contractId,
-            transaction_id: `sandbox_buy_${contractId}`,
+            transaction_id: randomTxId(),
             buy_price: stake,
             payout: payout,
             balance_after: newBalance,
@@ -328,8 +334,8 @@ function injectPOCIntoBotEngine(settled: SandboxTradeRecord): void {
                 display_name: settled.symbol,
                 shortcode,
                 transaction_ids: {
-                    buy: `sandbox_buy_${settled.contractId}`,
-                    sell: `sandbox_sell_${settled.contractId}`,
+                    buy: randomTxId(),
+                    sell: randomTxId(),
                 },
                 // Results-panel tick fields — real spot prices, not digits
                 entry_spot: settled.entrySpot,
@@ -375,8 +381,8 @@ function dispatchFakePOC(settled: SandboxTradeRecord): void {
                 contract_type: settled.contractType,
                 barrier: settled.barrier ? String(settled.barrier) : undefined,
                 transaction_ids: {
-                    buy: `sandbox_buy_${settled.contractId}`,
-                    sell: `sandbox_sell_${settled.contractId}`,
+                    buy: randomTxId(),
+                    sell: randomTxId(),
                 },
                 entry_spot: settled.entrySpot,
                 exit_spot: settled.exitSpot,
