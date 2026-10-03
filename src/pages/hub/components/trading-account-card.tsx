@@ -6,7 +6,6 @@ type TTradingAccountCardProps = {
     loginid: string;
     balance: number;
     currency: string;
-    isReal?: boolean;
     isActive?: boolean;
     onClick?: () => void;
 };
@@ -16,22 +15,15 @@ const TradingAccountCard = ({
     loginid,
     balance,
     currency,
-    isReal = false,
     isActive = false,
     onClick,
 }: TTradingAccountCardProps) => {
     return (
         <button
             type='button'
-            className={`trading-account-card${isActive ? ' trading-account-card--active' : ''}${isReal ? ' trading-account-card--real' : ''}`}
+            className={`trading-account-card${isActive ? ' trading-account-card--active' : ''}`}
             onClick={onClick}
         >
-            <div className='trading-account-card__header'>
-                <span className={`trading-account-card__badge${isReal ? ' trading-account-card__badge--real' : ''}`}>
-                    {isReal ? 'Real' : 'Demo'}
-                </span>
-                {isActive && <span className='trading-account-card__active-dot' />}
-            </div>
             <p className='trading-account-card__title'>{title}</p>
             <p className='trading-account-card__loginid'>{loginid}</p>
             <div className='trading-account-card__balance'>

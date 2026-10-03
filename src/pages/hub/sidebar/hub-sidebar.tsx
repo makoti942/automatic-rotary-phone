@@ -28,6 +28,7 @@ const HubSidebar = () => {
                                 to={item.path}
                                 className={`hub-sidebar__nav-item${isActive ? ' hub-sidebar__nav-item--active' : ''}`}
                             >
+                                <span className='hub-sidebar__nav-indicator' />
                                 <span className='hub-sidebar__nav-icon'>{ICONS[item.key]}</span>
                                 <span className='hub-sidebar__nav-label'>{item.label}</span>
                             </NavLink>

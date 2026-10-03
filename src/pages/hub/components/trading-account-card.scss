@@ -3,16 +3,18 @@
     flex-direction: column;
     align-items: flex-start;
     text-align: left;
-    background: #fff;
-    border: 2px solid #e8e9eb;
+    background: #ffffff;
+    border: 1px solid #e6e9e9;
     border-radius: 12px;
     padding: 16px 20px;
     cursor: pointer;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     min-width: 200px;
+    font-family: inherit;
 
     &:hover {
         border-color: #c4c7cc;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
     }
 
     &--active {
@@ -20,54 +22,17 @@
         box-shadow: 0 0 0 1px #ff444f;
     }
 
-    &--real {
-        background: linear-gradient(135deg, #fff 0%, #fafafa 100%);
-    }
-
-    &__header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        width: 100%;
-        margin-bottom: 8px;
-    }
-
-    &__badge {
-        display: inline-flex;
-        align-items: center;
-        padding: 2px 8px;
-        background: #f2f3f4;
-        border-radius: 4px;
-        color: #6b7280;
-        font-size: 11px;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-
-        &--real {
-            background: rgba(255, 68, 79, 0.1);
-            color: #ff444f;
-        }
-    }
-
-    &__active-dot {
-        width: 8px;
-        height: 8px;
-        background: #18a957;
-        border-radius: 50%;
-    }
-
     &__title {
         margin: 0 0 2px;
         font-size: 14px;
         font-weight: 600;
-        color: #333941;
+        color: #333333;
     }
 
     &__loginid {
         margin: 0 0 12px;
         font-size: 12px;
-        color: #9aa0b0;
+        color: #999999;
     }
 
     &__balance {
@@ -78,19 +43,19 @@
 
     &__currency {
         font-size: 14px;
-        color: #6b7280;
+        color: #999999;
     }
 
     &__amount {
         font-size: 22px;
         font-weight: 700;
-        color: #181c24;
+        color: #333333;
         letter-spacing: -0.5px;
     }
 
     &__code {
         font-size: 12px;
-        color: #9aa0b0;
+        color: #999999;
         margin-left: 4px;
     }
 }

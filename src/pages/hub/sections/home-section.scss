@@ -3,7 +3,7 @@
     flex-direction: column;
     gap: 28px;
     padding: 28px;
-    max-width: 1100px;
+    max-width: 1280px;
 
     &__section {
         display: flex;
@@ -15,7 +15,7 @@
         margin: 0;
         font-size: 18px;
         font-weight: 700;
-        color: #181c24;
+        color: #333333;
     }
 
     &__markets-header {
@@ -28,6 +28,7 @@
         border: none;
         background: none;
         color: #ff444f;
+        font-family: inherit;
         font-size: 14px;
         font-weight: 600;
         cursor: pointer;
@@ -54,7 +55,8 @@
         border: 2px dashed #c4c7cc;
         border-radius: 12px;
         background: transparent;
-        color: #6b7280;
+        color: #999999;
+        font-family: inherit;
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
@@ -81,154 +83,6 @@
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
         gap: 12px;
-    }
-
-    &__trade-modal {
-        position: fixed;
-        inset: 0;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 1000;
-        padding: 20px;
-    }
-
-    &__trade-modal-content {
-        position: relative;
-        max-width: 400px;
-        width: 100%;
-    }
-
-    &__trade-close {
-        position: absolute;
-        top: -8px;
-        right: -8px;
-        width: 32px;
-        height: 32px;
-        border: none;
-        border-radius: 50%;
-        background: #fff;
-        color: #333941;
-        font-size: 20px;
-        cursor: pointer;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-        z-index: 1;
-    }
-
-    &__trade-ticket {
-        background: #fff;
-        border-radius: 16px;
-        overflow: hidden;
-    }
-
-    &__trade-title {
-        margin: 0;
-        padding: 20px 24px;
-        font-size: 16px;
-        font-weight: 700;
-        color: #181c24;
-        border-bottom: 1px solid #e8e9eb;
-    }
-
-    &__trade-fields {
-        padding: 20px 24px;
-        display: flex;
-        flex-direction: column;
-        gap: 16px;
-    }
-
-    &__trade-field {
-        display: flex;
-        flex-direction: column;
-        gap: 6px;
-
-        label {
-            font-size: 13px;
-            font-weight: 500;
-            color: #333941;
-        }
-    }
-
-    &__trade-toggle {
-        display: flex;
-        gap: 8px;
-    }
-
-    &__trade-btn {
-        flex: 1;
-        padding: 10px;
-        border: 2px solid #e8e9eb;
-        border-radius: 8px;
-        background: #fff;
-        font-size: 14px;
-        font-weight: 600;
-        color: #6b7280;
-        cursor: pointer;
-
-        &--rise {
-            &.hub-home__trade-btn--active {
-                border-color: #18a957;
-                color: #18a957;
-                background: rgba(24, 169, 87, 0.05);
-            }
-        }
-
-        &--fall {
-            &.hub-home__trade-btn--active {
-                border-color: #ff444f;
-                color: #ff444f;
-                background: rgba(255, 68, 79, 0.05);
-            }
-        }
-    }
-
-    &__trade-select,
-    &__trade-input {
-        padding: 12px 16px;
-        border: 1px solid #e8e9eb;
-        border-radius: 8px;
-        background: #f8f9fa;
-        font-size: 14px;
-        color: #181c24;
-        outline: none;
-
-        &:focus {
-            border-color: #ff444f;
-        }
-    }
-
-    &__trade-payout {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 16px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        font-size: 13px;
-        color: #6b7280;
-    }
-
-    &__trade-payout-value {
-        font-size: 16px;
-        font-weight: 700;
-        color: #18a957;
-    }
-
-    &__trade-purchase {
-        width: 100%;
-        padding: 14px;
-        border: none;
-        border-radius: 8px;
-        background: #18a957;
-        color: #fff;
-        font-size: 15px;
-        font-weight: 600;
-        cursor: pointer;
-
-        &:hover {
-            background: #148f49;
-        }
     }
 
     @media (max-width: 768px) {

@@ -1,10 +1,77 @@
-export const MARKETS = [
-    { symbol: 'R_10', name: 'Volatility 10 Index', price: '1,234.56', change: '+0.12%', changeColor: '#18A957', spark: [30, 35, 32, 40, 38, 45, 42, 48, 44, 50] },
-    { symbol: 'R_25', name: 'Volatility 25 Index', price: '2,456.78', change: '-0.08%', changeColor: '#FF444F', spark: [50, 48, 44, 42, 45, 40, 38, 35, 32, 30] },
-    { symbol: 'R_50', name: 'Volatility 50 Index', price: '3,678.90', change: '+0.21%', changeColor: '#18A957', spark: [20, 25, 28, 32, 30, 38, 42, 40, 48, 52] },
-    { symbol: 'R_75', name: 'Volatility 75 Index', price: '4,891.23', change: '+0.15%', changeColor: '#18A957', spark: [25, 28, 32, 30, 36, 40, 38, 44, 48, 46] },
-    { symbol: 'R_100', name: 'Volatility 100 Index', price: '6,123.45', change: '-0.05%', changeColor: '#FF444F', spark: [45, 42, 40, 38, 35, 32, 30, 28, 25, 22] },
-    { symbol: '1HZ100V', name: 'Volatility 100 (1s) Index', price: '8,345.67', change: '+0.33%', changeColor: '#18A957', spark: [15, 20, 25, 30, 28, 35, 40, 45, 50, 55] },
+import {
+    MarketDerivedVolatility10Icon,
+    MarketDerivedVolatility25Icon,
+    MarketDerivedVolatility50Icon,
+    MarketDerivedVolatility75Icon,
+    MarketDerivedVolatility100Icon,
+    MarketDerivedVolatility1001sIcon,
+} from '@deriv/quill-icons/Markets';
+
+export type TMarket = {
+    symbol: string;
+    name: string;
+    price: string;
+    change: string;
+    changeColor: string;
+    spark: number[];
+    icon: React.ReactNode;
+};
+
+export const MARKETS: TMarket[] = [
+    {
+        symbol: 'R_10',
+        name: 'Volatility 10 Index',
+        price: '1,234.56',
+        change: '+0.12%',
+        changeColor: '#18A957',
+        spark: [30, 35, 32, 40, 38, 45, 42, 48, 44, 50],
+        icon: <MarketDerivedVolatility10Icon height={36} width={36} />,
+    },
+    {
+        symbol: 'R_25',
+        name: 'Volatility 25 Index',
+        price: '2,456.78',
+        change: '-0.08%',
+        changeColor: '#FF444F',
+        spark: [50, 48, 44, 42, 45, 40, 38, 35, 32, 30],
+        icon: <MarketDerivedVolatility25Icon height={36} width={36} />,
+    },
+    {
+        symbol: 'R_50',
+        name: 'Volatility 50 Index',
+        price: '3,678.90',
+        change: '+0.21%',
+        changeColor: '#18A957',
+        spark: [20, 25, 28, 32, 30, 38, 42, 40, 48, 52],
+        icon: <MarketDerivedVolatility50Icon height={36} width={36} />,
+    },
+    {
+        symbol: 'R_75',
+        name: 'Volatility 75 Index',
+        price: '4,891.23',
+        change: '+0.15%',
+        changeColor: '#18A957',
+        spark: [25, 28, 32, 30, 36, 40, 38, 44, 48, 46],
+        icon: <MarketDerivedVolatility75Icon height={36} width={36} />,
+    },
+    {
+        symbol: 'R_100',
+        name: 'Volatility 100 Index',
+        price: '6,123.45',
+        change: '-0.05%',
+        changeColor: '#FF444F',
+        spark: [45, 42, 40, 38, 35, 32, 30, 28, 25, 22],
+        icon: <MarketDerivedVolatility100Icon height={36} width={36} />,
+    },
+    {
+        symbol: '1HZ100V',
+        name: 'Volatility 100 (1s) Index',
+        price: '8,345.67',
+        change: '+0.33%',
+        changeColor: '#18A957',
+        spark: [15, 20, 25, 30, 28, 35, 40, 45, 50, 55],
+        icon: <MarketDerivedVolatility1001sIcon height={36} width={36} />,
+    },
 ];
 
 export const PROMO_SLIDES = [
@@ -15,14 +82,6 @@ export const PROMO_SLIDES = [
         cta: 'Trade now',
         gradient: 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)',
         accent: '#FF444F',
-    },
-    {
-        id: 2,
-        title: 'Multiplier trading',
-        subtitle: 'Amplify your positions with multipliers up to 1000x',
-        cta: 'Learn more',
-        gradient: 'linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%)',
-        accent: '#18A957',
     },
 ];
 

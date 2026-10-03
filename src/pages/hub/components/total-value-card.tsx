@@ -6,8 +6,6 @@ type TTotalValueCardProps = {
     currency: string;
     selectedView: 'real' | 'demo';
     onSelectView: (view: 'real' | 'demo') => void;
-    isTrickActive: boolean;
-    isSandboxActive: boolean;
     variant?: 'home' | 'options';
 };
 
@@ -16,8 +14,6 @@ const TotalValueCard = ({
     currency,
     selectedView,
     onSelectView,
-    isTrickActive,
-    isSandboxActive,
     variant = 'home',
 }: TTotalValueCardProps) => {
     return (
@@ -46,11 +42,6 @@ const TotalValueCard = ({
                 <span className='total-value-card__amount'>{formatBalance(totalValue)}</span>
                 <span className='total-value-card__currency-code'>{currency}</span>
             </div>
-            {(isTrickActive || isSandboxActive) && (
-                <div className='total-value-card__badge'>
-                    {isSandboxActive ? 'Paper trading' : 'Demo mode'}
-                </div>
-            )}
         </div>
     );
 };

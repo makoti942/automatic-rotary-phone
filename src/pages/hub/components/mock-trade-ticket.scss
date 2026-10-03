@@ -1,21 +1,22 @@
 .mock-trade-ticket {
-    background: #fff;
+    background: #ffffff;
     border-radius: 16px;
-    border: 1px solid #e8e9eb;
+    border: 1px solid #e6e9e9;
     overflow: hidden;
     width: 100%;
     max-width: 380px;
+    font-family: inherit;
 
     &__header {
         padding: 20px 24px;
-        border-bottom: 1px solid #e8e9eb;
+        border-bottom: 1px solid #e6e9e9;
     }
 
     &__title {
         margin: 0;
         font-size: 16px;
         font-weight: 700;
-        color: #181c24;
+        color: #333333;
     }
 
     &__body {
@@ -34,7 +35,7 @@
     &__label {
         font-size: 13px;
         font-weight: 500;
-        color: #333941;
+        color: #333333;
     }
 
     &__contract-toggle {
@@ -45,12 +46,13 @@
     &__contract-btn {
         flex: 1;
         padding: 10px;
-        border: 2px solid #e8e9eb;
+        border: 2px solid #e6e9e9;
         border-radius: 8px;
         background: #fff;
+        font-family: inherit;
         font-size: 14px;
         font-weight: 600;
-        color: #6b7280;
+        color: #999999;
         cursor: pointer;
         transition: all 0.15s ease;
 
@@ -76,11 +78,12 @@
     &__select,
     &__input {
         padding: 12px 16px;
-        border: 1px solid #e8e9eb;
+        border: 1px solid #e6e9e9;
         border-radius: 8px;
         background: #f8f9fa;
+        font-family: inherit;
         font-size: 14px;
-        color: #181c24;
+        color: #333333;
         outline: none;
 
         &:focus {
@@ -99,7 +102,7 @@
 
     &__payout-label {
         font-size: 13px;
-        color: #6b7280;
+        color: #999999;
     }
 
     &__payout-value {
@@ -115,6 +118,7 @@
         border-radius: 8px;
         background: #18a957;
         color: #fff;
+        font-family: inherit;
         font-size: 15px;
         font-weight: 600;
         cursor: pointer;
@@ -125,8 +129,8 @@
         }
 
         &:disabled {
-            background: #e8e9eb;
-            color: #9aa0b0;
+            background: #e6e9e9;
+            color: #999999;
             cursor: not-allowed;
         }
     }
@@ -166,6 +170,7 @@
         transform: translateX(-50%);
         padding: 12px 24px;
         border-radius: 8px;
+        font-family: inherit;
         font-size: 14px;
         font-weight: 500;
         z-index: 1000;

@@ -3,13 +3,13 @@
     flex-direction: column;
     gap: 20px;
     padding: 28px;
-    max-width: 1100px;
+    max-width: 1280px;
 
     &__title {
         margin: 0;
         font-size: 22px;
         font-weight: 700;
-        color: #181c24;
+        color: #333333;
     }
 
     &__accounts {
@@ -19,8 +19,8 @@
     }
 
     &__account-card {
-        background: #fff;
-        border: 1px solid #e8e9eb;
+        background: #ffffff;
+        border: 1px solid #e6e9e9;
         border-radius: 12px;
         padding: 20px;
         min-width: 220px;
@@ -53,13 +53,13 @@
         margin: 0 0 2px;
         font-size: 14px;
         font-weight: 600;
-        color: #333941;
+        color: #333333;
     }
 
     &__account-loginid {
         margin: 0 0 12px;
         font-size: 12px;
-        color: #9aa0b0;
+        color: #999999;
     }
 
     &__account-balance {
@@ -70,18 +70,18 @@
 
     &__account-currency {
         font-size: 14px;
-        color: #6b7280;
+        color: #999999;
     }
 
     &__account-amount {
         font-size: 22px;
         font-weight: 700;
-        color: #181c24;
+        color: #333333;
     }
 
     &__account-code {
         font-size: 12px;
-        color: #9aa0b0;
+        color: #999999;
         margin-left: 4px;
     }
 
@@ -96,7 +96,8 @@
         border: 2px dashed #c4c7cc;
         border-radius: 12px;
         background: transparent;
-        color: #6b7280;
+        color: #999999;
+        font-family: inherit;
         font-size: 13px;
         font-weight: 500;
         cursor: pointer;
@@ -114,8 +115,8 @@
 
     &__positions {
         overflow-x: auto;
-        background: #fff;
-        border: 1px solid #e8e9eb;
+        background: #ffffff;
+        border: 1px solid #e6e9e9;
         border-radius: 12px;
     }
 
@@ -134,12 +135,12 @@
         th {
             background: #f8f9fa;
             font-weight: 600;
-            color: #6b7280;
+            color: #999999;
             white-space: nowrap;
         }
 
         td {
-            color: #333941;
+            color: #333333;
         }
 
         tbody tr:last-child td {
