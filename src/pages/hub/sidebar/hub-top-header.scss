@@ -1,0 +1,38 @@
+.hub-top-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: #ffffff;
+    border-bottom: 1px solid #e6e9e9;
+    flex-shrink: 0;
+    z-index: 10;
+
+    &__logo {
+        display: flex;
+        align-items: center;
+        cursor: default;
+        user-select: none;
+
+        svg {
+            display: block;
+        }
+    }
+
+    &__bell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: #333333;
+        cursor: pointer;
+
+        &:hover {
+            background: #f2f3f4;
+        }
+    }
+}

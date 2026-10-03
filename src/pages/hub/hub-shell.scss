@@ -8,6 +8,7 @@
 
     &__layout {
         display: flex;
+        flex-direction: column;
         flex: 1;
         min-height: 0;
         background: #f2f3f4;
