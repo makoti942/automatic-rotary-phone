@@ -9,7 +9,6 @@ import { useLogout } from '@/hooks/useLogout';
 import { useStore } from '@/hooks/useStore';
 import { Localize } from '@deriv-com/translations';
 import { Header, useDevice, Wrapper } from '@deriv-com/ui';
-import { AppLogo } from '../app-logo';
 import AccountSwitcher from './account-switcher';
 import MenuItems from './menu-items';
 import MobileMenu from './mobile-menu';
@@ -110,6 +109,24 @@ const AppHeader = observer(() => {
         }
     }, [setIsAuthorizing]);
 
+    const renderMakotiBrand = () => (
+        <div className='app-header__makoti-brand' aria-label='Makoti Traders'>
+            <div className='app-header__makoti-orbit' aria-hidden='true'>
+                <span>MAKOTI</span>
+                <span>TRADERS</span>
+            </div>
+            <div className='app-header__makoti-cube' aria-hidden='true'>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--front'>M</span>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--back'>T</span>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--right'>◆</span>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--left'>◆</span>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--top'>+</span>
+                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--bottom'>−</span>
+            </div>
+            <span className='app-header__makoti-site'>makotitraderss.vercel.app</span>
+        </div>
+    );
+
     const renderAccountSection = useCallback(
         (position: 'left' | 'right' = 'right') => {
             // Show account switcher and logout when user is fully authenticated
@@ -200,8 +217,7 @@ const AppHeader = observer(() => {
             >
                 <Wrapper variant='left'>
                     <MobileMenu onLogout={handleLogout} />
-                    <AppLogo />
-                    {!isDesktop && <span className='app-header__brand-text'>makotitraders.vercel.app</span>}
+                    {renderMakotiBrand()}
                     {isDesktop && <MenuItems />}
                 </Wrapper>
                 <Wrapper variant='right'>

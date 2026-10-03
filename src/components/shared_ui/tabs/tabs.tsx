@@ -65,6 +65,40 @@ const Tabs = ({
     const [active_line_style, updateActiveLineStyle] = React.useState({});
     const active_tab_ref = React.useRef<HTMLLIElement>(null);
     const tabs_wrapper_ref = React.useRef<HTMLUListElement>(null);
+    const audio_context_ref = React.useRef<AudioContext | null>(null);
+    const last_chime_ref = React.useRef(0);
+
+    const playTabScrollChime = React.useCallback(() => {
+        // Keep this asset-free and very short so tab navigation stays instant.
+        // AudioContext is created from the user's tab interaction, avoiding
+        // autoplay-policy errors on initial page load.
+        const now = performance.now();
+        if (now - last_chime_ref.current < 55) return;
+        last_chime_ref.current = now;
+        try {
+            const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+            if (!AudioContextConstructor) return;
+            const context = audio_context_ref.current ?? new AudioContextConstructor();
+            audio_context_ref.current = context;
+            if (context.state === 'suspended') void context.resume();
+
+            const oscillator = context.createOscillator();
+            const gain = context.createGain();
+            const start = context.currentTime;
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(520, start);
+            oscillator.frequency.exponentialRampToValueAtTime(760, start + 0.045);
+            gain.gain.setValueAtTime(0.0001, start);
+            gain.gain.exponentialRampToValueAtTime(0.035, start + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.075);
+            oscillator.connect(gain);
+            gain.connect(context.destination);
+            oscillator.start(start);
+            oscillator.stop(start + 0.08);
+        } catch {
+            // Sound is decorative; navigation must never fail if audio is blocked.
+        }
+    }, []);
     const pushHash = (hash: string) => {
         history.replace(`${history.location.pathname}${window.location.search}#${hash}`);
     };
@@ -127,6 +161,7 @@ const Tabs = ({
     }, [active_index]);
 
     const onClickTabItem = (index: number) => {
+        playTabScrollChime();
         if (should_update_hash) {
             const hash = children[index]?.props['data-hash'];
             pushHash(hash);

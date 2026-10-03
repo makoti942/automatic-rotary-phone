@@ -16,13 +16,121 @@
         }
     }
 
-    &__brand-text {
-        font-size: 11px;
-        color: var(--text-general);
-        margin-left: 0.8rem;
-        white-space: nowrap;
-        opacity: 0.7;
+    &__makoti-brand {
+        position: relative;
+        display: inline-flex;
+        width: 17rem;
+        height: 5.2rem;
+        align-items: center;
+        justify-content: flex-start;
+        perspective: 700px;
+        flex: 0 0 auto;
     }
+
+    &__makoti-cube {
+        position: relative;
+        z-index: 2;
+        width: 3.25rem;
+        height: 3.25rem;
+        transform-style: preserve-3d;
+        animation: makoti-cube-spin 8s linear infinite;
+    }
+
+    &__makoti-cube-face {
+        position: absolute;
+        display: grid;
+        width: 3.25rem;
+        height: 3.25rem;
+        place-items: center;
+        border: 1px solid rgba(191, 241, 255, 0.85);
+        border-radius: 0.55rem;
+        color: #fff;
+        background: linear-gradient(145deg, #4b90ff, #6a3eea 56%, #cf3ad4);
+        box-shadow: inset 0 0 1rem rgba(255, 255, 255, 0.22), 0 0 1.1rem rgba(72, 180, 255, 0.38);
+        font-size: 1.5rem;
+        font-weight: 900;
+        backface-visibility: hidden;
+    }
+
+    &__makoti-cube-face--front { transform: translateZ(1.625rem); }
+    &__makoti-cube-face--back { transform: rotateY(180deg) translateZ(1.625rem); }
+    &__makoti-cube-face--right { transform: rotateY(90deg) translateZ(1.625rem); }
+    &__makoti-cube-face--left { transform: rotateY(-90deg) translateZ(1.625rem); }
+    &__makoti-cube-face--top { transform: rotateX(90deg) translateZ(1.625rem); }
+    &__makoti-cube-face--bottom { transform: rotateX(-90deg) translateZ(1.625rem); }
+
+    &__makoti-orbit {
+        position: absolute;
+        z-index: 1;
+        top: 0.45rem;
+        left: -0.4rem;
+        width: 4.2rem;
+        height: 4.2rem;
+        border: 1px solid rgba(117, 223, 255, 0.44);
+        border-radius: 50%;
+        transform: rotateX(64deg) rotateZ(-16deg);
+        box-shadow: 0 0 1rem rgba(75, 189, 255, 0.25);
+        animation: makoti-orbit-spin 5s linear infinite;
+        pointer-events: none;
+    }
+
+    &__makoti-orbit span {
+        position: absolute;
+        left: 50%;
+        padding: 0 0.25rem;
+        color: #9eeeff;
+        background: #0d1629;
+        font-size: 0.52rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        white-space: nowrap;
+    }
+
+    &__makoti-orbit span:first-child { top: -0.35rem; transform: translateX(-50%); }
+    &__makoti-orbit span:last-child { bottom: -0.35rem; transform: translateX(-50%); }
+
+    &__makoti-site {
+        margin-left: 0.85rem;
+        color: #b9c9e7;
+        font-size: 0.8rem;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+        animation: makoti-site-float 3.2s ease-in-out infinite;
+    }
+}
+
+@keyframes makoti-cube-spin {
+    0% { transform: rotateX(-10deg) rotateY(0deg) rotateZ(0deg); }
+    50% { transform: rotateX(12deg) rotateY(180deg) rotateZ(6deg); }
+    100% { transform: rotateX(-10deg) rotateY(360deg) rotateZ(0deg); }
+}
+
+@keyframes makoti-orbit-spin {
+    from { transform: rotateX(64deg) rotateZ(-16deg); }
+    to { transform: rotateX(64deg) rotateZ(344deg); }
+}
+
+@keyframes makoti-site-float {
+    0%, 100% { opacity: 0.72; transform: translateX(0); }
+    50% { opacity: 1; transform: translateX(0.2rem); }
+}
+
+@include mobile-or-tablet-screen {
+    .app-header__makoti-brand {
+        width: 13.5rem;
+        height: 4.5rem;
+        transform: scale(0.88);
+        transform-origin: left center;
+    }
+
+    .app-header__makoti-site { font-size: 0.68rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .app-header__makoti-cube,
+    .app-header__makoti-orbit,
+    .app-header__makoti-site { animation: none; }
 }
 
 .account-switcher {
