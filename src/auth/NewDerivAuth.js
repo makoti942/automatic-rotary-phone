@@ -1,5 +1,12 @@
 import * as sandboxEngine from '@/utils/sandbox-engine';
 
+let requestSequence = 0
+
+function nextRequestId() {
+    requestSequence = (requestSequence + 1) % 1000
+    return Date.now() * 1000 + requestSequence
+}
+
 // Deriv's short-duration Higher/Lower contracts use CALL/PUT with a
 // relative barrier. Some Blockly paths provide the same value as a positive
 // number, so normalize it at the shared request boundary:
@@ -97,12 +104,15 @@ export async function sendViaNewSystemWithPromise(msg) {
         }
         const msgType = Object.keys(msg).find(k => k !== 'passthrough' && k !== 'req_id');
         const hasExplicitReqId = msg.req_id != null;
-        const reqId = msg.req_id || Date.now();
+        // Date.now() alone collides when Higher and Lower are submitted in
+        // the same tick. A collision makes each promise consume the other
+        // contract's response (and can report the wrong barrier error).
+        const reqId = msg.req_id || nextRequestId();
         const toSend = { ...convertToNewFormat(msg), req_id: reqId };
         const handler = (event) => {
             try {
                 const data = JSON.parse(event.detail.data);
-                if (data.req_id === reqId || (!hasExplicitReqId && data.msg_type === msgType)) {
+                if (data.req_id === reqId) {
                     window.removeEventListener('newSystemMessage', handler);
                     if (data.error) reject(data);
                     else resolve(data);
