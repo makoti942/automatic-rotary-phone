@@ -1,34 +1,39 @@
 .hub-options {
     display: flex;
     flex-direction: column;
-    gap: 28px;
-    padding: 28px;
+    gap: 24px;
+    padding: 24px;
     max-width: 1280px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
 
     &__section {
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 12px;
     }
 
     &__section-title {
         margin: 0;
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 700;
         color: #333333;
     }
 
     &__markets {
         display: grid;
-        grid-template-columns: repeat(4, 1fr);
+        grid-template-columns: repeat(4, 1fr) auto;
         gap: 12px;
+        align-items: stretch;
     }
 
     &__markets-more {
         display: flex;
         align-items: center;
         justify-content: center;
-        min-height: 140px;
+        min-width: 52px;
+        min-height: 148px;
         border: 1px solid #e6e9e9;
         border-radius: 12px;
         background: #fff;
@@ -42,17 +47,18 @@
     }
 
     &__platforms {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
         gap: 12px;
     }
 
     &__platform-card {
         display: flex;
         align-items: center;
-        gap: 16px;
-        padding: 16px 20px;
-        background: #f8f9fa;
+        gap: 12px;
+        padding: 14px 16px;
+        background: #fff;
+        border: 1px solid #e6e9e9;
         border-radius: 12px;
     }
 
@@ -60,14 +66,14 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 48px;
-        height: 48px;
-        border-radius: 12px;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
         flex-shrink: 0;
     }
 
     &__platform-code {
-        font-size: 14px;
+        font-size: 13px;
         font-weight: 800;
         color: #fff;
         letter-spacing: 0.5px;
@@ -75,18 +81,19 @@
 
     &__platform-info {
         flex: 1;
+        min-width: 0;
     }
 
     &__platform-name {
-        margin: 0 0 4px;
-        font-size: 15px;
+        margin: 0 0 2px;
+        font-size: 14px;
         font-weight: 700;
         color: #333333;
     }
 
     &__platform-desc {
         margin: 0;
-        font-size: 13px;
+        font-size: 12px;
         color: #666666;
         line-height: 1.4;
     }
@@ -97,9 +104,9 @@
     }
 
     &__tab {
-        padding: 8px 20px;
+        padding: 7px 16px;
         border: 1px solid #e6e9e9;
-        border-radius: 20px;
+        border-radius: 18px;
         background: #fff;
         font-family: inherit;
         font-size: 13px;
@@ -117,7 +124,7 @@
 
     &__trade-types {
         display: grid;
-        grid-template-columns: repeat(3, 1fr);
+        grid-template-columns: repeat(5, 1fr);
         gap: 12px;
     }
 
@@ -126,8 +133,8 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 12px;
-        padding: 24px 16px;
+        gap: 10px;
+        padding: 18px 12px;
         border: 1px solid #e6e9e9;
         border-radius: 12px;
         background: #fff;
@@ -140,7 +147,7 @@
     }
 
     &__trade-type-name {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 500;
         color: #333333;
         text-align: center;
@@ -197,11 +204,15 @@
 
     @media (max-width: 1024px) {
         &__markets {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(2, 1fr) auto;
+        }
+
+        &__platforms {
+            grid-template-columns: 1fr;
         }
 
         &__trade-types {
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
         }
     }
 
@@ -211,6 +222,10 @@
 
         &__markets {
             grid-template-columns: repeat(2, 1fr);
+        }
+
+        &__markets-more {
+            display: none;
         }
 
         &__trade-types {

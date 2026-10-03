@@ -1,8 +1,11 @@
 .hub-transfer {
     display: flex;
     justify-content: center;
-    padding: 28px;
+    padding: 24px;
     max-width: 1280px;
+    width: 100%;
+    margin: 0 auto;
+    box-sizing: border-box;
 
     @media (max-width: 768px) {
         padding: 16px;

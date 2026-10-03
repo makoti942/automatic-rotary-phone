@@ -26,7 +26,7 @@ export const MARKETS: TMarket[] = [
         change: '+0.56%',
         changeColor: '#18A957',
         spark: [30, 35, 32, 40, 38, 45, 42, 48, 44, 50],
-        icon: <MarketDerivedVolatility1001sIcon height={40} width={40} />,
+        icon: <MarketDerivedVolatility1001sIcon height={32} width={32} />,
         badge: '100',
     },
     {
@@ -36,7 +36,7 @@ export const MARKETS: TMarket[] = [
         change: '+0.12%',
         changeColor: '#18A957',
         spark: [50, 48, 44, 42, 45, 40, 38, 35, 32, 30],
-        icon: <MarketDerivedVolatility75Icon height={40} width={40} />,
+        icon: <MarketDerivedVolatility75Icon height={32} width={32} />,
         badge: '75',
     },
     {
@@ -46,7 +46,7 @@ export const MARKETS: TMarket[] = [
         change: '+0.05%',
         changeColor: '#18A957',
         spark: [20, 25, 28, 32, 30, 38, 42, 40, 48, 52],
-        icon: <MarketDerivedVolatility25Icon height={40} width={40} />,
+        icon: <MarketDerivedVolatility25Icon height={32} width={32} />,
         badge: '25',
     },
     {
@@ -56,7 +56,7 @@ export const MARKETS: TMarket[] = [
         change: '+0.17%',
         changeColor: '#18A957',
         spark: [25, 28, 32, 30, 36, 40, 38, 44, 48, 46],
-        icon: <MarketDerivedVolatility50Icon height={40} width={40} />,
+        icon: <MarketDerivedVolatility50Icon height={32} width={32} />,
         badge: '50',
     },
     {
@@ -66,7 +66,7 @@ export const MARKETS: TMarket[] = [
         change: '+0.08%',
         changeColor: '#18A957',
         spark: [45, 42, 40, 38, 35, 32, 30, 28, 25, 22],
-        icon: <MarketDerivedVolatility10Icon height={40} width={40} />,
+        icon: <MarketDerivedVolatility10Icon height={32} width={32} />,
         badge: '10',
     },
     {
@@ -76,7 +76,7 @@ export const MARKETS: TMarket[] = [
         change: '-0.05%',
         changeColor: '#FF444F',
         spark: [15, 20, 25, 30, 28, 35, 40, 45, 50, 55],
-        icon: <MarketDerivedVolatility100Icon height={40} width={40} />,
+        icon: <MarketDerivedVolatility100Icon height={32} width={32} />,
         badge: '100',
     },
 ];
