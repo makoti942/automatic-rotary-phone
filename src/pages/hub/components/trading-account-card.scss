@@ -6,10 +6,11 @@
     background: #ffffff;
     border: 1px solid #e6e9e9;
     border-radius: 12px;
-    padding: 16px 20px;
+    padding: 20px;
     cursor: pointer;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
-    min-width: 200px;
+    min-width: 180px;
+    flex: 1;
     font-family: inherit;
 
     &:hover {
@@ -19,43 +20,69 @@
 
     &--active {
         border-color: #ff444f;
-        box-shadow: 0 0 0 1px #ff444f;
+    }
+
+    &__icon {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        border-radius: 10px;
+        margin-bottom: 12px;
+
+        &--mt5 {
+            background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+        }
+
+        &--options {
+            background: #ff444f;
+        }
+
+        &--dxn {
+            background: #ff444f;
+        }
+    }
+
+    &__icon-main {
+        font-size: 11px;
+        font-weight: 800;
+        color: #fff;
+        letter-spacing: 0.5px;
+        line-height: 1;
+    }
+
+    &__icon-sub {
+        font-size: 7px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.8);
+        letter-spacing: 0.5px;
+        line-height: 1;
+        margin-top: 1px;
     }
 
     &__title {
-        margin: 0 0 2px;
+        margin: 0 0 8px;
         font-size: 14px;
         font-weight: 600;
         color: #333333;
     }
 
-    &__loginid {
-        margin: 0 0 12px;
-        font-size: 12px;
-        color: #999999;
-    }
-
     &__balance {
         display: flex;
         align-items: baseline;
-        gap: 2px;
-    }
-
-    &__currency {
-        font-size: 14px;
-        color: #999999;
+        gap: 4px;
     }
 
     &__amount {
-        font-size: 22px;
+        font-size: 16px;
         font-weight: 700;
         color: #333333;
-        letter-spacing: -0.5px;
     }
 
     &__code {
         font-size: 12px;
         color: #999999;
-        margin-left: 4px;
     }
 }

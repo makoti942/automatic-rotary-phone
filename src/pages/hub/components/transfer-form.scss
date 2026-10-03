@@ -4,31 +4,25 @@
     border: 1px solid #e6e9e9;
     overflow: hidden;
     max-width: 480px;
+    width: 100%;
     font-family: inherit;
 
     &__header {
-        padding: 24px 28px;
-        border-bottom: 1px solid #e6e9e9;
+        padding: 20px 24px;
     }
 
     &__title {
-        margin: 0 0 4px;
+        margin: 0;
         font-size: 20px;
         font-weight: 700;
         color: #333333;
     }
 
-    &__subtitle {
-        margin: 0;
-        font-size: 13px;
-        color: #999999;
-    }
-
     &__body {
-        padding: 24px 28px;
+        padding: 0 24px 24px;
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 12px;
     }
 
     &__field {
@@ -43,32 +37,62 @@
         color: #333333;
     }
 
-    &__account-select {
+    &__account-box {
         display: flex;
         align-items: center;
         gap: 12px;
-        padding: 12px 16px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #e6e9e9;
+        padding: 14px 16px;
+        background: #f2f3f4;
+        border-radius: 12px;
+        cursor: default;
+
+        &--select {
+            cursor: pointer;
+        }
     }
 
-    &__select {
+    &__acct-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        flex-shrink: 0;
+
+        &--options {
+            background: #ff444f;
+        }
+
+        &--wallet {
+            background: #e8f0fe;
+        }
+    }
+
+    &__account-info {
         flex: 1;
-        border: none;
-        background: transparent;
-        font-family: inherit;
-        font-size: 14px;
-        font-weight: 500;
-        color: #333333;
-        cursor: pointer;
-        outline: none;
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
     }
 
-    &__account-balance {
+    &__account-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: #333333;
+
+        &--placeholder {
+            color: #999999;
+        }
+    }
+
+    &__account-bal {
         font-size: 13px;
+        color: #666666;
+    }
+
+    &__chevron {
         color: #999999;
-        white-space: nowrap;
     }
 
     &__swap {
@@ -76,9 +100,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 36px;
-        height: 36px;
-        border: 2px solid #e6e9e9;
+        width: 40px;
+        height: 40px;
+        border: 1px solid #e6e9e9;
         border-radius: 50%;
         background: #fff;
         color: #333333;
@@ -95,15 +119,9 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 12px 16px;
-        background: #f8f9fa;
-        border-radius: 8px;
-        border: 1px solid #e6e9e9;
-    }
-
-    &__amount-currency {
-        font-size: 16px;
-        color: #999999;
+        padding: 14px 16px;
+        background: #f2f3f4;
+        border-radius: 12px;
     }
 
     &__input {
@@ -118,16 +136,39 @@
     }
 
     &__amount-code {
-        font-size: 13px;
+        font-size: 14px;
         color: #999999;
+    }
+
+    &__percentages {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+    }
+
+    &__pct-btn {
+        padding: 10px;
+        border: 1px solid #e6e9e9;
+        border-radius: 20px;
+        background: #fff;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        color: #333333;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+
+        &:hover {
+            border-color: #c4c7cc;
+        }
     }
 
     &__submit {
         width: 100%;
         padding: 14px;
         border: none;
-        border-radius: 8px;
-        background: #ff444f;
+        border-radius: 28px;
+        background: #ffb3b3;
         color: #fff;
         font-family: inherit;
         font-size: 15px;
@@ -136,12 +177,12 @@
         transition: background 0.15s ease;
 
         &:hover:not(:disabled) {
-            background: #e63d48;
+            background: #ff9999;
         }
 
         &:disabled {
-            background: #e6e9e9;
-            color: #999999;
+            background: #f2f3f4;
+            color: #c4c7cc;
             cursor: not-allowed;
         }
     }

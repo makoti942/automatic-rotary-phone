@@ -1,4 +1,5 @@
 .promo-banner {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -6,60 +7,84 @@
     padding: 28px 32px;
     color: #fff;
     overflow: hidden;
-    position: relative;
+    background: linear-gradient(135deg, #1a1d2e 0%, #151829 100%);
     min-height: 160px;
+
+    &__close {
+        position: absolute;
+        top: 12px;
+        right: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.1);
+        color: #999999;
+        cursor: pointer;
+        z-index: 2;
+
+        &:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #fff;
+        }
+    }
 
     &__content {
         flex: 1;
         z-index: 1;
+        max-width: 400px;
     }
 
     &__title {
         margin: 0 0 8px;
-        font-size: 22px;
+        font-size: 20px;
         font-weight: 700;
     }
 
     &__subtitle {
-        margin: 0 0 16px;
+        margin: 0;
         font-size: 14px;
-        color: rgba(255, 255, 255, 0.75);
-        max-width: 360px;
-    }
-
-    &__cta {
-        padding: 10px 24px;
-        border: none;
-        border-radius: 20px;
-        color: #fff;
-        font-family: inherit;
-        font-size: 14px;
-        font-weight: 600;
-        cursor: pointer;
-        transition: opacity 0.15s ease;
-
-        &:hover {
-            opacity: 0.9;
-        }
+        color: rgba(255, 255, 255, 0.7);
+        line-height: 1.5;
     }
 
     &__visual {
         display: flex;
         align-items: center;
         justify-content: center;
-        opacity: 0.25;
         margin-left: 32px;
+        margin-right: 24px;
+    }
+
+    &__dots {
+        position: absolute;
+        bottom: 12px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+    }
+
+    &__dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        cursor: pointer;
+
+        &--active {
+            background: rgba(255, 255, 255, 0.8);
+            width: 20px;
+            border-radius: 4px;
+        }
     }
 
     @media (max-width: 768px) {
-        flex-direction: column;
-        text-align: center;
         padding: 24px;
-
-        &__subtitle {
-            margin-left: auto;
-            margin-right: auto;
-        }
+        min-height: 140px;
 
         &__visual {
             display: none;

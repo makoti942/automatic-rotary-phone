@@ -40,7 +40,6 @@
 
     &__accounts {
         display: flex;
-        flex-wrap: wrap;
         gap: 12px;
     }
 
@@ -69,9 +68,13 @@
     }
 
     &__add-icon {
-        font-size: 24px;
-        font-weight: 300;
-        line-height: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        border: 2px dashed #c4c7cc;
     }
 
     &__promo {
@@ -81,19 +84,31 @@
 
     &__markets {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(4, 1fr);
         gap: 12px;
+    }
+
+    @media (max-width: 1024px) {
+        &__markets {
+            grid-template-columns: repeat(2, 1fr);
+        }
     }
 
     @media (max-width: 768px) {
         padding: 16px;
+        gap: 20px;
 
         &__accounts {
-            flex-direction: column;
+            overflow-x: auto;
+            padding-bottom: 8px;
+
+            > * {
+                min-width: 160px;
+            }
         }
 
         &__markets {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 }

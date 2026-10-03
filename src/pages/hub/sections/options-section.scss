@@ -5,38 +5,6 @@
     padding: 28px;
     max-width: 1280px;
 
-    &__actions {
-        display: flex;
-        gap: 12px;
-    }
-
-    &__action-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 52px;
-        height: 52px;
-        border: none;
-        border-radius: 50%;
-        cursor: pointer;
-        transition: opacity 0.15s ease, transform 0.15s ease;
-
-        &:hover {
-            opacity: 0.9;
-            transform: scale(1.05);
-        }
-
-        &--trade {
-            background: #18a957;
-            color: #fff;
-        }
-
-        &--reset {
-            background: #f2f3f4;
-            color: #333333;
-        }
-    }
-
     &__section {
         display: flex;
         flex-direction: column;
@@ -52,8 +20,130 @@
 
     &__markets {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(4, 1fr);
         gap: 12px;
+    }
+
+    &__markets-more {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 140px;
+        border: 1px solid #e6e9e9;
+        border-radius: 12px;
+        background: #fff;
+        color: #333333;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+
+        &:hover {
+            border-color: #c4c7cc;
+        }
+    }
+
+    &__platforms {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    &__platform-card {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 16px 20px;
+        background: #f8f9fa;
+        border-radius: 12px;
+    }
+
+    &__platform-icon {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px;
+        height: 48px;
+        border-radius: 12px;
+        flex-shrink: 0;
+    }
+
+    &__platform-code {
+        font-size: 14px;
+        font-weight: 800;
+        color: #fff;
+        letter-spacing: 0.5px;
+    }
+
+    &__platform-info {
+        flex: 1;
+    }
+
+    &__platform-name {
+        margin: 0 0 4px;
+        font-size: 15px;
+        font-weight: 700;
+        color: #333333;
+    }
+
+    &__platform-desc {
+        margin: 0;
+        font-size: 13px;
+        color: #666666;
+        line-height: 1.4;
+    }
+
+    &__tabs {
+        display: flex;
+        gap: 8px;
+    }
+
+    &__tab {
+        padding: 8px 20px;
+        border: 1px solid #e6e9e9;
+        border-radius: 20px;
+        background: #fff;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 500;
+        color: #333333;
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        &--active {
+            border-color: #333333;
+            background: #333333;
+            color: #fff;
+        }
+    }
+
+    &__trade-types {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    &__trade-type-card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 12px;
+        padding: 24px 16px;
+        border: 1px solid #e6e9e9;
+        border-radius: 12px;
+        background: #fff;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+
+        &:hover {
+            border-color: #c4c7cc;
+        }
+    }
+
+    &__trade-type-name {
+        font-size: 13px;
+        font-weight: 500;
+        color: #333333;
+        text-align: center;
     }
 
     &__trade-modal {
@@ -105,11 +195,26 @@
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
     }
 
+    @media (max-width: 1024px) {
+        &__markets {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        &__trade-types {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+
     @media (max-width: 768px) {
         padding: 16px;
+        gap: 20px;
 
         &__markets {
-            grid-template-columns: 1fr;
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        &__trade-types {
+            grid-template-columns: repeat(2, 1fr);
         }
     }
 }

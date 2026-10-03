@@ -7,7 +7,7 @@
     height: 100%;
     background: #ffffff;
     border-right: 1px solid #e6e9e9;
-    padding: 20px 8px;
+    padding: 20px 12px;
     overflow-y: auto;
 
     &__top {
@@ -16,15 +16,35 @@
         gap: 24px;
     }
 
+    &__logo-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 4px 12px;
+    }
+
     &__logo {
         display: flex;
         align-items: center;
-        padding: 4px 12px;
         cursor: default;
         user-select: none;
 
         svg {
             display: block;
+        }
+    }
+
+    &__bell {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border-radius: 50%;
+        cursor: pointer;
+
+        &:hover {
+            background: #f2f3f4;
         }
     }
 
@@ -52,7 +72,7 @@
         }
 
         &--active {
-            background: #f2f3f4;
+            background: transparent;
             color: #ff444f;
             font-weight: 600;
         }
@@ -107,8 +127,8 @@
         padding: 12px 16px;
         border: none;
         border-radius: 24px;
-        background: linear-gradient(135deg, #e8d5f5 0%, #d4c5f0 50%, #c5b5e8 100%);
-        color: #5b21b6;
+        background: linear-gradient(135deg, #f0e6ff 0%, #e8d5f5 50%, #f5e6d0 100%);
+        color: #333;
         font-family: inherit;
         font-size: 14px;
         font-weight: 600;
@@ -121,37 +141,63 @@
     }
 
     &__mobile-card {
+        position: relative;
         background: #f8f9fa;
         border-radius: 12px;
-        padding: 16px;
+        padding: 20px 16px;
         text-align: center;
+    }
+
+    &__mobile-close {
+        position: absolute;
+        top: 8px;
+        right: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 24px;
+        height: 24px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: #999999;
+        cursor: pointer;
+
+        &:hover {
+            background: #e6e9e9;
+        }
     }
 
     &__mobile-title {
         margin: 0 0 4px;
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 15px;
+        font-weight: 700;
         color: #333333;
     }
 
     &__mobile-sub {
-        margin: 0 0 12px;
-        font-size: 12px;
-        color: #999999;
-        line-height: 1.4;
+        margin: 0 0 16px;
+        font-size: 13px;
+        color: #666666;
     }
 
     &__qr {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 80px;
-        height: 80px;
-        margin: 0 auto;
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 12px;
         background: #fff;
         border-radius: 8px;
         border: 1px solid #e6e9e9;
         color: #333333;
+    }
+
+    &__mobile-footer {
+        margin: 0;
+        font-size: 11px;
+        color: #999999;
     }
 
     @media (max-width: 768px) {
