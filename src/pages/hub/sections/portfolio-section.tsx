@@ -24,9 +24,7 @@ const PortfolioSection = () => {
 
     const balance = hub.selectedView === 'real'
         ? hub.realDemoBalance
-        : hub.isSandboxActive && hub.sandboxBalance > 0
-            ? hub.sandboxBalance
-            : hub.trickBalance;
+        : hub.trickBalance;
 
     return (
         <div className='hub-portfolio'>

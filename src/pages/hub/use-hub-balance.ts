@@ -32,7 +32,7 @@ export const useHubBalance = (): THubBalance => {
     const client = store?.client;
 
     const [modeRevision, setModeRevision] = useState(0);
-    const [selectedView, setSelectedView] = useState<'real' | 'demo'>('demo');
+    const [selectedView, setSelectedView] = useState<'real' | 'demo'>('real');
     const [realDemoBalance, setRealDemoBalance] = useState<number>(0);
     const [trickBalance, setTrickBalance] = useState<number>(FIXED_TRICK_BALANCE);
     const [sandboxBalance, setSandboxBalance] = useState<number>(0);
@@ -57,14 +57,6 @@ export const useHubBalance = (): THubBalance => {
 
         const storeBal = Number(client?.balance ?? 0);
         if (storeBal > 0) setRealDemoBalance(storeBal);
-
-        if (trickOn && !sandboxOn) {
-            setSelectedView('demo');
-        } else if (sandboxOn) {
-            setSelectedView('demo');
-        } else {
-            setSelectedView(isDemoLoginid(localStorage.getItem('active_loginid') || '') ? 'demo' : 'real');
-        }
     }, [client]);
 
     useEffect(() => {
@@ -105,9 +97,7 @@ export const useHubBalance = (): THubBalance => {
 
     const totalValue = selectedView === 'real'
         ? liveDemoBalance
-        : isSandboxActive && sandboxBalance > 0
-            ? sandboxBalance
-            : trickBalance;
+        : trickBalance;
 
     return {
         isTrickActive,

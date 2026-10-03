@@ -43,9 +43,7 @@ const CryptoSection = () => {
         window.setTimeout(() => setIsRefreshing(false), 900);
     };
 
-    const balance = hub.isSandboxActive && hub.sandboxBalance > 0
-        ? hub.sandboxBalance
-        : hub.trickBalance;
+    const balance = 0;
 
     return (
         <div className='hub-crypto'>
