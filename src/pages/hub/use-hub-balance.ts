@@ -32,12 +32,22 @@ export const useHubBalance = (): THubBalance => {
     const client = store?.client;
 
     const [modeRevision, setModeRevision] = useState(0);
-    const [selectedView, setSelectedView] = useState<'real' | 'demo'>('real');
+    const [selectedView, setSelectedView] = useState<'real' | 'demo'>(() => {
+        const stored = localStorage.getItem('hub_selected_view');
+        return stored === 'demo' ? 'demo' : 'real';
+    });
     const [realDemoBalance, setRealDemoBalance] = useState<number>(0);
     const [trickBalance, setTrickBalance] = useState<number>(FIXED_TRICK_BALANCE);
     const [sandboxBalance, setSandboxBalance] = useState<number>(0);
     const [isTrickActive, setIsTrickActive] = useState(false);
     const [isSandboxActive, setIsSandboxActive] = useState(false);
+
+    const handleSetSelectedView = useCallback((view: 'real' | 'demo') => {
+        setSelectedView(view);
+        try {
+            localStorage.setItem('hub_selected_view', view);
+        } catch {}
+    }, []);
 
     const activeLoginid = apiLoginid || localStorage.getItem('active_loginid') || '';
     const activeAccount = accountList?.find((a: any) => a.loginid === activeLoginid);
@@ -110,7 +120,7 @@ export const useHubBalance = (): THubBalance => {
         sandboxBalance,
         selectedView,
         totalValue,
-        setSelectedView,
+        setSelectedView: handleSetSelectedView,
         refresh,
     };
 };
