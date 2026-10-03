@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import useHubBalance from '../use-hub-balance';
 import { formatBalance } from '../mock-data';
+import HubHeroTopBar from '../components/hub-hero-topbar';
 import { BtcIcon, ChevronDownIcon, ChevronRightIcon, EthIcon, LtcIcon, PlusIcon, RefreshIcon, SendIcon, UsdcIcon, UsdtIcon } from '../sidebar/icons';
 import './crypto-section.scss';
 
@@ -49,6 +50,7 @@ const CryptoSection = () => {
     return (
         <div className='hub-crypto'>
             <div className='hub-crypto__hero'>
+                <HubHeroTopBar />
                 <div className='hub-crypto__value-block'>
                     <span className='hub-crypto__label'>
                         Est. total value <ChevronRightIcon />

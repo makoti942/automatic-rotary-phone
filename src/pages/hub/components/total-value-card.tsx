@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatBalance } from '../mock-data';
-import { BellIcon, EyeIcon, RefreshIcon } from '../sidebar/icons';
+import { RefreshIcon } from '../sidebar/icons';
+import HubHeroTopBar from './hub-hero-topbar';
 import './total-value-card.scss';
 
 type TTotalValueCardProps = {
@@ -66,6 +67,7 @@ const TotalValueCard = ({
     if (variant === 'home') {
         return (
             <div className='total-value-card total-value-card--home'>
+                <HubHeroTopBar />
                 <div className='total-value-card__home-body'>
                     <div className='total-value-card__left'>
                         <span className='total-value-card__label'>
@@ -97,6 +99,7 @@ const TotalValueCard = ({
 
     return (
         <div className='total-value-card total-value-card--options'>
+            <HubHeroTopBar />
             <div className='total-value-card__toggle-row'>
                 <div className='total-value-card__toggle'>
                     <button
@@ -113,12 +116,6 @@ const TotalValueCard = ({
                     >
                         Demo
                     </button>
-                </div>
-                <div className='total-value-card__toggle-icons'>
-                    {view === 'real' && (
-                        <span className='total-value-card__icon-btn'><EyeIcon /></span>
-                    )}
-                    <span className='total-value-card__icon-btn'><BellIcon /></span>
                 </div>
             </div>
             <div className='total-value-card__options-body'>

@@ -1,15 +1,17 @@
 .total-value-card {
     background: #181c25;
-    border-radius: 16px;
+    border-radius: 0 0 16px 16px;
     color: #fff;
     font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
 
     &--home {
-        padding: 22px 24px;
+        padding: 12px 20px 24px;
     }
 
     &--options {
-        padding: 18px 24px 24px;
+        padding: 12px 20px 24px;
     }
 
     &__home-body {
@@ -145,14 +147,12 @@
     }
 
     &__toggle-row {
-        display: grid;
-        grid-template-columns: 1fr auto 1fr;
-        align-items: center;
+        display: flex;
+        justify-content: center;
         margin-bottom: 16px;
     }
 
     &__toggle {
-        grid-column: 2;
         display: flex;
         background: rgba(255, 255, 255, 0.1);
         border-radius: 20px;
@@ -179,11 +179,7 @@
     }
 
     &__toggle-icons {
-        grid-column: 3;
-        display: flex;
-        align-items: center;
-        justify-content: flex-end;
-        gap: 8px;
+        display: none;
     }
 
     &__options-body {
@@ -252,11 +248,11 @@
 
     @media (max-width: 768px) {
         &--home {
-            padding: 16px 14px;
+            padding: 10px 14px 20px;
         }
 
         &--options {
-            padding: 14px 16px 18px;
+            padding: 10px 14px 20px;
         }
 
         &__amount {

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useHubBalance from '../use-hub-balance';
 import { formatBalance } from '../mock-data';
+import HubHeroTopBar from '../components/hub-hero-topbar';
 import { ChevronRightIcon, MinusIcon, PlusIcon, RefreshIcon, SwapIcon, UsFlagIcon } from '../sidebar/icons';
 import './portfolio-section.scss';
 
@@ -30,6 +31,7 @@ const PortfolioSection = () => {
     return (
         <div className='hub-portfolio'>
             <div className='hub-portfolio__hero'>
+                <HubHeroTopBar />
                 <div className='hub-portfolio__tabs'>
                     {TABS.map(tab => (
                         <button

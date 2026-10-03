@@ -2,7 +2,6 @@ import { useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import FakeBrowserChrome from './fake-browser-chrome';
 import HubBottomNav from './sidebar/hub-bottom-nav';
-import HubTopHeader from './sidebar/hub-top-header';
 import './hub-shell.scss';
 
 const HubShell = () => {
@@ -19,7 +18,6 @@ const HubShell = () => {
         <div className='hub-shell'>
             <FakeBrowserChrome>
                 <div className='hub-shell__layout'>
-                    <HubTopHeader />
                     <main className='hub-shell__content'>
                         <Outlet />
                     </main>

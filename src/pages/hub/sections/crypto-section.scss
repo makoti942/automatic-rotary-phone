@@ -10,7 +10,7 @@
     &__hero {
         background: #181c25;
         border-radius: 0 0 16px 16px;
-        padding: 20px 20px 28px;
+        padding: 12px 20px 28px;
         color: #fff;
     }
 
@@ -271,7 +271,7 @@
 
     @media (max-width: 768px) {
         &__hero {
-            padding: 16px 14px 24px;
+            padding: 10px 14px 24px;
         }
 
         &__amount {
