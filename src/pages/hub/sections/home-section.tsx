@@ -17,7 +17,7 @@ const HomeSection = () => {
     return (
         <div className='hub-home'>
             <TotalValueCard
-                totalValue={hub.totalValue}
+                totalValue={hub.realDemoBalance}
                 currency={hub.activeCurrency}
                 onRefresh={hub.refresh}
                 variant='home'
@@ -34,7 +34,7 @@ const HomeSection = () => {
                     />
                     <TradingAccountCard
                         title='Options'
-                        balance={hub.selectedView === 'real' ? hub.realDemoBalance : hub.isSandboxActive ? hub.sandboxBalance : hub.trickBalance}
+                        balance={hub.realDemoBalance}
                         currency={hub.activeCurrency}
                         iconType='options'
                         isActive
