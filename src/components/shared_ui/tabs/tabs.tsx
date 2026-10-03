@@ -67,6 +67,7 @@ const Tabs = ({
     const tabs_wrapper_ref = React.useRef<HTMLUListElement>(null);
     const audio_context_ref = React.useRef<AudioContext | null>(null);
     const last_chime_ref = React.useRef(0);
+    const last_scroll_left_ref = React.useRef(0);
 
     const playTabScrollChime = React.useCallback(() => {
         // Keep this asset-free and very short so tab navigation stays instant.
@@ -99,6 +100,13 @@ const Tabs = ({
             // Sound is decorative; navigation must never fail if audio is blocked.
         }
     }, []);
+
+    const handleTabStripScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {
+        const scrollLeft = event.currentTarget.scrollLeft;
+        if (scrollLeft === last_scroll_left_ref.current) return;
+        last_scroll_left_ref.current = scrollLeft;
+        playTabScrollChime();
+    }, [playTabScrollChime]);
     const pushHash = (hash: string) => {
         history.replace(`${history.location.pathname}${window.location.search}#${hash}`);
     };
@@ -206,6 +214,7 @@ const Tabs = ({
                         is_only_horizontal
                         is_scrollbar_hidden
                         is_bypassed={!is_scrollable}
+                        onScroll={is_scrollable ? handleTabStripScroll : undefined}
                     >
                         {React.Children.map(children, (child, index) => {
                             if (!child) return null;
