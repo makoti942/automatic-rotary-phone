@@ -478,7 +478,10 @@ export const MultiKiller: React.FC = () => {
                     contract_type: ct,
                     currency: 'USD',
                     duration: dur,
-                    duration_unit: 't',
+                    // CALL/PUT Higher/Lower proposals use the minute control
+                    // shown in the UI; tick duration was reintroduced by a
+                    // later logging change and causes Deriv validation errors.
+                    duration_unit: 'm',
                     symbol: market,
                     barrier: barrier!,
                 };

@@ -1,5 +1,31 @@
 import * as sandboxEngine from '@/utils/sandbox-engine';
 
+// Deriv's short-duration Higher/Lower contracts use CALL/PUT with a
+// relative barrier. Some Blockly paths provide the same value as a positive
+// number, so normalize it at the shared request boundary:
+//   Higher/CALL -> +offset, Lower/PUT -> -offset.
+// Already-signed barriers are preserved.
+function normalizeRelativeBarrier(out) {
+    if (!out || typeof out !== 'object') return out
+    const contractType = String(out.contract_type || '').toUpperCase()
+    if (contractType !== 'CALL' && contractType !== 'PUT') return out
+
+    const normalize = value => {
+        if (value === undefined || value === null || value === '') return value
+        const text = String(value).trim()
+        if (!text || text.startsWith('+') || text.startsWith('-')) return text
+        const number = Number(text)
+        if (!Number.isFinite(number) || number === 0) return value
+        return `${contractType === 'CALL' ? '+' : '-'}${text}`
+    }
+
+    if ('barrier' in out) out.barrier = normalize(out.barrier)
+    if (out.parameters && typeof out.parameters === 'object' && 'barrier' in out.parameters) {
+        out.parameters.barrier = normalize(out.parameters.barrier)
+    }
+    return out
+}
+
 function convertToNewFormat(data) {
     if (!data || typeof data !== 'object') return data
     const out = Array.isArray(data) ? data.map(convertToNewFormat) : { ...data }
@@ -20,6 +46,8 @@ function convertToNewFormat(data) {
             delete out.parameters.symbol
         }
     }
+
+    normalizeRelativeBarrier(out)
 
     return out
 }
