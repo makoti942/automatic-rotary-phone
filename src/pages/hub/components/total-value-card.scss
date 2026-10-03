@@ -56,12 +56,36 @@
     &__refresh {
         display: flex;
         align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
         color: #999999;
         cursor: pointer;
+        transition: color 0.15s ease, background 0.15s ease;
 
         &:hover {
             color: #fff;
+            background: rgba(255, 255, 255, 0.08);
         }
+    }
+
+    &__loading {
+        display: flex;
+        align-items: center;
+        min-height: 36px;
+        min-width: 120px;
+    }
+
+    &__spinner {
+        width: 28px;
+        height: 28px;
+        border: 2.5px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: hub-spin 0.7s linear infinite;
     }
 
     &__updated {
@@ -202,6 +226,12 @@
         font-size: 12px;
         font-weight: 500;
         color: #fff;
+    }
+
+    @keyframes hub-spin {
+        to {
+            transform: rotate(360deg);
+        }
     }
 
     @media (max-width: 768px) {

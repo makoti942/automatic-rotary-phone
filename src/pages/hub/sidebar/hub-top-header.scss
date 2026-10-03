@@ -2,11 +2,12 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 24px;
+    padding: 10px 20px;
     background: #ffffff;
     border-bottom: 1px solid #e6e9e9;
     flex-shrink: 0;
     z-index: 10;
+    position: relative;
 
     &__logo {
         display: flex;
@@ -19,20 +20,62 @@
         }
     }
 
-    &__bell {
+    &__amy {
+        display: none;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 16px;
+        border: none;
+        border-radius: 20px;
+        background: linear-gradient(135deg, #1a1d2e 0%, #2a2040 50%, #1a1d2e 100%);
+        color: #fff;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+
+        svg {
+            color: #c4a1ff;
+        }
+    }
+
+    &__actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: auto;
+    }
+
+    &__icon-btn {
         display: flex;
         align-items: center;
         justify-content: center;
         width: 36px;
         height: 36px;
-        border: none;
+        border: 1.5px solid #e6e9e9;
         border-radius: 50%;
-        background: transparent;
+        background: #fff;
         color: #333333;
         cursor: pointer;
+        transition: border-color 0.15s ease;
 
         &:hover {
-            background: #f2f3f4;
+            border-color: #c4c7cc;
+        }
+    }
+
+    @media (max-width: 768px) {
+        padding: 10px 14px;
+
+        &__logo {
+            display: none;
+        }
+
+        &__amy {
+            display: inline-flex;
         }
     }
 }

@@ -19,6 +19,7 @@ const HomeSection = () => {
             <TotalValueCard
                 totalValue={hub.totalValue}
                 currency={hub.activeCurrency}
+                onRefresh={hub.refresh}
                 variant='home'
             />
 

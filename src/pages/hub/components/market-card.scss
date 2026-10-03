@@ -10,7 +10,9 @@
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
     text-align: left;
     width: 100%;
+    min-width: 0;
     min-height: 148px;
+    overflow: hidden;
     font-family: inherit;
 
     &:hover {
@@ -64,6 +66,10 @@
         font-weight: 700;
         color: #333333;
         letter-spacing: -0.3px;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
     }
 
     &__chart-row {

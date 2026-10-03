@@ -5,6 +5,7 @@ import { MARKETS, PLATFORMS, TRADE_TYPES } from '../mock-data';
 import MarketCard from '../components/market-card';
 import MockTradeTicket from '../components/mock-trade-ticket';
 import TotalValueCard from '../components/total-value-card';
+import { TradeTypeIcons } from '../sidebar/icons';
 import './options-section.scss';
 
 const PlatformIcon = ({ code, color }: { code: string; color: string }) => (
@@ -12,22 +13,6 @@ const PlatformIcon = ({ code, color }: { code: string; color: string }) => (
         <span className='hub-options__platform-code'>{code}</span>
     </span>
 );
-
-const TradeTypeIcon = ({ index }: { index: number }) => {
-    const icons = [
-        <svg key='0' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M6 22L16 6L26 22' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><path d='M22 6L26 10L22 14' stroke='#ff444f' strokeWidth='2' strokeLinecap='round' /></svg>,
-        <svg key='1' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M6 16H26' stroke='#888' strokeWidth='2' /><path d='M10 10L16 16L22 10' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><path d='M10 22L16 16L22 22' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /></svg>,
-        <svg key='2' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M8 8L16 16L8 24' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><path d='M24 8L16 16L24 24' stroke='#888' strokeWidth='2.5' strokeLinecap='round' /></svg>,
-        <svg key='3' width='32' height='32' viewBox='0 0 32 32' fill='none'><rect x='6' y='6' width='8' height='8' rx='1' fill='#ff444f' /><rect x='18' y='6' width='8' height='8' rx='1' fill='#888' /><rect x='6' y='18' width='8' height='8' rx='1' fill='#888' /><rect x='18' y='18' width='8' height='8' rx='1' fill='#ff444f' /></svg>,
-        <svg key='4' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M6 20L12 12L18 18L26 8' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' strokeLinejoin='round' /></svg>,
-        <svg key='5' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M6 10L16 20L26 10' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><line x1='6' y1='22' x2='26' y2='22' stroke='#888' strokeWidth='2' /></svg>,
-        <svg key='6' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M8 24L16 8L24 24' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><path d='M12 18H20' stroke='#888' strokeWidth='2' /></svg>,
-        <svg key='7' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M8 16H24' stroke='#ff444f' strokeWidth='2.5' /><circle cx='16' cy='16' r='4' stroke='#888' strokeWidth='2' /></svg>,
-        <svg key='8' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M8 8H24V24H8Z' stroke='#ff444f' strokeWidth='2.5' /><path d='M12 16H20' stroke='#888' strokeWidth='2' /></svg>,
-        <svg key='9' width='32' height='32' viewBox='0 0 32 32' fill='none'><path d='M6 22L16 6L26 22' stroke='#ff444f' strokeWidth='2.5' strokeLinecap='round' /><path d='M10 16H22' stroke='#888' strokeWidth='2' /></svg>,
-    ];
-    return <>{icons[index % icons.length]}</>;
-};
 
 const OptionsSection = () => {
     const hub = useHubBalance();
@@ -65,6 +50,7 @@ const OptionsSection = () => {
                 onSelectView={hub.setSelectedView}
                 onReset={handleResetBalance}
                 onTransfer={() => navigate('/dashboard/transfer')}
+                onRefresh={hub.refresh}
                 variant='options'
             />
 
@@ -113,9 +99,11 @@ const OptionsSection = () => {
                     ))}
                 </div>
                 <div className='hub-options__trade-types'>
-                    {TRADE_TYPES.map((type, i) => (
+                    {TRADE_TYPES.map(type => (
                         <button key={type.name} type='button' className='hub-options__trade-type-card' onClick={() => handleTrade(MARKETS[0])}>
-                            <TradeTypeIcon index={i} />
+                            <span className='hub-options__trade-type-icon'>
+                                {TradeTypeIcons[type.name]}
+                            </span>
                             <span className='hub-options__trade-type-name'>{type.name}</span>
                         </button>
                     ))}

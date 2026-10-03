@@ -1,0 +1,304 @@
+.hub-crypto {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 0 0 24px;
+    max-width: 1280px;
+    width: 100%;
+    margin: 0 auto;
+
+    &__hero {
+        background: #181c25;
+        border-radius: 0 0 16px 16px;
+        padding: 20px 20px 28px;
+        color: #fff;
+    }
+
+    &__value-block {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        margin-bottom: 24px;
+    }
+
+    &__label {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 13px;
+        color: #999999;
+    }
+
+    &__value-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+
+    &__amount {
+        font-size: 32px;
+        font-weight: 700;
+        letter-spacing: -0.5px;
+        line-height: 1.15;
+    }
+
+    &__refresh {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 28px;
+        height: 28px;
+        border: none;
+        border-radius: 50%;
+        background: transparent;
+        color: #999999;
+        cursor: pointer;
+
+        &:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+    }
+
+    &__spinner {
+        width: 28px;
+        height: 28px;
+        border: 2.5px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #fff;
+        border-radius: 50%;
+        animation: hub-spin 0.7s linear infinite;
+    }
+
+    &__updated {
+        font-size: 12px;
+        color: #999999;
+    }
+
+    &__actions {
+        display: flex;
+        justify-content: center;
+        gap: 48px;
+    }
+
+    &__action {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 0;
+    }
+
+    &__action-circle {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 52px;
+        height: 52px;
+        border-radius: 50%;
+        border: 1.5px solid rgba(255, 255, 255, 0.35);
+        color: #fff;
+        transition: transform 0.15s ease;
+
+        &:hover {
+            transform: scale(1.05);
+        }
+
+        &--filled {
+            background: #ff444f;
+            border-color: #ff444f;
+        }
+    }
+
+    &__action-label {
+        font-size: 12px;
+        font-weight: 500;
+        color: #fff;
+    }
+
+    &__section {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 0 20px;
+    }
+
+    &__section-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        color: #333333;
+    }
+
+    &__panel {
+        background: #fff;
+        border: 1px solid #e6e9e9;
+        border-radius: 12px;
+        padding: 16px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    &__coin-tabs {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+    }
+
+    &__coin-tab {
+        padding: 8px 18px;
+        border: 1.5px solid #e6e9e9;
+        border-radius: 20px;
+        background: #fff;
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
+        color: #333333;
+        cursor: pointer;
+        transition: border-color 0.15s ease;
+
+        &--active {
+            border-color: #333333;
+        }
+    }
+
+    &__market-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__market-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        width: 100%;
+        padding: 12px 14px;
+        border: none;
+        border-radius: 12px;
+        background: #f2f3f4;
+        cursor: pointer;
+        font-family: inherit;
+        color: #999999;
+        transition: background 0.15s ease;
+
+        &:hover {
+            background: #e6e9e9;
+        }
+    }
+
+    &__market-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    &__market-icon {
+        display: flex;
+        flex-shrink: 0;
+    }
+
+    &__market-info {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        align-items: flex-start;
+    }
+
+    &__market-pair {
+        font-size: 14px;
+        font-weight: 700;
+        color: #333333;
+    }
+
+    &__market-price {
+        font-size: 13px;
+        color: #666666;
+    }
+
+    &__market-arrow {
+        margin-left: 4px;
+        font-size: 10px;
+        color: #18a957;
+
+        &--up {
+            color: #18a957;
+        }
+    }
+
+    &__spot-list {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    &__spot-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        background: #fff;
+        border: 1px solid #e6e9e9;
+        border-radius: 12px;
+    }
+
+    &__spot-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+    }
+
+    &__spot-icon {
+        display: flex;
+        flex-shrink: 0;
+    }
+
+    &__spot-label {
+        font-size: 14px;
+        font-weight: 500;
+        color: #333333;
+    }
+
+    &__spot-amount {
+        font-size: 14px;
+        font-weight: 600;
+        color: #333333;
+        font-variant-numeric: tabular-nums;
+    }
+
+    @media (max-width: 768px) {
+        &__hero {
+            padding: 16px 14px 24px;
+        }
+
+        &__amount {
+            font-size: 28px;
+        }
+
+        &__actions {
+            gap: 32px;
+        }
+
+        &__action-circle {
+            width: 48px;
+            height: 48px;
+        }
+
+        &__section {
+            padding: 0 14px;
+        }
+
+        &__panel {
+            padding: 12px;
+        }
+    }
+}
+
+@keyframes hub-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
