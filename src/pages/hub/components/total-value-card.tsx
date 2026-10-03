@@ -7,13 +7,21 @@ type TTotalValueCardProps = {
     selectedView?: 'real' | 'demo';
     onSelectView?: (view: 'real' | 'demo') => void;
     onReset?: () => void;
+    onTransfer?: () => void;
     variant?: 'home' | 'options';
 };
 
 const EyeIcon = () => (
-    <svg width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+    <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
         <path d='M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z' />
         <circle cx='12' cy='12' r='3' />
+    </svg>
+);
+
+const BellIcon = () => (
+    <svg width='18' height='18' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+        <path d='M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9' />
+        <path d='M13.73 21a2 2 0 01-3.46 0' />
     </svg>
 );
 
@@ -44,14 +52,26 @@ const CandleIcon = () => (
     </svg>
 );
 
+const TransferIcon = () => (
+    <svg width='22' height='22' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+        <polyline points='17 1 21 5 17 9' />
+        <path d='M3 11V9a4 4 0 014-4h14' />
+        <polyline points='7 23 3 19 7 15' />
+        <path d='M21 13v2a4 4 0 01-4 4H3' />
+    </svg>
+);
+
 const TotalValueCard = ({
     totalValue,
     currency,
     selectedView,
     onSelectView,
     onReset,
+    onTransfer,
     variant = 'home',
 }: TTotalValueCardProps) => {
+    const view = selectedView ?? 'demo';
+
     if (variant === 'home') {
         return (
             <div className='total-value-card total-value-card--home'>
@@ -67,7 +87,7 @@ const TotalValueCard = ({
                         <span className='total-value-card__updated'>Updated just now</span>
                     </div>
                     <div className='total-value-card__right'>
-                        <span className='total-value-card__eye'><EyeIcon /></span>
+                        <span className='total-value-card__icon-btn'><EyeIcon /></span>
                         <button type='button' className='total-value-card__deposit'>Deposit</button>
                     </div>
                 </div>
@@ -81,21 +101,24 @@ const TotalValueCard = ({
                 <div className='total-value-card__toggle'>
                     <button
                         type='button'
-                        className={`total-value-card__toggle-btn${selectedView === 'real' ? ' total-value-card__toggle-btn--active' : ''}`}
+                        className={`total-value-card__toggle-btn${view === 'real' ? ' total-value-card__toggle-btn--active' : ''}`}
                         onClick={() => onSelectView?.('real')}
                     >
                         Real
                     </button>
                     <button
                         type='button'
-                        className={`total-value-card__toggle-btn${selectedView === 'demo' ? ' total-value-card__toggle-btn--active' : ''}`}
+                        className={`total-value-card__toggle-btn${view === 'demo' ? ' total-value-card__toggle-btn--active' : ''}`}
                         onClick={() => onSelectView?.('demo')}
                     >
                         Demo
                     </button>
                 </div>
                 <div className='total-value-card__toggle-icons'>
-                    <span className='total-value-card__eye'><EyeIcon /></span>
+                    {view === 'real' && (
+                        <span className='total-value-card__icon-btn'><EyeIcon /></span>
+                    )}
+                    <span className='total-value-card__icon-btn'><BellIcon /></span>
                 </div>
             </div>
             <div className='total-value-card__options-body'>
@@ -108,18 +131,27 @@ const TotalValueCard = ({
                     <span className='total-value-card__updated'>Updated just now</span>
                 </div>
                 <div className='total-value-card__options-actions'>
-                    <button type='button' className='total-value-card__action-btn total-value-card__action-btn--trade'>
+                    <button type='button' className='total-value-card__action-btn'>
                         <span className='total-value-card__action-circle total-value-card__action-circle--trade'>
                             <CandleIcon />
                         </span>
                         <span className='total-value-card__action-label'>Trade</span>
                     </button>
-                    <button type='button' className='total-value-card__action-btn total-value-card__action-btn--reset' onClick={onReset}>
-                        <span className='total-value-card__action-circle total-value-card__action-circle--reset'>
-                            <RefreshIcon />
-                        </span>
-                        <span className='total-value-card__action-label'>Reset balance</span>
-                    </button>
+                    {view === 'real' ? (
+                        <button type='button' className='total-value-card__action-btn' onClick={onTransfer}>
+                            <span className='total-value-card__action-circle total-value-card__action-circle--outline'>
+                                <TransferIcon />
+                            </span>
+                            <span className='total-value-card__action-label'>Transfer</span>
+                        </button>
+                    ) : (
+                        <button type='button' className='total-value-card__action-btn' onClick={onReset}>
+                            <span className='total-value-card__action-circle total-value-card__action-circle--outline'>
+                                <RefreshIcon />
+                            </span>
+                            <span className='total-value-card__action-label'>Reset balance</span>
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

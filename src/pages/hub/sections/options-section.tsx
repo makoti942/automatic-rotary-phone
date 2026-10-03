@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useHubBalance from '../use-hub-balance';
 import { MARKETS, PLATFORMS, TRADE_TYPES } from '../mock-data';
 import MarketCard from '../components/market-card';
@@ -30,6 +31,7 @@ const TradeTypeIcon = ({ index }: { index: number }) => {
 
 const OptionsSection = () => {
     const hub = useHubBalance();
+    const navigate = useNavigate();
     const [showTradeTicket, setShowTradeTicket] = useState(false);
     const [selectedMarket, setSelectedMarket] = useState(MARKETS[0]);
     const [toast, setToast] = useState<string | null>(null);
@@ -62,6 +64,7 @@ const OptionsSection = () => {
                 selectedView={hub.selectedView}
                 onSelectView={hub.setSelectedView}
                 onReset={handleResetBalance}
+                onTransfer={() => navigate('/dashboard/transfer')}
                 variant='options'
             />
 
