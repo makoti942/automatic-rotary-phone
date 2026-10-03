@@ -2,12 +2,19 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 10px 20px;
+    padding: 10px 16px;
     background: #ffffff;
     border-bottom: 1px solid #e6e9e9;
     flex-shrink: 0;
     z-index: 10;
     position: relative;
+
+    &__left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+    }
 
     &__logo {
         display: flex;
@@ -20,6 +27,24 @@
         }
     }
 
+    &__pm {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 36px;
+        height: 36px;
+        border: none;
+        border-radius: 50%;
+        background: #2a2e3a;
+        color: #fff;
+        font-family: inherit;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
     &__amy {
         display: none;
         align-items: center;
@@ -27,7 +52,7 @@
         padding: 8px 16px;
         border: none;
         border-radius: 20px;
-        background: linear-gradient(135deg, #1a1d2e 0%, #2a2040 50%, #1a1d2e 100%);
+        background: linear-gradient(135deg, #1a1d2e 0%, #2e2450 45%, #1a1d2e 100%);
         color: #fff;
         font-family: inherit;
         font-size: 13px;
@@ -36,9 +61,11 @@
         position: absolute;
         left: 50%;
         transform: translateX(-50%);
+        white-space: nowrap;
 
         svg {
             color: #c4a1ff;
+            flex-shrink: 0;
         }
     }
 
@@ -47,6 +74,7 @@
         align-items: center;
         gap: 8px;
         margin-left: auto;
+        flex-shrink: 0;
     }
 
     &__icon-btn {
@@ -68,7 +96,7 @@
     }
 
     @media (max-width: 768px) {
-        padding: 10px 14px;
+        padding: 10px 12px;
 
         &__logo {
             display: none;

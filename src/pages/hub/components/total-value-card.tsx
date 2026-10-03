@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { formatBalance } from '../mock-data';
 import { BellIcon, EyeIcon, RefreshIcon } from '../sidebar/icons';
 import './total-value-card.scss';
@@ -67,7 +66,7 @@ const TotalValueCard = ({
     if (variant === 'home') {
         return (
             <div className='total-value-card total-value-card--home'>
-                <div className='total-value-card__top-row'>
+                <div className='total-value-card__home-body'>
                     <div className='total-value-card__left'>
                         <span className='total-value-card__label'>
                             Total value <ChevronIcon />
@@ -88,8 +87,7 @@ const TotalValueCard = ({
                             {isRefreshing ? 'Updating…' : 'Updated just now'}
                         </span>
                     </div>
-                    <div className='total-value-card__right'>
-                        <span className='total-value-card__icon-btn'><EyeIcon /></span>
+                    <div className='total-value-card__home-right'>
                         <button type='button' className='total-value-card__deposit'>Deposit</button>
                     </div>
                 </div>

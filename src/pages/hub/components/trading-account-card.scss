@@ -3,24 +3,23 @@
     flex-direction: column;
     align-items: flex-start;
     text-align: left;
-    background: #ffffff;
-    border: 1px solid #e6e9e9;
+    background: #f2f3f4;
+    border: none;
     border-radius: 12px;
     padding: 16px;
     cursor: pointer;
-    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    transition: background 0.15s ease;
     min-width: 160px;
     min-height: 132px;
     flex: 1;
     font-family: inherit;
 
     &:hover {
-        border-color: #c4c7cc;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+        background: #e6e9e9;
     }
 
     &--active {
-        border-color: #ff444f;
+        background: #f2f3f4;
     }
 
     &__icon {
@@ -28,10 +27,10 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        width: 40px;
-        height: 40px;
+        width: 44px;
+        height: 44px;
         border-radius: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 12px;
 
         &--mt5 {
             background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
@@ -47,7 +46,7 @@
     }
 
     &__icon-main {
-        font-size: 10px;
+        font-size: 11px;
         font-weight: 800;
         color: #fff;
         letter-spacing: 0.5px;
@@ -55,7 +54,7 @@
     }
 
     &__icon-sub {
-        font-size: 6px;
+        font-size: 7px;
         font-weight: 600;
         color: rgba(255, 255, 255, 0.8);
         letter-spacing: 0.5px;
@@ -64,8 +63,8 @@
     }
 
     &__title {
-        margin: 0 0 6px;
-        font-size: 13px;
+        margin: 0 0 8px;
+        font-size: 14px;
         font-weight: 600;
         color: #333333;
     }
