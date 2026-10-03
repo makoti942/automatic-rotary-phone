@@ -9,6 +9,7 @@ import { FILTERED_LANGUAGES } from '@/utils/languages';
 import { useTranslations } from '@deriv-com/translations';
 import { DesktopLanguagesModal } from '@deriv-com/ui';
 import ChangeTheme from './ChangeTheme';
+import DerivSiteButton from '@/pages/hub/deriv-site-button';
 import FullScreen from './FullScreen';
 import LanguageSettings from './LanguageSettings';
 import LogoutFooter from './LogoutFooter';
@@ -48,6 +49,8 @@ const Footer = () => {
                 </>
             )}
             {/* [/AI] */}
+            <DerivSiteButton />
+            <div className='app-footer__vertical-line' />
             <ServerTime />
             <div className='app-footer__vertical-line' />
             <NetworkStatus />

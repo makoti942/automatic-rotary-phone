@@ -1,0 +1,9 @@
+.hub-transfer {
+    display: flex;
+    justify-content: center;
+    padding: 28px;
+
+    @media (max-width: 768px) {
+        padding: 16px;
+    }
+}

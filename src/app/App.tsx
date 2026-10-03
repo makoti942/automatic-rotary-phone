@@ -21,6 +21,13 @@ import './app-root.scss';
 const Layout = lazy(() => import('../components/layout'));
 const AppRoot = lazy(() => import('./app-root'));
 const StandaloneLoginScreen = lazy(() => import('../components/login-screen/StandaloneLoginScreen'));
+const HubShell = lazy(() => import('../pages/hub/hub-shell'));
+const HomeSection = lazy(() => import('../pages/hub/sections/home-section'));
+const OptionsSection = lazy(() => import('../pages/hub/sections/options-section'));
+const TransferSection = lazy(() => import('../pages/hub/sections/transfer-section'));
+const CfdsSection = lazy(() => import('../pages/hub/sections/cfds-section'));
+const CryptoSection = lazy(() => import('../pages/hub/sections/crypto-section'));
+const PortfolioSection = lazy(() => import('../pages/hub/sections/portfolio-section'));
 
 /**
  * Component wrapper to handle language URL parameter
@@ -64,6 +71,23 @@ const router = createBrowserRouter(
             <Route index element={<AppRoot />} />
             {/* App Builder embeds the template at /preview — render the same app shell */}
             <Route path='preview' element={<AppRoot />} />
+            {/* Deriv Trader's Hub clone routes */}
+            <Route
+                path='dashboard'
+                element={
+                    <Suspense fallback={<MakotiLoaderGate message='Loading dashboard' />}>
+                        <HubShell />
+                    </Suspense>
+                }
+            >
+                <Route index element={<HomeSection />} />
+                <Route path='home' element={<HomeSection />} />
+                <Route path='options' element={<OptionsSection />} />
+                <Route path='transfer' element={<TransferSection />} />
+                <Route path='cfds' element={<CfdsSection />} />
+                <Route path='crypto' element={<CryptoSection />} />
+                <Route path='portfolio' element={<PortfolioSection />} />
+            </Route>
         </Route>
     ),
     { basename: routerBasename }

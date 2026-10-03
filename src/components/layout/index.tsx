@@ -2,7 +2,7 @@
 import { useEffect, useState } from 'react';
 import clsx from 'clsx';
 import { observer } from 'mobx-react-lite';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import { api_base } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { useDevice } from '@deriv-com/ui';
@@ -16,8 +16,10 @@ import './layout.scss';
 const Layout = observer(() => {
     const { isDesktop } = useDevice();
     const store = useStore();
+    const location = useLocation();
     const is_quick_strategy_active = store?.quick_strategy?.is_open;
     const isCallbackPage = window.location.pathname === '/callback';
+    const isHubRoute = location.pathname.startsWith('/dashboard');
 
     const checkClientAccount = JSON.parse(localStorage.getItem('clientAccounts') ?? '{}');
     const getQueryParams = new URLSearchParams(window.location.search);
@@ -142,6 +144,14 @@ const Layout = observer(() => {
             return () => clearTimeout(timer);
         }
     }, [isAuthenticating, isInitialAuthCheckComplete]);
+
+    if (isHubRoute) {
+        return (
+            <SandboxProvider>
+                <Outlet />
+            </SandboxProvider>
+        );
+    }
 
     return (
         <SandboxProvider>

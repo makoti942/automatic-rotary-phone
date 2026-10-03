@@ -1,0 +1,104 @@
+.total-value-card {
+    background: linear-gradient(135deg, #181c24 0%, #1f2430 50%, #252a38 100%);
+    border-radius: 16px;
+    padding: 24px 28px;
+    color: #fff;
+
+    &__header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+    }
+
+    &__title {
+        margin: 0;
+        font-size: 14px;
+        font-weight: 500;
+        color: #9aa0b0;
+    }
+
+    &__toggle {
+        display: flex;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 20px;
+        padding: 3px;
+    }
+
+    &__toggle-btn {
+        padding: 6px 16px;
+        border: none;
+        border-radius: 18px;
+        background: transparent;
+        color: #9aa0b0;
+        font-size: 13px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        &--active {
+            background: #ff444f;
+            color: #fff;
+        }
+
+        &:not(&--active):hover {
+            color: #e0e0e0;
+        }
+    }
+
+    &__value {
+        display: flex;
+        align-items: baseline;
+        gap: 4px;
+        margin-bottom: 8px;
+    }
+
+    &__currency {
+        font-size: 24px;
+        font-weight: 500;
+        color: #9aa0b0;
+    }
+
+    &__amount {
+        font-size: 48px;
+        font-weight: 700;
+        letter-spacing: -1px;
+        line-height: 1.1;
+    }
+
+    &__currency-code {
+        font-size: 18px;
+        font-weight: 500;
+        color: #9aa0b0;
+        margin-left: 4px;
+    }
+
+    &__badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 4px 12px;
+        background: rgba(24, 169, 87, 0.15);
+        border-radius: 12px;
+        color: #18a957;
+        font-size: 12px;
+        font-weight: 500;
+    }
+
+    &--options {
+        .total-value-card__amount {
+            font-size: 40px;
+        }
+    }
+
+    @media (max-width: 768px) {
+        padding: 20px;
+
+        &__amount {
+            font-size: 36px;
+        }
+
+        &--options &__amount {
+            font-size: 32px;
+        }
+    }
+}

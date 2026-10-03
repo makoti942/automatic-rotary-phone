@@ -1,0 +1,123 @@
+.hub-options {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+    padding: 28px;
+    max-width: 1100px;
+
+    &__actions {
+        display: flex;
+        gap: 12px;
+    }
+
+    &__action-btn {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 12px 24px;
+        border: none;
+        border-radius: 24px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.15s ease;
+
+        &:hover {
+            opacity: 0.9;
+        }
+
+        &--trade {
+            background: #18a957;
+            color: #fff;
+        }
+
+        &--reset {
+            background: #f2f3f4;
+            color: #333941;
+        }
+    }
+
+    &__action-icon {
+        display: flex;
+        align-items: center;
+    }
+
+    &__section {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    &__section-title {
+        margin: 0;
+        font-size: 18px;
+        font-weight: 700;
+        color: #181c24;
+    }
+
+    &__markets {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 12px;
+    }
+
+    &__trade-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+        padding: 20px;
+    }
+
+    &__trade-modal-content {
+        position: relative;
+        max-width: 400px;
+        width: 100%;
+    }
+
+    &__trade-close {
+        position: absolute;
+        top: -8px;
+        right: -8px;
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 50%;
+        background: #fff;
+        color: #333941;
+        font-size: 20px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+        z-index: 1;
+    }
+
+    &__toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 12px 24px;
+        border-radius: 8px;
+        background: #18a957;
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    }
+
+    @media (max-width: 768px) {
+        padding: 16px;
+
+        &__actions {
+            flex-direction: column;
+        }
+
+        &__markets {
+            grid-template-columns: 1fr;
+        }
+    }
+}

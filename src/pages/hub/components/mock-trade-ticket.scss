@@ -1,0 +1,180 @@
+.mock-trade-ticket {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e8e9eb;
+    overflow: hidden;
+    width: 100%;
+    max-width: 380px;
+
+    &__header {
+        padding: 20px 24px;
+        border-bottom: 1px solid #e8e9eb;
+    }
+
+    &__title {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 700;
+        color: #181c24;
+    }
+
+    &__body {
+        padding: 20px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    &__field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+
+    &__label {
+        font-size: 13px;
+        font-weight: 500;
+        color: #333941;
+    }
+
+    &__contract-toggle {
+        display: flex;
+        gap: 8px;
+    }
+
+    &__contract-btn {
+        flex: 1;
+        padding: 10px;
+        border: 2px solid #e8e9eb;
+        border-radius: 8px;
+        background: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        color: #6b7280;
+        cursor: pointer;
+        transition: all 0.15s ease;
+
+        &--rise:hover:not(&--active),
+        &--rise&--active {
+            border-color: #18a957;
+            color: #18a957;
+            background: rgba(24, 169, 87, 0.05);
+        }
+
+        &--fall:hover:not(&--active),
+        &--fall&--active {
+            border-color: #ff444f;
+            color: #ff444f;
+            background: rgba(255, 68, 79, 0.05);
+        }
+    }
+
+    &__select,
+    &__input {
+        padding: 12px 16px;
+        border: 1px solid #e8e9eb;
+        border-radius: 8px;
+        background: #f8f9fa;
+        font-size: 14px;
+        color: #181c24;
+        outline: none;
+
+        &:focus {
+            border-color: #ff444f;
+        }
+    }
+
+    &__payout {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 12px 16px;
+        background: #f8f9fa;
+        border-radius: 8px;
+    }
+
+    &__payout-label {
+        font-size: 13px;
+        color: #6b7280;
+    }
+
+    &__payout-value {
+        font-size: 16px;
+        font-weight: 700;
+        color: #18a957;
+    }
+
+    &__purchase {
+        width: 100%;
+        padding: 14px;
+        border: none;
+        border-radius: 8px;
+        background: #18a957;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s ease;
+
+        &:hover:not(:disabled) {
+            background: #148f49;
+        }
+
+        &:disabled {
+            background: #e8e9eb;
+            color: #9aa0b0;
+            cursor: not-allowed;
+        }
+    }
+
+    &__last-result {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+
+        &--won {
+            background: rgba(24, 169, 87, 0.08);
+            color: #18a957;
+        }
+
+        &--lost {
+            background: rgba(255, 68, 79, 0.08);
+            color: #ff444f;
+        }
+    }
+
+    &__last-status {
+        font-weight: 600;
+    }
+
+    &__last-profit {
+        margin-left: auto;
+        font-weight: 600;
+    }
+
+    &__toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 14px;
+        font-weight: 500;
+        z-index: 1000;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+
+        &--success {
+            background: #18a957;
+            color: #fff;
+        }
+
+        &--error {
+            background: #ff444f;
+            color: #fff;
+        }
+    }
+}
