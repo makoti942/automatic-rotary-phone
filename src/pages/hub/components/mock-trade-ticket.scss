@@ -54,18 +54,22 @@
         cursor: pointer;
         transition: all 0.15s ease;
 
-        &--rise:hover:not(&--active),
-        &--rise&--active {
-            border-color: #18a957;
-            color: #18a957;
-            background: rgba(24, 169, 87, 0.05);
+        &--rise {
+            &:hover:not(.mock-trade-ticket__contract-btn--active),
+            &.mock-trade-ticket__contract-btn--active {
+                border-color: #18a957;
+                color: #18a957;
+                background: rgba(24, 169, 87, 0.05);
+            }
         }
 
-        &--fall:hover:not(&--active),
-        &--fall&--active {
-            border-color: #ff444f;
-            color: #ff444f;
-            background: rgba(255, 68, 79, 0.05);
+        &--fall {
+            &:hover:not(.mock-trade-ticket__contract-btn--active),
+            &.mock-trade-ticket__contract-btn--active {
+                border-color: #ff444f;
+                color: #ff444f;
+                background: rgba(255, 68, 79, 0.05);
+            }
         }
     }
 
