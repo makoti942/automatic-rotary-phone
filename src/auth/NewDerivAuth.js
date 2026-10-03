@@ -10,20 +10,24 @@ function nextRequestId() {
 // Deriv's short-duration Higher/Lower contracts use CALL/PUT with a
 // relative barrier. Some Blockly paths provide the same value as a positive
 // number, so normalize it at the shared request boundary:
-//   Higher/CALL -> +offset, Lower/PUT -> -offset.
-// Already-signed barriers are preserved.
+//   Synthetic-index Higher/Lower uses +offset for both CALL and PUT.
+// Already-signed barriers are preserved so markets that explicitly provide a
+// signed value are not rewritten.
 function normalizeRelativeBarrier(out) {
     if (!out || typeof out !== 'object') return out
     const contractType = String(out.contract_type || '').toUpperCase()
     if (contractType !== 'CALL' && contractType !== 'PUT') return out
+    const symbol = String(out.underlying_symbol || '')
+    const isSyntheticIndex = /^(R_\d+|1HZ\d+V)$/.test(symbol)
 
     const normalize = value => {
         if (value === undefined || value === null || value === '') return value
         const text = String(value).trim()
-        if (!text || text.startsWith('+') || text.startsWith('-')) return text
+        if (!text || text.startsWith('+')) return text
+        if (text.startsWith('-')) return isSyntheticIndex ? `+${text.slice(1)}` : text
         const number = Number(text)
         if (!Number.isFinite(number) || number === 0) return value
-        return `${contractType === 'CALL' ? '+' : '-'}${text}`
+        return `+${text}`
     }
 
     if ('barrier' in out) out.barrier = normalize(out.barrier)

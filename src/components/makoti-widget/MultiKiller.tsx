@@ -54,6 +54,31 @@ const USES_TICK_DIR: Record<MultiKillerStrategy, boolean> = {
 
 let _buySeq = 0;
 
+const higherLowerBarrierCache = new Map<string, Promise<number | null>>();
+
+async function getHigherLowerBarrierFloor(symbol: string): Promise<number | null> {
+    const cached = higherLowerBarrierCache.get(symbol);
+    if (cached) return cached;
+
+    const request = sendViaNewSystemWithPromise({ contracts_for: symbol })
+        .then((response: any) => {
+            const available = response?.contracts_for?.available;
+            if (!Array.isArray(available)) return null;
+            const entry = available.find((item: any) =>
+                (item.contract_type === 'CALL' || item.contract_type === 'PUT') &&
+                item.expiry_type === 'intraday' &&
+                typeof item.barrier === 'string',
+            );
+            if (!entry) return null;
+            const value = Math.abs(parseFloat(entry.barrier));
+            return Number.isFinite(value) && value > 0 ? value : null;
+        })
+        .catch(() => null);
+
+    higherLowerBarrierCache.set(symbol, request);
+    return request;
+}
+
 interface TradeEntry {
     contractId: string;
     strategy: MultiKillerStrategy;
@@ -432,8 +457,9 @@ export const MultiKiller: React.FC = () => {
         const dur = isHL ? hlDurationRef.current : DURATION[strategy];
         const needBarrier = NEEDS_BARRIER[strategy];
 
-        // Higher/Lower: relative barrier offset (e.g. "+0.02" / "-0.02")
-        //   Offset must match symbol pip-size decimal places (Deriv validates this)
+        // Higher/Lower: positive relative barrier offset.
+        //   Deriv's live contracts_for metadata supplies the valid floor;
+        //   hardcoding 0.02 is rejected on several synthetic markets.
         //   Uses proposal → buy flow (Deriv validates barrier in proposal step)
         // Over/Under/Differs: barrier = user-configured digit, direct buy
         let barrier: string | undefined;
@@ -445,8 +471,12 @@ export const MultiKiller: React.FC = () => {
                 return null;
             }
             const pip = PIP_SIZES[market] ?? 2;
-            const off = Math.abs(numOff).toFixed(pip);
-            barrier = strategy === 'higher' ? `+${off}` : `-${off}`;
+            const metadataFloor = await getHigherLowerBarrierFloor(market);
+            const effectiveOff = Math.max(Math.abs(numOff), metadataFloor ?? 0);
+            const off = effectiveOff.toFixed(pip);
+            // On synthetic Higher/Lower contracts Deriv exposes a positive
+            // relative barrier for both CALL and PUT.
+            barrier = `+${off}`;
         } else if (needBarrier) {
             const rawBarrier = barriersRef.current[strategy] ?? '5';
             barrier = String(parseInt(rawBarrier) || 5);
