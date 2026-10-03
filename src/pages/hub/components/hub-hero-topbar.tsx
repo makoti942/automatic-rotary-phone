@@ -1,4 +1,4 @@
-import { AskAmyIcon, BellIcon, EyeIcon } from './icons';
+import { AskAmyIcon, BellIcon, EyeIcon } from '../sidebar/icons';
 import './hub-hero-topbar.scss';
 
 type THeroTopBarProps = {
