@@ -1,1 +1,8 @@
-@import './hub-skeleton.scss';
+.hub-page-loader {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 280px;
+    width: 100%;
+    background: #f2f3f4;
+}

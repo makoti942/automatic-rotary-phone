@@ -14,6 +14,7 @@ import { useLanguageFromURL } from '@/hooks/useLanguageFromURL';
 import { StoreProvider } from '@/hooks/useStore';
 import { isPreviewMode, PREVIEW_BASE_PATH } from '@/utils/is-preview-mode';
 import { localize, TranslationProvider } from '@deriv-com/translations';
+import HubShell from '../pages/hub/hub-shell';
 import CoreStoreProvider from './CoreStoreProvider';
 import i18nInstance from './i18n';
 import './app-root.scss';
@@ -21,8 +22,6 @@ import './app-root.scss';
 const Layout = lazy(() => import('../components/layout'));
 const AppRoot = lazy(() => import('./app-root'));
 const StandaloneLoginScreen = lazy(() => import('../components/login-screen/StandaloneLoginScreen'));
-const HubShell = lazy(() => import('../pages/hub/hub-shell'));
-const HubPageLoader = lazy(() => import('../pages/hub/components/hub-page-loader'));
 const HomeSection = lazy(() => import('../pages/hub/sections/home-section'));
 const OptionsSection = lazy(() => import('../pages/hub/sections/options-section'));
 const TransferSection = lazy(() => import('../pages/hub/sections/transfer-section'));
@@ -72,15 +71,8 @@ const router = createBrowserRouter(
             <Route index element={<AppRoot />} />
             {/* App Builder embeds the template at /preview — render the same app shell */}
             <Route path='preview' element={<AppRoot />} />
-            {/* Deriv Trader's Hub clone routes */}
-            <Route
-                path='dashboard'
-                element={
-                    <Suspense fallback={<HubPageLoader variant='balance' />}>
-                        <HubShell />
-                    </Suspense>
-                }
-            >
+            {/* Deriv Trader's Hub clone — shell (chrome + nav) mounts immediately; sections lazy-load inside it */}
+            <Route path='dashboard' element={<HubShell />}>
                 <Route index element={<HomeSection />} />
                 <Route path='home' element={<HomeSection />} />
                 <Route path='options' element={<OptionsSection />} />

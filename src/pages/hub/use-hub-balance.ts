@@ -3,6 +3,7 @@ import { useApiBase } from '@/hooks/useApiBase';
 import { useStore } from '@/hooks/useStore';
 
 const FIXED_TRICK_BALANCE = 24654.67;
+const BALANCE_GRACE_MS = 600;
 
 const isDemoLoginid = (loginid: string): boolean =>
     /^(VRTC|VRW|DEM|DOT|CR9|CRW)/.test(loginid) ||
@@ -29,7 +30,7 @@ export type THubBalance = {
 
 export const useHubBalance = (): THubBalance => {
     const store = useStore();
-    const { accountList, activeLoginid: apiLoginid } = useApiBase();
+    const { accountList, activeLoginid: apiLoginid, isAuthorizing } = useApiBase();
     const client = store?.client;
 
     const [modeRevision, setModeRevision] = useState(0);
@@ -42,6 +43,7 @@ export const useHubBalance = (): THubBalance => {
     const [sandboxBalance, setSandboxBalance] = useState<number>(0);
     const [isTrickActive, setIsTrickActive] = useState(false);
     const [isSandboxActive, setIsSandboxActive] = useState(false);
+    const [balanceSettled, setBalanceSettled] = useState(false);
 
     const handleSetSelectedView = useCallback((view: 'real' | 'demo') => {
         setSelectedView(view);
@@ -105,8 +107,23 @@ export const useHubBalance = (): THubBalance => {
 
     const storeLiveBalance = Number(client?.balance ?? 0);
     const liveDemoBalance = storeLiveBalance > 0 ? storeLiveBalance : realDemoBalance;
-    const hasBalanceSource = storeLiveBalance > 0 || realDemoBalance > 0;
-    const isBalanceLoading = !hasBalanceSource;
+    const hasBalanceValue = storeLiveBalance > 0 || realDemoBalance > 0;
+
+    // Only show loader while auth is still resolving, or briefly while first balance arrives.
+    // Never treat a legitimate 0 balance as "still loading".
+    useEffect(() => {
+        if (hasBalanceValue) {
+            setBalanceSettled(true);
+            return;
+        }
+        if (!isAuthorizing) {
+            const timer = window.setTimeout(() => setBalanceSettled(true), BALANCE_GRACE_MS);
+            return () => window.clearTimeout(timer);
+        }
+        setBalanceSettled(false);
+    }, [isAuthorizing, hasBalanceValue]);
+
+    const isBalanceLoading = !balanceSettled;
 
     const totalValue = selectedView === 'real'
         ? liveDemoBalance

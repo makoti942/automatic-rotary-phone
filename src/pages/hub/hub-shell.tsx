@@ -1,9 +1,15 @@
 import { Suspense, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import FakeBrowserChrome from './fake-browser-chrome';
-import HubPageLoader from './components/hub-page-loader';
+import HubBarspinner from './components/hub-barspinner';
 import HubBottomNav from './sidebar/hub-bottom-nav';
 import './hub-shell.scss';
+
+const HubSectionFallback = () => (
+    <div className='hub-shell__section-loading' role='status' aria-label='Loading section'>
+        <HubBarspinner size='md' />
+    </div>
+);
 
 const HubShell = () => {
     const location = useLocation();
@@ -20,7 +26,7 @@ const HubShell = () => {
             <FakeBrowserChrome>
                 <div className='hub-shell__layout'>
                     <main className='hub-shell__content'>
-                        <Suspense fallback={<HubPageLoader variant='balance' />}>
+                        <Suspense fallback={<HubSectionFallback />}>
                             <Outlet />
                         </Suspense>
                     </main>
