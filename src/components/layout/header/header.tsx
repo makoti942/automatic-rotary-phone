@@ -3,6 +3,8 @@ import clsx from 'clsx';
 import { observer } from 'mobx-react-lite';
 import { generateOAuthURL } from '@/components/shared';
 import Button from '@/components/shared_ui/button';
+import MakotiBrand from '@/components/makoti/makoti-brand';
+import MakotiTradingPill from '@/components/makoti/makoti-trading-pill';
 import useActiveAccount from '@/hooks/api/account/useActiveAccount';
 import { useApiBase } from '@/hooks/useApiBase';
 import { useLogout } from '@/hooks/useLogout';
@@ -109,24 +111,6 @@ const AppHeader = observer(() => {
         }
     }, [setIsAuthorizing]);
 
-    const renderMakotiBrand = () => (
-        <div className='app-header__makoti-brand' aria-label='Makoti Traders'>
-            <div className='app-header__makoti-orbit' aria-hidden='true'>
-                <span>MAKOTI</span>
-                <span>TRADERS</span>
-            </div>
-            <div className='app-header__makoti-cube' aria-hidden='true'>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--front'>M</span>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--back'>T</span>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--right'>◆</span>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--left'>◆</span>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--top'>+</span>
-                <span className='app-header__makoti-cube-face app-header__makoti-cube-face--bottom'>−</span>
-            </div>
-            <span className='app-header__makoti-site'>makotitraderss.vercel.app</span>
-        </div>
-    );
-
     const renderAccountSection = useCallback(
         (position: 'left' | 'right' = 'right') => {
             // Show account switcher and logout when user is fully authenticated
@@ -207,20 +191,23 @@ const AppHeader = observer(() => {
 
     if (client?.should_hide_header) return null;
 
+    const isTradingActive = Boolean(activeLoginid) && !isAuthorizing;
+
     return (
         <>
             <Header
-                className={clsx('app-header', {
+                className={clsx('app-header', 'app-header--makoti', {
                     'app-header--desktop': isDesktop,
                     'app-header--mobile': !isDesktop,
                 })}
             >
                 <Wrapper variant='left'>
                     <MobileMenu onLogout={handleLogout} />
-                    {renderMakotiBrand()}
+                    <MakotiBrand compact={!isDesktop} />
                     {isDesktop && <MenuItems />}
                 </Wrapper>
                 <Wrapper variant='right'>
+                    {isDesktop && <MakotiTradingPill isActive={isTradingActive} />}
                     {renderAccountSection('right')}
                 </Wrapper>
             </Header>

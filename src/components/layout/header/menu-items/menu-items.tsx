@@ -1,60 +1,76 @@
-// ========================================
-// MENU ITEMS PLACEHOLDER FOR WHITE-LABELING
-// ========================================
-//
-// This component has been simplified for white-labeling.
-// Third-party developers can add custom menu items here.
-//
-// EXAMPLE USAGE:
-// --------------
-// import { observer } from 'mobx-react-lite';
-// import { useStore } from '@/hooks/useStore';
-// import { useTranslations } from '@deriv-com/translations';
-// import { MenuItem, Text } from '@deriv-com/ui';
-//
-// export const MenuItems = observer(() => {
-//     const { localize } = useTranslations();
-//     const store = useStore();
-//     const is_logged_in = store?.client?.is_logged_in ?? false;
-//
-//     if (!is_logged_in) return null;
-//
-//     return (
-//         <>
-//             <MenuItem
-//                 as='a'
-//                 className='app-header__menu'
-//                 href='/your-page'
-//                 leftComponent={YourIcon}
-//             >
-//                 <Text>{localize('Your Menu Item')}</Text>
-//             </MenuItem>
-//         </>
-//     );
-// });
-//
-// For mobile menu items, see:
-// src/components/layout/header/mobile-menu/use-mobile-menu-config.tsx
-
+import { useLocation, useNavigate } from 'react-router-dom';
 import { observer } from 'mobx-react-lite';
+import { DBOT_TABS } from '@/constants/bot-contents';
+import { useStore } from '@/hooks/useStore';
+import './menu-items.scss';
 
-export const MenuItems = observer(() => {
-    // No menu items by default - add your custom menu items here
-    return null;
+type TTopNavItem = {
+    key: string;
+    label: string;
+    tab?: number;
+    path?: string;
+};
+
+const NAV_ITEMS: TTopNavItem[] = [
+    { key: 'dashboard', label: 'Dashboard', tab: DBOT_TABS.DASHBOARD },
+    { key: 'bot-builder', label: 'Bot Builder', tab: DBOT_TABS.BOT_BUILDER },
+    { key: 'charts', label: 'Charts', tab: DBOT_TABS.CHART },
+    { key: 'trading-bots', label: 'Trading Bots', tab: DBOT_TABS.TRADING_BOTS },
+    { key: 'analysis', label: 'Analysis', tab: DBOT_TABS.ANALYSIS },
+    { key: 'manual-trade', label: 'Manual Trade', tab: DBOT_TABS.MANUAL_TRADE },
+    { key: 'trading-view', label: 'Trading View', tab: DBOT_TABS.TRADING_VIEW },
+    { key: 'copy-trading', label: 'Copy Trading', tab: DBOT_TABS.COPY_TRADING },
+    { key: 'bot-extractor', label: 'Bot Extractor', tab: DBOT_TABS.BOT_EXTRACTOR },
+];
+
+const MenuItems = observer(() => {
+    const navigate = useNavigate();
+    const location = useLocation();
+    const store = useStore();
+    const isBotRoute =
+        location.pathname === '/' || location.pathname === '/preview' || location.pathname.startsWith('/bot');
+    const activeTab = store?.dashboard?.active_tab;
+
+    const handleClick = (item: TTopNavItem) => {
+        if (!isBotRoute) {
+            navigate('/');
+        }
+        if (typeof item.tab === 'number') {
+            try {
+                store?.dashboard?.setActiveTab(item.tab);
+            } catch {}
+        } else if (item.path) {
+            navigate(item.path);
+        }
+    };
+
+    const isActive = (item: TTopNavItem) => {
+        if (!isBotRoute || typeof item.tab !== 'number') return false;
+        return activeTab === item.tab;
+    };
+
+    return (
+        <nav className='makoti-topnav' aria-label='Primary'>
+            {NAV_ITEMS.map(item => (
+                <button
+                    key={item.key}
+                    type='button'
+                    className={`makoti-topnav__item${isActive(item) ? ' makoti-topnav__item--active' : ''}`}
+                    onClick={() => handleClick(item)}
+                >
+                    {item.label}
+                </button>
+            ))}
+        </nav>
+    );
 });
 
-export const TradershubLink = observer(() => {
-    // No default Traders Hub link - add your custom navigation here if needed
-    return null;
-});
+export const TradershubLink = observer(() => null);
 
-// Create a namespace for MenuItems to include TradershubLink
 type MenuItemsType = typeof MenuItems & {
     TradershubLink: typeof TradershubLink;
 };
 
-// Assign TradershubLink to MenuItems
 (MenuItems as MenuItemsType).TradershubLink = TradershubLink;
 
 export default MenuItems as MenuItemsType;
-// [/AI]

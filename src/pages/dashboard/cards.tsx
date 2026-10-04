@@ -10,18 +10,17 @@ import MobileFullPageModal from '@/components/shared_ui/mobile-full-page-modal';
 import Text from '@/components/shared_ui/text';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import { useStore } from '@/hooks/useStore';
-import {
-    DerivLightBotBuilderIcon,
-    DerivLightGoogleDriveIcon,
-    DerivLightLocalDeviceIcon,
-    DerivLightMyComputerIcon,
-    DerivLightQuickStrategyIcon,
-} from '@deriv/quill-icons/Illustration';
 import { Localize, localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
 /* [/AI] */
 import DashboardBotList from './bot-list/dashboard-bot-list';
+import {
+    BotBuilderIcon,
+    GoogleDriveTileIcon,
+    MyComputerIcon,
+    QuickStrategyIcon,
+} from './makoti-tile-icons';
 
 type TCardProps = {
     has_dashboard_strategies: boolean;
@@ -59,11 +58,7 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
     const actions: TCardArray[] = [
         {
             id: 'my-computer',
-            icon: is_mobile ? (
-                <DerivLightLocalDeviceIcon height='48px' width='48px' />
-            ) : (
-                <DerivLightMyComputerIcon height='48px' width='48px' />
-            ),
+            icon: <MyComputerIcon size={is_mobile ? 56 : 72} />,
             content: is_mobile ? <Localize i18n_default_text='Local' /> : <Localize i18n_default_text='My computer' />,
             callback: () => {
                 openFileLoader();
@@ -73,7 +68,7 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
         },
         {
             id: 'google-drive',
-            icon: <DerivLightGoogleDriveIcon height='48px' width='48px' />,
+            icon: <GoogleDriveTileIcon size={is_mobile ? 56 : 72} />,
             content: <Localize i18n_default_text='Google Drive' />,
             callback: () => {
                 openGoogleDriveDialog();
@@ -83,7 +78,7 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
         },
         {
             id: 'bot-builder',
-            icon: <DerivLightBotBuilderIcon height='48px' width='48px' />,
+            icon: <BotBuilderIcon size={is_mobile ? 56 : 72} />,
             content: <Localize i18n_default_text='Bot Builder' />,
             callback: () => {
                 setActiveTab(DBOT_TABS.BOT_BUILDER);
@@ -93,7 +88,7 @@ const Cards = observer(({ is_mobile, has_dashboard_strategies }: TCardProps) => 
         },
         {
             id: 'quick-strategy',
-            icon: <DerivLightQuickStrategyIcon height='48px' width='48px' />,
+            icon: <QuickStrategyIcon size={is_mobile ? 56 : 72} />,
             content: <Localize i18n_default_text='Quick strategy' />,
             callback: () => {
                 setActiveTab(DBOT_TABS.BOT_BUILDER);

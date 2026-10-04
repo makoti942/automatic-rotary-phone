@@ -17,6 +17,14 @@
     }
 }
 
+/* Makoti chrome — never touch tab heights, overflow, or pointer-events here */
+body.theme--dark,
+body.theme--light {
+    .layout--makoti & {
+        background: #070b14;
+    }
+}
+
 .modal-root {
     position: absolute;
     top: 0;

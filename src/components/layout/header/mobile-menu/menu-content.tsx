@@ -9,9 +9,10 @@ type TMenuContentProps = {
     enableThemeToggle?: boolean;
     onOpenSubmenu?: (submenu: string) => void;
     onLogout?: () => void;
+    onCloseDrawer?: () => void;
 };
 
-const MenuContent = observer(({ enableThemeToggle = true, onOpenSubmenu, onLogout }: TMenuContentProps) => {
+const MenuContent = observer(({ enableThemeToggle = true, onOpenSubmenu, onLogout, onCloseDrawer }: TMenuContentProps) => {
     const { isDesktop } = useDevice();
     const { client } = useStore();
     const textSize = isDesktop ? 'sm' : 'md';
@@ -93,6 +94,8 @@ const MenuContent = observer(({ enableThemeToggle = true, onOpenSubmenu, onLogou
                                                     onOpenSubmenu(submenu);
                                                 } else if (onClick) {
                                                     onClick();
+                                                    // Close drawer after tab nav / actions; keep theme toggle open
+                                                    if (!RightComponent) onCloseDrawer?.();
                                                 }
                                             }}
                                             rightComponent={

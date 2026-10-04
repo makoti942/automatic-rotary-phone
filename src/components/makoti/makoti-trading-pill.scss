@@ -1,0 +1,48 @@
+@use './makoti-tokens' as *;
+
+.makoti-trading-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.35rem 0.75rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid $makoti-border-soft;
+    margin-inline-end: 0.75rem;
+
+    &--active {
+        background: rgba(0, 210, 106, 0.12);
+        border-color: rgba(0, 210, 106, 0.35);
+
+        .makoti-trading-pill__label {
+            color: $makoti-green;
+        }
+
+        .makoti-trading-pill__dot {
+            background: $makoti-green;
+            box-shadow: 0 0 8px rgba(0, 210, 106, 0.8);
+        }
+    }
+
+    &__dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #6b7280;
+        flex-shrink: 0;
+    }
+
+    &__label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: $makoti-text-muted;
+        white-space: nowrap;
+    }
+}
+
+@media (max-width: 900px) {
+    .makoti-trading-pill {
+        display: none;
+    }
+}

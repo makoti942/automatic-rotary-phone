@@ -1,0 +1,57 @@
+@use './makoti-tokens' as *;
+
+.makoti-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    min-width: 0;
+    flex-shrink: 0;
+
+    &__mark {
+        display: grid;
+        place-items: center;
+        width: 36px;
+        height: 36px;
+        flex-shrink: 0;
+        filter: drop-shadow(0 0 6px rgba(212, 160, 23, 0.45));
+    }
+
+    &__text {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.05;
+        min-width: 0;
+    }
+
+    &__name {
+        color: #fff;
+        font-size: 1.25rem;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        white-space: nowrap;
+    }
+
+    &__name-accent {
+        color: $makoti-gold-400;
+    }
+
+    &__tag {
+        color: $makoti-gold-300;
+        font-size: 0.58rem;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        white-space: nowrap;
+        margin-top: 2px;
+    }
+
+    &--compact {
+        .makoti-brand__name {
+            font-size: 1.05rem;
+        }
+
+        .makoti-brand__mark svg {
+            width: 28px;
+            height: 28px;
+        }
+    }
+}

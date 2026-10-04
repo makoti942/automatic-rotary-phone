@@ -1,7 +1,24 @@
 @use 'components/shared/styles/constants' as *;
 @use 'components/shared/styles/mixins' as *;
+@use 'components/makoti/makoti-tokens' as *;
 
 .app-header {
+    &--makoti {
+        background: linear-gradient(180deg, $makoti-navy-900 0%, $makoti-navy-950 100%) !important;
+        border-bottom: 1px solid $makoti-border-soft;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+
+        .deriv-header,
+        & {
+            background: transparent !important;
+        }
+
+        .derivs-text,
+        .deriv-text {
+            color: $makoti-text;
+        }
+    }
+
     &__account-settings {
         padding-inline-end: 1.2rem;
         border-inline-end: 0.1rem solid var(--general-section-1);

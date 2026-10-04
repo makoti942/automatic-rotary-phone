@@ -7,6 +7,7 @@ import { api_base } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { useDevice } from '@deriv-com/ui';
 import { crypto_currencies_display_order, fiat_currencies_display_order } from '../shared';
+import MakotiSidebar from '../makoti/makoti-sidebar';
 import Footer from './footer';
 import AppHeader from './header';
 import { SandboxProvider } from './header/sandbox-context';
@@ -156,15 +157,18 @@ const Layout = observer(() => {
     return (
         <SandboxProvider>
             <div
-                className={clsx('layout', {
+                className={clsx('layout', 'layout--makoti', {
                     responsive: isDesktop,
                     'quick-strategy-active': is_quick_strategy_active && !isDesktop,
                 })}
             >
                 {!isCallbackPage && <AppHeader isAuthenticating={isAuthenticating || !isInitialAuthCheckComplete} />}
-                <Body>
-                    <Outlet />
-                </Body>
+                <div className='layout__makoti-body'>
+                    {isDesktop && <MakotiSidebar />}
+                    <Body>
+                        <Outlet />
+                    </Body>
+                </div>
                 {!isCallbackPage && isDesktop && <Footer />}
             </div>
         </SandboxProvider>
