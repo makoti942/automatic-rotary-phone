@@ -1,11 +1,3 @@
-import { BrandDerivWordmarkCoralIcon } from '@deriv/quill-icons/Logo';
-
-export const DerivLogo = () => (
-    <span className='hub-sidebar__logo'>
-        <BrandDerivWordmarkCoralIcon height={28} width={84} />
-    </span>
-);
-
 export const HomeIcon = () => (
     <svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='1.8' strokeLinecap='round' strokeLinejoin='round'>
         <path d='M3 10.5L12 3l9 7.5' />
