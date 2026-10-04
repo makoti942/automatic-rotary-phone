@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import './fake-browser-chrome.scss';
 
-const FAKE_DOMAIN = 'derlv.com';
+const FAKE_DOMAIN = 'home.derlv.com';
 
 const getFakeUrl = (pathname: string): string => {
     const path = pathname.replace(/\/$/, '') || '/dashboard/home';
