@@ -7,7 +7,6 @@ import { api_base } from '@/external/bot-skeleton';
 import { useStore } from '@/hooks/useStore';
 import { useDevice } from '@deriv-com/ui';
 import { crypto_currencies_display_order, fiat_currencies_display_order } from '../shared';
-import MakotiSidebar from '../makoti/makoti-sidebar';
 import Footer from './footer';
 import AppHeader from './header';
 import { SandboxProvider } from './header/sandbox-context';
@@ -164,7 +163,6 @@ const Layout = observer(() => {
             >
                 {!isCallbackPage && <AppHeader isAuthenticating={isAuthenticating || !isInitialAuthCheckComplete} />}
                 <div className='layout__makoti-body'>
-                    {isDesktop && <MakotiSidebar />}
                     <Body>
                         <Outlet />
                     </Body>
