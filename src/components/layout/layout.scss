@@ -67,3 +67,193 @@
         }
     }
 }
+
+/* ──────────────────────────────────────────────────────────────────────────
+   Makoti professional terminal layer
+   The shell owns the visual language; feature logic and tab placement remain
+   untouched. Keep motion limited to opacity/transform for smooth navigation.
+   ────────────────────────────────────────────────────────────────────────── */
+.layout--makoti {
+    --mk-bg: #070b13;
+    --mk-surface: #0b111d;
+    --mk-surface-raised: #101827;
+    --mk-surface-hover: #152237;
+    --mk-line: rgba(162, 184, 214, 0.14);
+    --mk-line-strong: rgba(224, 173, 69, 0.34);
+    --mk-text: #edf3fb;
+    --mk-muted: #8fa1b8;
+    --mk-gold: #e0ad45;
+    --mk-gold-soft: rgba(224, 173, 69, 0.12);
+    --mk-cyan: #66d9ff;
+    --mk-positive: #22d3a1;
+    --mk-negative: #ff7187;
+    --mk-radius: 14px;
+    --mk-shadow: 0 16px 42px rgba(0, 0, 0, 0.26);
+
+    background:
+        radial-gradient(circle at 8% 0%, rgba(76, 166, 255, 0.08), transparent 28rem),
+        radial-gradient(circle at 92% 10%, rgba(224, 173, 69, 0.06), transparent 24rem),
+        var(--mk-bg);
+
+    .main-body,
+    .main,
+    .bot-dashboard,
+    .bot-dashboard.bot,
+    .dc-tabs__content,
+    .dc-tabs__content--main__tabs {
+        background: transparent !important;
+        color: var(--mk-text);
+    }
+
+    .main {
+        padding: 1.25rem;
+
+        @include mobile-or-tablet-screen { padding: 0; }
+    }
+
+    .main__container {
+        border: 1px solid var(--mk-line);
+        border-radius: var(--mk-radius);
+        background: linear-gradient(145deg, rgba(16, 24, 39, 0.74), rgba(7, 11, 19, 0.92));
+        box-shadow: var(--mk-shadow);
+        overflow: hidden;
+    }
+
+    input,
+    select,
+    textarea,
+    button {
+        font-family: inherit;
+    }
+
+    input,
+    select,
+    textarea {
+        border-color: var(--mk-line) !important;
+        border-radius: 9px !important;
+        background: var(--mk-surface-raised) !important;
+        color: var(--mk-text) !important;
+        transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+
+        &:focus {
+            border-color: var(--mk-gold) !important;
+            box-shadow: 0 0 0 3px rgba(224, 173, 69, 0.12) !important;
+            outline: none;
+        }
+    }
+
+    button:not(:disabled) {
+        transition: transform 160ms ease, border-color 160ms ease, background 160ms ease, box-shadow 160ms ease;
+
+        &:active { transform: scale(0.98); }
+    }
+
+    .footer,
+    .app-footer {
+        min-height: 3.4rem;
+        background: rgba(11, 17, 29, 0.88) !important;
+        backdrop-filter: blur(14px);
+    }
+
+    .dc-drawer,
+    .dc-modal,
+    .deriv-context-menu,
+    .account-switcher-panel {
+        border: 1px solid var(--mk-line-strong) !important;
+        border-radius: 12px !important;
+        background: var(--mk-surface-raised) !important;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.42) !important;
+    }
+
+    .toolbar,
+    .dashboard__toolbar,
+    .bot-toolbar,
+    .analysis__controls,
+    .mt-symbol-bar,
+    .bot-extractor__input-section {
+        border: 1px solid var(--mk-line) !important;
+        border-radius: 12px !important;
+        background: rgba(16, 24, 39, 0.8) !important;
+        box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+    }
+
+    .card,
+    .dashboard-card,
+    .analysis__card,
+    .mt-tick-display,
+    .mt-stats,
+    .mt-trade-panel,
+    .mt-history,
+    .bot-extractor__bot-card,
+    .bot-extractor__results,
+    .bot-extractor__drawer {
+        border-color: var(--mk-line) !important;
+        border-radius: var(--mk-radius) !important;
+        background: linear-gradient(145deg, rgba(16, 24, 39, 0.92), rgba(11, 17, 29, 0.96)) !important;
+        box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+    }
+
+    .analysis,
+    .bot-extractor,
+    .mt-page {
+        background:
+            radial-gradient(circle at 88% 0%, rgba(102, 217, 255, 0.06), transparent 22rem),
+            transparent !important;
+        color: var(--mk-text) !important;
+    }
+
+    .analysis__field label,
+    .analysis__subtitle,
+    .analysis__status,
+    .mt-digit-label,
+    .mt-stats-header,
+    .bot-extractor__subtitle,
+    .bot-extractor__progress,
+    .text-less-prominent {
+        color: var(--mk-muted) !important;
+    }
+
+    .analysis__card,
+    .analysis__controls { border-left: 2px solid var(--mk-gold) !important; }
+
+    .analysis__refresh,
+    .bot-extractor__btn--extract,
+    .bot-extractor__btn--deep,
+    .bot-extractor__btn--load-all,
+    .bot-extractor__library-button {
+        border: 1px solid var(--mk-line-strong) !important;
+        background: linear-gradient(135deg, #b77b18, #e0ad45) !important;
+        color: #111827 !important;
+        box-shadow: 0 8px 18px rgba(200, 148, 38, 0.18);
+        font-weight: 800;
+
+        &:hover:not(:disabled) {
+            filter: brightness(1.08);
+            box-shadow: 0 10px 24px rgba(200, 148, 38, 0.28);
+        }
+    }
+
+    .mt-price { color: var(--mk-gold-300, #f0c86a); }
+    .mt-last-digit { background: linear-gradient(135deg, #b77b18, #e0ad45) !important; color: #111827; }
+
+    .mt-status--on,
+    .mt-running-trade { border-color: rgba(34, 211, 161, 0.35); color: var(--mk-positive); background: rgba(34, 211, 161, 0.1); }
+    .mt-status--off { border-color: rgba(255, 113, 135, 0.35); color: var(--mk-negative); background: rgba(255, 113, 135, 0.1); }
+
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: rgba(7, 11, 19, 0.5); }
+    ::-webkit-scrollbar-thumb { background: #263952; border: 2px solid #070b13; border-radius: 999px; }
+    ::-webkit-scrollbar-thumb:hover { background: #3b5878; }
+}
+
+@media (max-width: 900px) {
+    .layout--makoti {
+        .main__container { border-radius: 0; border-inline: 0; }
+        .analysis__card,
+        .analysis__controls { border-left-width: 1px !important; }
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .layout--makoti * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
+}
