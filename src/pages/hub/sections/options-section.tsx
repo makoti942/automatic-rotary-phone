@@ -5,6 +5,7 @@ import { MARKETS, PLATFORMS, TRADE_TYPES } from '../mock-data';
 import MarketCard from '../components/market-card';
 import MockTradeTicket from '../components/mock-trade-ticket';
 import TotalValueCard from '../components/total-value-card';
+import { HubSkeletonGrid } from '../components/hub-skeleton';
 import { TradeTypeIcons } from '../sidebar/icons';
 import './options-section.scss';
 
@@ -21,6 +22,7 @@ const OptionsSection = () => {
     const [selectedMarket, setSelectedMarket] = useState(MARKETS[0]);
     const [toast, setToast] = useState<string | null>(null);
     const [activeTab, setActiveTab] = useState('Deriv Trader');
+    const { isBalanceLoading } = hub;
 
     const handleTrade = (market: (typeof MARKETS)[number]) => {
         setSelectedMarket(market);
@@ -52,21 +54,26 @@ const OptionsSection = () => {
                 onTransfer={() => navigate('/dashboard/transfer')}
                 onRefresh={hub.refresh}
                 variant='options'
+                isLoading={isBalanceLoading}
             />
 
             <section className='hub-options__section'>
                 <h3 className='hub-options__section-title'>Most traded markets</h3>
-                <div className='hub-options__markets'>
-                    {MARKETS.slice(0, 4).map(market => (
-                        <MarketCard key={market.symbol} {...market} onClick={() => handleTrade(market)} />
-                    ))}
-                    <button type='button' className='hub-options__markets-more' onClick={() => handleTrade(MARKETS[0])}>
-                        <svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
-                            <line x1='5' y1='12' x2='19' y2='12' />
-                            <polyline points='12 5 19 12 12 19' />
-                        </svg>
-                    </button>
-                </div>
+                {isBalanceLoading ? (
+                    <HubSkeletonGrid count={4} variant='market' />
+                ) : (
+                    <div className='hub-options__markets'>
+                        {MARKETS.slice(0, 4).map(market => (
+                            <MarketCard key={market.symbol} {...market} onClick={() => handleTrade(market)} />
+                        ))}
+                        <button type='button' className='hub-options__markets-more' onClick={() => handleTrade(MARKETS[0])}>
+                            <svg width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2'>
+                                <line x1='5' y1='12' x2='19' y2='12' />
+                                <polyline points='12 5 19 12 12 19' />
+                            </svg>
+                        </button>
+                    </div>
+                )}
             </section>
 
             <section className='hub-options__section'>

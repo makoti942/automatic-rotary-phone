@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { formatBalance } from '../mock-data';
 import { RefreshIcon } from '../sidebar/icons';
+import HubBarspinner from './hub-barspinner';
 import HubHeroTopBar from './hub-hero-topbar';
 import './total-value-card.scss';
 
@@ -13,6 +14,7 @@ type TTotalValueCardProps = {
     onTransfer?: () => void;
     onRefresh?: () => void;
     variant?: 'home' | 'options';
+    isLoading?: boolean;
 };
 
 const ChevronIcon = () => (
@@ -53,9 +55,11 @@ const TotalValueCard = ({
     onTransfer,
     onRefresh,
     variant = 'home',
+    isLoading = false,
 }: TTotalValueCardProps) => {
     const view = selectedView ?? 'demo';
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const showBalanceLoader = isRefreshing || isLoading;
 
     const handleRefresh = () => {
         if (isRefreshing) return;
@@ -74,9 +78,9 @@ const TotalValueCard = ({
                             Total value <ChevronIcon />
                         </span>
                         <div className='total-value-card__value-row'>
-                            {isRefreshing ? (
-                                <span className='total-value-card__loading'>
-                                    <span className='total-value-card__spinner' />
+                            {showBalanceLoader ? (
+                                <span className='total-value-card__loading' aria-live='polite'>
+                                    <HubBarspinner size='sm' />
                                 </span>
                             ) : (
                                 <span className='total-value-card__amount'>{formatBalance(totalValue)} USD</span>
@@ -86,7 +90,7 @@ const TotalValueCard = ({
                             </button>
                         </div>
                         <span className='total-value-card__updated'>
-                            {isRefreshing ? 'Updating…' : 'Updated just now'}
+                            {showBalanceLoader ? 'Updating…' : 'Updated just now'}
                         </span>
                     </div>
                     <div className='total-value-card__home-right'>
@@ -122,9 +126,9 @@ const TotalValueCard = ({
                 <div className='total-value-card__options-left'>
                     <span className='total-value-card__label'>Total trading value</span>
                     <div className='total-value-card__value-row'>
-                        {isRefreshing ? (
-                            <span className='total-value-card__loading'>
-                                <span className='total-value-card__spinner' />
+                        {showBalanceLoader ? (
+                            <span className='total-value-card__loading' aria-live='polite'>
+                                <HubBarspinner size='sm' />
                             </span>
                         ) : (
                             <span className='total-value-card__amount'>{formatBalance(totalValue)} USD</span>
@@ -134,7 +138,7 @@ const TotalValueCard = ({
                         </button>
                     </div>
                     <span className='total-value-card__updated'>
-                        {isRefreshing ? 'Updating…' : 'Updated just now'}
+                        {showBalanceLoader ? 'Updating…' : 'Updated just now'}
                     </span>
                 </div>
                 <div className='total-value-card__options-actions'>

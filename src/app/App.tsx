@@ -22,6 +22,7 @@ const Layout = lazy(() => import('../components/layout'));
 const AppRoot = lazy(() => import('./app-root'));
 const StandaloneLoginScreen = lazy(() => import('../components/login-screen/StandaloneLoginScreen'));
 const HubShell = lazy(() => import('../pages/hub/hub-shell'));
+const HubPageLoader = lazy(() => import('../pages/hub/components/hub-page-loader'));
 const HomeSection = lazy(() => import('../pages/hub/sections/home-section'));
 const OptionsSection = lazy(() => import('../pages/hub/sections/options-section'));
 const TransferSection = lazy(() => import('../pages/hub/sections/transfer-section'));
@@ -75,7 +76,7 @@ const router = createBrowserRouter(
             <Route
                 path='dashboard'
                 element={
-                    <Suspense fallback={<MakotiLoaderGate message='Loading dashboard' />}>
+                    <Suspense fallback={<HubPageLoader variant='balance' />}>
                         <HubShell />
                     </Suspense>
                 }

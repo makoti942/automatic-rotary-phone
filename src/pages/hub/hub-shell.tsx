@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { Suspense, useEffect } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import FakeBrowserChrome from './fake-browser-chrome';
+import HubPageLoader from './components/hub-page-loader';
 import HubBottomNav from './sidebar/hub-bottom-nav';
 import './hub-shell.scss';
 
@@ -19,7 +20,9 @@ const HubShell = () => {
             <FakeBrowserChrome>
                 <div className='hub-shell__layout'>
                     <main className='hub-shell__content'>
-                        <Outlet />
+                        <Suspense fallback={<HubPageLoader variant='balance' />}>
+                            <Outlet />
+                        </Suspense>
                     </main>
                     <HubBottomNav />
                 </div>

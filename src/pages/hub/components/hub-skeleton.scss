@@ -1,0 +1,149 @@
+.hub-skeleton {
+    display: block;
+    background-color: #e2e5e7;
+    background-image: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 255, 255, 0.55) 50%,
+        rgba(255, 255, 255, 0) 100%
+    );
+    background-size: 40px 100%;
+    background-repeat: no-repeat;
+    background-position: left -40px top 0;
+    animation: hub-skeleton-shine 1.2s ease infinite;
+}
+
+.hub-skeleton-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 96px;
+    border: 1px solid rgba(0, 0, 0, 0.04);
+
+    &__row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        width: 100%;
+    }
+
+    &__col {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+    }
+
+    &--market {
+        min-height: 120px;
+        justify-content: space-between;
+    }
+
+    &--account {
+        min-height: 88px;
+    }
+
+    &--promo {
+        min-height: 140px;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    &--list {
+        min-height: 64px;
+        justify-content: center;
+    }
+
+    &__promo {
+        width: 100%;
+        height: 100%;
+        min-height: 100px;
+        border-radius: 12px;
+        background: #e8eaec;
+        display: flex;
+        align-items: flex-end;
+        padding: 16px;
+    }
+}
+
+.hub-skeleton-grid {
+    display: grid;
+    gap: 12px;
+
+    &--market {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    &--account {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    &--list {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    &--promo {
+        grid-template-columns: 1fr;
+    }
+
+    @media (min-width: 768px) {
+        &--market,
+        &--account {
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+        }
+    }
+}
+
+.hub-page-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    padding: 16px;
+
+    &__hero {
+        border-radius: 0 0 24px 24px;
+        background: #181c25;
+        padding: 16px 20px 28px;
+        min-height: 180px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+
+    &__hero-row {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 16px;
+        margin-top: auto;
+    }
+
+    &__hero-col {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    &__section {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    &__title {
+        width: 160px;
+        height: 16px;
+        border-radius: 8px;
+    }
+}
+
+@keyframes hub-skeleton-shine {
+    to {
+        background-position: right -40px top 0;
+    }
+}

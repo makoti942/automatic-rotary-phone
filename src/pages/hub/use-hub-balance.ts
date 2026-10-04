@@ -15,6 +15,7 @@ export type THubBalance = {
     isTrickActive: boolean;
     isSandboxActive: boolean;
     isDemoAccount: boolean;
+    isBalanceLoading: boolean;
     activeLoginid: string;
     activeCurrency: string;
     realDemoBalance: number;
@@ -104,6 +105,8 @@ export const useHubBalance = (): THubBalance => {
 
     const storeLiveBalance = Number(client?.balance ?? 0);
     const liveDemoBalance = storeLiveBalance > 0 ? storeLiveBalance : realDemoBalance;
+    const hasBalanceSource = storeLiveBalance > 0 || realDemoBalance > 0;
+    const isBalanceLoading = !hasBalanceSource;
 
     const totalValue = selectedView === 'real'
         ? liveDemoBalance
@@ -113,6 +116,7 @@ export const useHubBalance = (): THubBalance => {
         isTrickActive,
         isSandboxActive,
         isDemoAccount,
+        isBalanceLoading,
         activeLoginid,
         activeCurrency,
         realDemoBalance: liveDemoBalance,
