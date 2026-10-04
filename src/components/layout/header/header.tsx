@@ -12,7 +12,6 @@ import { useStore } from '@/hooks/useStore';
 import { Localize } from '@deriv-com/translations';
 import { Header, useDevice, Wrapper } from '@deriv-com/ui';
 import AccountSwitcher from './account-switcher';
-import MenuItems from './menu-items';
 import MobileMenu from './mobile-menu';
 import './header.scss';
 
@@ -204,7 +203,6 @@ const AppHeader = observer(() => {
                 <Wrapper variant='left'>
                     <MobileMenu onLogout={handleLogout} />
                     <MakotiBrand compact={!isDesktop} />
-                    {isDesktop && <MenuItems />}
                 </Wrapper>
                 <Wrapper variant='right'>
                     {isDesktop && <MakotiTradingPill isActive={isTradingActive} />}
