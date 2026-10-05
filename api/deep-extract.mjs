@@ -30,7 +30,16 @@ function isValidBotXml(value) {
 }
 
 function isBuiltInBundle(url) {
-  return /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(url);
+  const matchesStockTemplate = /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(url);
+  if (!matchesStockTemplate) return false;
+  try {
+    const host = new URL(url).hostname;
+    // Official Deriv hosts ship these as noise. White-label sites use the
+    // same stock templates as their public Free Bots library (e.g. legacyprime.live).
+    return /(^|\.)deriv\.com$/i.test(host) || /derivbot/i.test(host) || /blockly/i.test(host);
+  } catch {
+    return false;
+  }
 }
 
 function normalizeName(value) {

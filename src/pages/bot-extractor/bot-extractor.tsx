@@ -23,6 +23,203 @@ function getBotSourceSite(source: string): string {
 const EXTRACTED_BOTS_STORAGE_KEY = 'bot-extractor:extracted-bots:v1';
 const EXTRACTED_BOTS_DB_KEY = 'bot-extractor:extracted-bots:v2';
 const BOT_DOWNLOAD_PASSWORD = '**********';
+const LEGACY_PRIME_ORIGIN = 'https://www.legacyprime.live';
+const LEGACY_PRIME_HOSTS = /(?:^|\.)(?:legacyprime\.live|nexusempire\.live|dtradinghub\.com)$/i;
+
+const LEGACY_PRIME_PRODUCT_LABELS: Record<string, string> = {
+    apex_ai_v3: 'Apex AI V3',
+    apex_ai_v3_lifetime: 'Apex AI V3 Lifetime',
+    apex_ai_v3_daily: 'Apex AI V3 Daily',
+    apex_ai_v3_weekly: 'Apex AI V3 Weekly',
+    apex_ai_v3_monthly: 'Apex AI V3 Monthly',
+    ai_version_two: 'Apex AI V2',
+    ai_version_two_lifetime: 'Apex AI V2 Lifetime',
+    ai_version_two_daily: 'Apex AI V2 Daily',
+    ai_version_two_weekly: 'Apex AI V2 Weekly',
+    ai_version_two_monthly: 'Apex AI V2 Monthly',
+    novagrid2026: 'NovaGrid 2026',
+    novagridElite: 'NovaGrid Elite',
+    optima_ai: 'Optima AI',
+    optima_ai_lifetime: 'Optima AI Lifetime',
+    optima_ai_daily: 'Optima AI Daily',
+    optima_ai_weekly: 'Optima AI Weekly',
+    optima_ai_monthly: 'Optima AI Monthly',
+    binarybeast_v2_pro: 'BinaryBeast V2 Pro',
+    binarybeast_v2_pro_lifetime: 'BinaryBeast V2 Pro Lifetime',
+    binarybeast_v2_pro_daily: 'BinaryBeast V2 Pro Daily',
+    binarybeast_v2_pro_weekly: 'BinaryBeast V2 Pro Weekly',
+    binarybeast_v2_pro_monthly: 'BinaryBeast V2 Pro Monthly',
+    signals: 'Signals',
+};
+
+interface LegacyPrimeProduct {
+    key: string;
+    rotCount: number;
+    dotCount: number;
+    hasMeta: boolean;
+}
+
+interface WebpackXmlChunk {
+    fileName: string;
+    chunkId: string;
+    chunkName: string;
+    hash: string;
+    url: string;
+}
+
+function isLegacyPrimeUrl(value: string): boolean {
+    try {
+        const host = new URL(value.startsWith('http') ? value : `https://${value}`).hostname.replace(/^www\./i, '');
+        return LEGACY_PRIME_HOSTS.test(host) || /legacyprime/i.test(host);
+    } catch {
+        return /legacyprime/i.test(value);
+    }
+}
+
+function findLegacyPrimeEntryScript(html: string, pageUrl: string): string | null {
+    const patterns = [
+        /["']((?:https?:\/\/[^"']+)?\/static\/js\/index\.[a-f0-9]+\.js)["']/i,
+        /["']((?:https?:\/\/[^"']+)?\/static\/js\/index\.js)["']/i,
+        /src=["']([^"']*\/static\/js\/[^"']*index[^"']*\.js)["']/i,
+    ];
+    for (const re of patterns) {
+        const match = html.match(re);
+        if (match?.[1]) {
+            try { return new URL(match[1], pageUrl).href; } catch {}
+        }
+    }
+    const candidates = [...html.matchAll(/["']([^"']*\/static\/js\/[^"']+\.js)["']/gi)]
+        .map(entry => entry[1])
+        .filter(Boolean);
+    const indexScript = candidates.find(path => /\/index\.[a-f0-9]+\.js$/i.test(path) || /\/index\.js$/i.test(path));
+    if (indexScript) {
+        try { return new URL(indexScript, pageUrl).href; } catch {}
+    }
+    return null;
+}
+
+function parseWebpackXmlChunks(jsContent: string, baseUrl: string): WebpackXmlChunk[] {
+    const fileNameToChunkId = new Map<string, string>();
+    let match: RegExpExecArray | null;
+
+    const contextRe = /["'](\.\/[A-Za-z0-9_\-]+\.xml)["']\s*:\s*\[\s*["'][^"']+["']\s*,\s*["'](\d+)["']\s*\]/g;
+    while ((match = contextRe.exec(jsContent))) {
+        fileNameToChunkId.set(match[1].replace(/^\.\//, ''), match[2]);
+    }
+    const compactContextRe = /["'](\.\/[A-Za-z0-9_\-]+\.xml)["']\s*:\s*["']?(\d+)["']?/g;
+    while ((match = compactContextRe.exec(jsContent))) {
+        const fileName = match[1].replace(/^\.\//, '');
+        if (!fileNameToChunkId.has(fileName)) fileNameToChunkId.set(fileName, match[2]);
+    }
+
+    const nameMap = new Map<string, string>();
+    const hashMap = new Map<string, string>();
+    const runtimeMatch = jsContent.match(/(?:d\.u|__webpack_require__\.u)\s*=\s*[^;]{0,4000}/s);
+    const runtimeMaps = runtimeMatch
+        ? [...runtimeMatch[0].matchAll(/\(\{([^{}]+)\}\)\[e\]/g)].map(entry => entry[1])
+        : [];
+    if (runtimeMaps.length >= 1) {
+        for (const entry of runtimeMaps[0].matchAll(/(?:^|,)(\d+)\s*:\s*["']([^"']+)["']/g)) {
+            if (/-xml$/i.test(entry[2]) || entry[2] === 'dbot-collection') nameMap.set(entry[1], entry[2]);
+        }
+    }
+    if (runtimeMaps.length >= 2) {
+        for (const entry of runtimeMaps[1].matchAll(/(?:^|,)(\d+)\s*:\s*["']([a-f0-9]{6,})["']/g)) {
+            hashMap.set(entry[1], entry[2]);
+        }
+    }
+    if (!nameMap.size) {
+        const nameRe = /(?:^|[,{])(\d+)\s*:\s*["']([A-Za-z0-9_\-]+-xml)["']/g;
+        while ((match = nameRe.exec(jsContent))) nameMap.set(match[1], match[2]);
+    }
+    if (!hashMap.size) {
+        const hashRe = /(?:^|[,{])(\d+)\s*:\s*["']([a-f0-9]{8})["']/g;
+        while ((match = hashRe.exec(jsContent))) hashMap.set(match[1], match[2]);
+    }
+
+    const chunks: WebpackXmlChunk[] = [];
+    for (const [fileName, chunkId] of fileNameToChunkId) {
+        const chunkName = nameMap.get(chunkId);
+        const hash = hashMap.get(chunkId);
+        if (!chunkName || !hash) continue;
+        try {
+            chunks.push({
+                fileName,
+                chunkId,
+                chunkName,
+                hash,
+                url: new URL(`/static/js/async/${chunkName}.${hash}.js`, baseUrl).href,
+            });
+        } catch {}
+    }
+    return chunks;
+}
+
+function extractXmlFromWebpackChunk(jsText: string): string | null {
+    const quoted = jsText.match(/'(<xml\b[\s\S]*?<\/xml>)'/) || jsText.match(/"(<xml\b[\s\S]*?<\/xml>)"/);
+    if (quoted?.[1]) {
+        const decoded = decodeMarkup(quoted[1]).trim();
+        if (isValidDerivBot(decoded)) return decoded;
+    }
+    return extractXmlDocuments(jsText)[0] || null;
+}
+
+function formatLegacyPrimeBotName(fileName: string): string {
+    const base = fileName.replace(/\.xml$/i, '');
+    if (/^[\d_]+$/.test(base)) return base.replace(/_/g, '-');
+    return base
+        .replace(/[_-]+/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, char => char.toUpperCase());
+}
+
+function catalogLegacyPrimeProducts(whitelistText: string): { products: LegacyPrimeProduct[]; lastUpdated: string; note: string } {
+    try {
+        const parsed = JSON.parse(whitelistText);
+        const products: LegacyPrimeProduct[] = [];
+        for (const [key, value] of Object.entries(parsed || {})) {
+            if (key === 'lastUpdated' || key === 'note') continue;
+            const entry = value as any;
+            if (!entry || typeof entry !== 'object') continue;
+            if (!('rot' in entry) && !('dot' in entry) && !('meta' in entry)) continue;
+            products.push({
+                key,
+                rotCount: Array.isArray(entry.rot) ? entry.rot.length : 0,
+                dotCount: Array.isArray(entry.dot) ? entry.dot.length : 0,
+                hasMeta: !!(entry.meta && Object.keys(entry.meta).length),
+            });
+        }
+        return { products, lastUpdated: parsed?.lastUpdated || '', note: parsed?.note || '' };
+    } catch {
+        return { products: [], lastUpdated: '', note: '' };
+    }
+}
+
+function extractLegacyPrimeStrategyCodes(jsContent: string): string[] {
+    const codes = new Set<string>();
+    const caseRe = /case\s*["']([A-Z][A-Z0-9_]{2,})["']\s*:/g;
+    let match: RegExpExecArray | null;
+    while ((match = caseRe.exec(jsContent))) {
+        const code = match[1];
+        if (/^(?:Blockly|math_|lists_|text_|logic_|controls_|loops_|variables_|procedures_)/.test(code)) continue;
+        if (/SNIPER|PRIME|UNDER|OVER|MOMENT|CASCADE|OSAM|MKOR|DIFFER|EVEN|TIME|FLIP|BOLLINGER|STATE|LEGOO|DP|REVERSE|BONNIE|PATTERN|FREQ|ZONE|STREAK|MULTI|DIGIT|PRICE|REVERSAL|POINT|CUSTOM|ATHENA|APEX|COLD|TREND|MATCH|FIRE/i.test(code)) {
+            codes.add(code);
+        }
+    }
+    const bonnieRe = /Bonnie[A-Za-z0-9_]*/g;
+    while ((match = bonnieRe.exec(jsContent))) codes.add(match[0]);
+    return [...codes].sort();
+}
+
+function extractLegacyPrimeProductFlags(jsContent: string): string[] {
+    const flags = new Set<string>();
+    const flagRe = /plentyProfitsPro|evenOddUnder[0-9][A-Za-z]*|speedTradingEnabled|SpeedTradingEnabled|athena_full_control|toolbar_chartlord|toolbar_entry_strategy|toolbar_entry_app_id|apex_ai|ai_version|novagrid|optima_ai|binarybeast|Anex/gi;
+    let match: RegExpExecArray | null;
+    while ((match = flagRe.exec(jsContent))) flags.add(match[0]);
+    return [...flags].sort();
+}
 
 /**
  * Foreign bot sites can ship newer/custom Blockly block types. Register a
@@ -160,7 +357,16 @@ function extractXmlDocuments(content: string): string[] {
 }
 
 function isBuiltInBotBundle(source: string): boolean {
-    return /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(source);
+    const matchesStockTemplate = /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(source);
+    if (!matchesStockTemplate) return false;
+    try {
+        const host = new URL(source).hostname;
+        // Official Deriv hosts ship these as noise. White-label sites use the
+        // same stock templates as their public Free Bots library.
+        return /(^|\.)deriv\.com$/i.test(host) || /derivbot/i.test(host) || /blockly/i.test(host);
+    } catch {
+        return false;
+    }
 }
 
 function normalizeBotName(name: string | null | undefined): string | null {
@@ -395,11 +601,216 @@ const BotExtractor = () => {
         throw new Error('All proxies failed');
     }, []);
 
+    const extractFromLegacyPrime = useCallback(async (overrideUrl?: string) => {
+        const rawUrl = (overrideUrl || url || LEGACY_PRIME_ORIGIN).trim();
+        let targetUrl = rawUrl;
+        if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+        if (!isLegacyPrimeUrl(targetUrl)) {
+            setError('Legacy Prime extractor targets legacyprime.live. Paste a Legacy Prime URL or leave the field empty.');
+            return;
+        }
+
+        setIsExtracting(true);
+        setError('');
+        setScanLog([]);
+
+        const addLocalLog = (msg: string) => setScanLog(prev => [...prev, msg]);
+        const seenContent = new Set<string>();
+        const allBots: ExtractedBot[] = [];
+
+        const fetchSafe = async (fetchTarget: string, timeout = 20000): Promise<string | null> => {
+            for (const proxyFn of CORS_PROXIES) {
+                try {
+                    const controller = new AbortController();
+                    const timer = setTimeout(() => controller.abort(), timeout);
+                    const res = await fetch(proxyFn(fetchTarget), { signal: controller.signal });
+                    clearTimeout(timer);
+                    if (res.ok) {
+                        const text = await res.text();
+                        if (text && text.length > 20) return text;
+                    }
+                } catch {}
+            }
+            return null;
+        };
+
+        try {
+            addLocalLog('--- Legacy Prime Extract ---');
+            addLocalLog(`Target: ${targetUrl}`);
+            setProgress('Fetching Legacy Prime homepage...');
+
+            let origin = LEGACY_PRIME_ORIGIN;
+            try { origin = new URL(targetUrl).origin; } catch {}
+
+            let entryScript = '';
+            for (const pageUrl of [targetUrl, `${origin}/`, `${origin}/app`]) {
+                const page = await fetchSafe(pageUrl);
+                if (!page) continue;
+                if (!/<!doctype html|<html\b/i.test(page.slice(0, 800)) && !page.includes('static/js/')) continue;
+                addLocalLog(`Fetched page: ${pageUrl} (${(page.length / 1024).toFixed(1)} KB)`);
+                entryScript = findLegacyPrimeEntryScript(page, pageUrl) || '';
+                if (entryScript) {
+                    addLocalLog(`Entry script: ${entryScript}`);
+                    break;
+                }
+            }
+
+            if (!entryScript) {
+                addLocalLog('Entry script not found in HTML — probing common paths...');
+                for (const probe of [`${origin}/static/js/index.js`, `${origin}/static/js/main.js`]) {
+                    const body = await fetchSafe(probe);
+                    if (body && body.includes('webpack') && body.includes('.xml')) {
+                        entryScript = probe;
+                        addLocalLog(`Entry script (probe): ${probe}`);
+                        break;
+                    }
+                }
+            }
+
+            if (!entryScript) {
+                throw new Error('Could not locate the Legacy Prime entry JavaScript bundle. The site layout may have changed.');
+            }
+
+            setProgress('Parsing webpack XML context map...');
+            addLocalLog('\n--- Step 2: Parsing webpack runtime ---');
+            const entryJs = await fetchSafe(entryScript, 45000);
+            if (!entryJs || /<!doctype html/i.test(entryJs.slice(0, 200))) {
+                throw new Error('Failed to fetch the Legacy Prime entry bundle.');
+            }
+
+            const chunks = parseWebpackXmlChunks(entryJs, origin);
+            addLocalLog(`Found ${chunks.length} stock XML template chunk(s)`);
+            for (const chunk of chunks) {
+                addLocalLog(`  ${chunk.fileName} -> ${chunk.chunkName}.${chunk.hash}.js`);
+            }
+
+            setProgress(`Fetching ${chunks.length} XML chunks...`);
+            addLocalLog('\n--- Step 3: Downloading stock Deriv XML templates ---');
+            if (!chunks.length) addLocalLog('  (no webpack XML chunks discovered)');
+
+            const chunkResults = await Promise.allSettled(chunks.map(async chunk => ({
+                chunk,
+                js: await fetchSafe(chunk.url, 30000),
+            })));
+            for (const result of chunkResults) {
+                if (result.status !== 'fulfilled' || !result.value.js) {
+                    addLocalLog('  ❌ Failed to download a chunk');
+                    continue;
+                }
+                const { chunk, js } = result.value;
+                const xml = extractXmlFromWebpackChunk(js);
+                if (!xml || !isValidDerivBot(xml)) {
+                    addLocalLog(`  ❌ ${chunk.fileName}: no valid bot XML in chunk`);
+                    continue;
+                }
+                if (seenContent.has(xml)) {
+                    addLocalLog(`  ⏭ ${chunk.fileName}: duplicate XML skipped`);
+                    continue;
+                }
+                seenContent.add(xml);
+                const name = formatLegacyPrimeBotName(chunk.fileName);
+                allBots.push({ name, xml, source: chunk.url, size: xml.length, fromTab: 'Legacy Prime' });
+                addLocalLog(`  ✅ ${name} (${(xml.length / 1024).toFixed(1)} KB)`);
+            }
+
+            setProgress('Cataloging Legacy Prime products...');
+            addLocalLog('\n--- Step 4: Public Legacy Prime APIs ---');
+            const whitelist = await fetchSafe(`${origin}/api/premium-whitelist`, 15000);
+            if (whitelist) {
+                const catalog = catalogLegacyPrimeProducts(whitelist);
+                addLocalLog(`Premium whitelist updated: ${catalog.lastUpdated || 'unknown'}`);
+                if (catalog.products.length) {
+                    addLocalLog(`Premium product keys (${catalog.products.length}):`);
+                    for (const product of catalog.products) {
+                        const label = LEGACY_PRIME_PRODUCT_LABELS[product.key] || product.key;
+                        addLocalLog(`  • ${label} (${product.key}): ${product.rotCount} real / ${product.dotCount} demo wallet(s)${product.hasMeta ? ' · has customer meta' : ''}`);
+                    }
+                    addLocalLog('Note: Apex AI V2/V3, NovaGrid, Optima AI, BinaryBeast, Signals, Anex are OAuth + whitelist gated. Their XML is not publicly downloadable without a whitelisted wallet.');
+                }
+            } else {
+                addLocalLog('  premium-whitelist API unreachable');
+            }
+
+            const videos = await fetchSafe(`${origin}/api/tutorial-videos`, 12000);
+            if (videos) {
+                try {
+                    const parsedVideos = JSON.parse(videos);
+                    const list = Array.isArray(parsedVideos?.videos) ? parsedVideos.videos : [];
+                    addLocalLog(`Tutorial videos: ${list.length}`);
+                    for (const video of list.slice(0, 8)) {
+                        addLocalLog(`  • ${video.title || video.id}`);
+                    }
+                } catch {
+                    addLocalLog('  tutorial-videos: response not JSON');
+                }
+            }
+
+            addLocalLog('\n--- Step 5: Athena / entry strategy catalog ---');
+            const strategies = extractLegacyPrimeStrategyCodes(entryJs);
+            addLocalLog(`Strategy codes found: ${strategies.length}`);
+            if (strategies.length) addLocalLog(strategies.join(', '));
+            const flags = extractLegacyPrimeProductFlags(entryJs);
+            if (flags.length) addLocalLog(`Product flags: ${flags.join(', ')}`);
+
+            addLocalLog('\n--- Step 6: Probing premium XML paths ---');
+            setProgress('Probing premium bot paths...');
+            const baseProducts = ['apex_ai_v3', 'ai_version_two', 'novagrid2026', 'novagridElite', 'optima_ai', 'binarybeast_v2_pro', 'signals', 'the_anex'];
+            const probeTemplates = [
+                (product: string) => `${origin}/xml/${product}.xml`,
+                (product: string) => `${origin}/bots/${product}.xml`,
+                (product: string) => `${origin}/api/premium/${product}.xml`,
+            ];
+            let gated = 0;
+            let premiumFound = 0;
+            for (const product of baseProducts) {
+                for (const build of probeTemplates) {
+                    const probeUrl = build(product);
+                    const body = await fetchSafe(probeUrl, 6000);
+                    if (!body) continue;
+                    if (/<html|<!doctype/i.test(body.slice(0, 300))) {
+                        gated++;
+                        continue;
+                    }
+                    const xml = extractXmlFromWebpackChunk(body) || (isValidDerivBot(body) ? body.trim() : null);
+                    if (xml && isValidDerivBot(xml) && !seenContent.has(xml)) {
+                        seenContent.add(xml);
+                        const name = LEGACY_PRIME_PRODUCT_LABELS[product] || formatLegacyPrimeBotName(product);
+                        allBots.push({ name, xml, source: probeUrl, size: xml.length, fromTab: 'Legacy Prime Premium' });
+                        premiumFound++;
+                        addLocalLog(`  ✅ Premium XML: ${name}`);
+                    }
+                }
+            }
+            if (!premiumFound) {
+                addLocalLog(`  No public premium XML (SPA shell / gated) on probed paths (${gated} SPA responses).`);
+                addLocalLog('  Premium bots require a whitelisted OAuth wallet (ROT/DOT) on legacyprime.live.');
+            }
+
+            setExtractedBots(prev => mergeExtractedBots(prev, allBots));
+            setProgress('');
+            addLocalLog(`\n=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
+            addLocalLog('Stock Deriv templates are public on Legacy Prime. Premium AI bots are membership-gated.');
+            if (!allBots.length) {
+                setError('No bots extracted from Legacy Prime. Public stock templates should normally be available — the site bundle layout may have changed.');
+            }
+        } catch (err: any) {
+            setError(`Legacy Prime extraction failed: ${err.message}`);
+            setProgress('');
+        } finally {
+            setIsExtracting(false);
+        }
+    }, [url]);
+
     const extractBots = useCallback(async () => {
         if (!url.trim()) { setError('Please enter a URL'); return; }
 
         let targetUrl = url.trim();
         if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
+
+        if (isLegacyPrimeUrl(targetUrl)) {
+            await extractFromLegacyPrime(targetUrl);
+            return;
+        }
 
         setIsExtracting(true);
         setError('');
@@ -712,7 +1123,7 @@ const BotExtractor = () => {
         } finally {
             setIsExtracting(false);
         }
-    }, [url, addLog]);
+    }, [url, addLog, extractFromLegacyPrime]);
 
     const loadBotToBuilder = useCallback(async (bot: ExtractedBot) => {
         if (!bot.xml) return;
@@ -888,7 +1299,7 @@ const BotExtractor = () => {
                 <div>
                     <h2 className='bot-extractor__title'>Bot Extractor</h2>
                     <p className='bot-extractor__subtitle'>
-                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files
+                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files. One-click Legacy Prime extractor included.
                     </p>
                 </div>
                 <button
@@ -943,6 +1354,18 @@ const BotExtractor = () => {
                         title='Run extractor on this page (must be on a Deriv bot site)'
                     >
                         Run on This Page
+                    </button>
+                    <button
+                        className='bot-extractor__btn bot-extractor__btn--legacy'
+                        onClick={() => extractFromLegacyPrime()}
+                        disabled={isExtracting || isDeepExtracting}
+                        title='Extract public Legacy Prime stock Deriv XML templates + catalog premium products (legacyprime.live)'
+                    >
+                        {isExtracting ? (
+                            <><span className='bot-extractor__spinner' /> Legacy Prime...</>
+                        ) : (
+                            'Legacy Prime'
+                        )}
                     </button>
                 </div>
                 {progress && <div className='bot-extractor__progress'>{progress}</div>}
