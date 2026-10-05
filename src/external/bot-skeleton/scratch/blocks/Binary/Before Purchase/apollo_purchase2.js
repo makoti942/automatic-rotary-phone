@@ -6,8 +6,22 @@ const ApolloPurchase = {
         // Start with the native purchase block so contract options and its
         // market/trade-type onchange behavior remain fully supported.
         window.Blockly.Blocks.purchase.init.call(this);
-        this.appendValueInput('PREDICTION').setCheck('Number').appendField(localize('prediction'));
+        this.updatePredictionInput();
         this.setTooltip(localize('Purchase a contract, with an optional prediction/barrier.'));
+    },
+    updatePredictionInput() {
+        const purchaseType = this.getFieldValue('PURCHASE_LIST');
+        const needsPrediction = ['DIGITOVER', 'DIGITUNDER', 'DIGITMATCH', 'DIGITDIFF'].includes(purchaseType);
+        const hasPrediction = !!this.getInput('PREDICTION');
+        if (needsPrediction && !hasPrediction) {
+            this.appendValueInput('PREDICTION').setCheck('Number').appendField(localize('prediction'));
+        } else if (!needsPrediction && hasPrediction) {
+            this.removeInput('PREDICTION', true);
+        }
+    },
+    onchange(event) {
+        window.Blockly.Blocks.purchase?.onchange?.call(this, event);
+        this.updatePredictionInput();
     },
     customContextMenu(menu) {
         modifyContextMenu(menu);
