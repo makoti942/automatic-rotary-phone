@@ -3,11 +3,16 @@ import { modifyContextMenu } from '../../../utils';
 
 const ApolloPurchase = {
     init() {
-        // Start with the native purchase block so contract options and its
-        // market/trade-type onchange behavior remain fully supported.
-        window.Blockly.Blocks.purchase.init.call(this);
+        // Use the native purchase schema and lifecycle. Calling purchase.init
+        // directly would lose its `definition()` method because Blockly binds
+        // the definition object to the new block type.
+        this.jsonInit(this.definition());
+        this.setNextStatement(false);
         this.updatePredictionInput();
         this.setTooltip(localize('Purchase a contract, with an optional prediction/barrier.'));
+    },
+    definition() {
+        return window.Blockly.Blocks.purchase.definition();
     },
     updatePredictionInput() {
         const purchaseType = this.getFieldValue('PURCHASE_LIST');
@@ -23,6 +28,9 @@ const ApolloPurchase = {
         window.Blockly.Blocks.purchase?.onchange?.call(this, event);
         this.updatePredictionInput();
     },
+    populatePurchaseList: window.Blockly.Blocks.purchase.populatePurchaseList,
+    customContextMenu: window.Blockly.Blocks.purchase.customContextMenu,
+    restricted_parents: ['before_purchase'],
     customContextMenu(menu) {
         modifyContextMenu(menu);
     },
