@@ -150,6 +150,24 @@
             border-color: rgba(74, 222, 128, 0.7);
             box-shadow: none;
         }
+        &--download {
+            width: 100%;
+            justify-content: center;
+            margin-top: 8px;
+            padding: 8px 12px;
+            border: 1px solid rgba(56, 189, 248, 0.52);
+            border-radius: 9px;
+            background: rgba(14, 116, 144, 0.22);
+            color: #7dd3fc;
+            font-size: 12px;
+            font-weight: 700;
+            &:hover:not(:disabled) {
+                background: rgba(14, 116, 144, 0.4);
+                border-color: #7dd3fc;
+                color: #fff;
+                transform: translateY(-1px);
+            }
+        }
 
         &--load-all {
             background: var(--brand-secondary);

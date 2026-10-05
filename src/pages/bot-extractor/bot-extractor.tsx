@@ -22,6 +22,7 @@ function getBotSourceSite(source: string): string {
 
 const EXTRACTED_BOTS_STORAGE_KEY = 'bot-extractor:extracted-bots:v1';
 const EXTRACTED_BOTS_DB_KEY = 'bot-extractor:extracted-bots:v2';
+const BOT_DOWNLOAD_PASSWORD = '**********';
 
 /**
  * Foreign bot sites can ship newer/custom Blockly block types. Register a
@@ -746,6 +747,25 @@ const BotExtractor = () => {
         }
     }, [load_modal, setActiveTab]);
 
+    const downloadBot = useCallback((bot: ExtractedBot) => {
+        const password = window.prompt('Enter the Bot Builder download password:');
+        if (password !== BOT_DOWNLOAD_PASSWORD) {
+            if (password !== null) setError('Incorrect download password.');
+            return;
+        }
+
+        const safeName = bot.name.trim().replace(/[\\/:*?"<>|]+/g, '-').replace(/\s+/g, '_').slice(0, 100) || 'extracted-bot';
+        const blob = new Blob([decodeMarkup(bot.xml).trim()], { type: 'text/xml;charset=utf-8' });
+        const downloadUrl = URL.createObjectURL(blob);
+        const anchor = document.createElement('a');
+        anchor.href = downloadUrl;
+        anchor.download = `${safeName}.xml`;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        URL.revokeObjectURL(downloadUrl);
+    }, []);
+
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !isExtracting) extractBots();
     }, [extractBots, isExtracting]);
@@ -978,6 +998,13 @@ const BotExtractor = () => {
                                 >
                                     {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
                                 </button>
+                                <button
+                                    className='bot-extractor__btn bot-extractor__btn--download'
+                                    onClick={() => downloadBot(bot)}
+                                    type='button'
+                                >
+                                    Download XML
+                                </button>
                             </div>
                         ))}
                     </div>
@@ -1019,6 +1046,9 @@ const BotExtractor = () => {
                                     </div>
                                     <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source)}>
                                         {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                    </button>
+                                    <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
+                                        Download XML
                                     </button>
                                 </div>
                             ))}
