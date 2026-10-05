@@ -343,6 +343,7 @@ const BotExtractor = () => {
     const [scanLog, setScanLog] = useState<string[]>([]);
     const [isBotDrawerOpen, setIsBotDrawerOpen] = useState(false);
     const [botSearch, setBotSearch] = useState('');
+    const drawerTouchStartX = React.useRef<number | null>(null);
 
     useEffect(() => {
         let active = true;
@@ -1012,13 +1013,23 @@ const BotExtractor = () => {
             {isBotDrawerOpen && (
                 <>
                     <button className='bot-extractor__drawer-backdrop' onClick={() => setIsBotDrawerOpen(false)} aria-label='Close extracted bot library' type='button' />
-                    <aside className='bot-extractor__drawer' aria-label='All extracted bots'>
+                    <aside
+                        className='bot-extractor__drawer'
+                        aria-label='All extracted bots'
+                        onTouchStart={event => { drawerTouchStartX.current = event.touches[0]?.clientX ?? null; }}
+                        onTouchEnd={event => {
+                            const startX = drawerTouchStartX.current;
+                            const endX = event.changedTouches[0]?.clientX ?? startX;
+                            drawerTouchStartX.current = null;
+                            if (startX !== null && endX !== null && endX - startX > 80) setIsBotDrawerOpen(false);
+                        }}
+                    >
                         <div className='bot-extractor__drawer-header'>
+                            <button className='bot-extractor__drawer-close' onClick={() => setIsBotDrawerOpen(false)} type='button' aria-label='Close'>×</button>
                             <div>
                                 <h3>All Extracted Bots</h3>
                                 <p>{extractedBots.length} bot{extractedBots.length === 1 ? '' : 's'} saved on this device</p>
                             </div>
-                            <button className='bot-extractor__drawer-close' onClick={() => setIsBotDrawerOpen(false)} type='button' aria-label='Close'>×</button>
                         </div>
                         <input
                             className='bot-extractor__drawer-search'

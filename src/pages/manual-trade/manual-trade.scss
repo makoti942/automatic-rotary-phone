@@ -625,6 +625,52 @@ $radius:   10px;
     }
 }
 
+/* Keep the complete manual-trade control surface visible on phone screens. */
+@media (max-width: 700px) {
+    .mt-page {
+        padding: 4px 6px 10px;
+        gap: 5px;
+    }
+
+    .mt-main,
+    .mt-tick-section,
+    .mt-trade-section {
+        gap: 6px;
+    }
+
+    .mt-symbol-bar { gap: 6px; }
+    .mt-select { padding: 6px 8px; font-size: 12px; }
+    .mt-status { padding: 3px 7px; font-size: 10px; }
+    .mt-tick-display { padding: 7px 8px; }
+    .mt-price { font-size: 19px; }
+    .mt-digit-row { gap: 6px; margin-top: 4px; }
+    .mt-last-digit { width: 31px; height: 31px; font-size: 16px; }
+    .mt-digit-label { font-size: 10px; }
+    .mt-history-trigger { padding: 5px 7px; font-size: 10px; }
+
+    .mt-stats { padding: 8px 9px 7px; }
+    .mt-stats-header { gap: 5px; margin-bottom: 7px; font-size: 10px; letter-spacing: 0.25px; }
+    .mt-running-trade { padding: 3px 5px; font-size: 8px; }
+    .mt-bars { gap: 2px; height: 105px; }
+    .mt-bar-top { height: 27px; padding-bottom: 2px; }
+    .mt-bar-pct { font-size: 8px; }
+    .mt-growth { font-size: 8px; }
+    .mt-bar-lbl { padding: 3px 0 1px; font-size: 10px; }
+    .mt-badge { font-size: 7px; padding: 1px 3px; }
+    .mt-badge--running { top: -16px; }
+
+    .mt-trade-section { padding: 8px; }
+    .mt-dd-btn { padding: 7px 9px; font-size: 12px; }
+    .mt-label { font-size: 9px; }
+    .mt-input { padding: 6px 8px; font-size: 12px; }
+    .mt-input-row { gap: 6px; }
+    .mt-entry-row { gap: 6px; }
+    .mt-entry-switch-wrap { gap: 5px; }
+    .mt-entry-digit-field { width: 58px; }
+    .mt-exec-row { gap: 6px; }
+    .mt-exec { min-height: 40px; padding: 9px 4px; font-size: 11px; line-height: 1.15; }
+}
+
 @keyframes mt-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.75; }
