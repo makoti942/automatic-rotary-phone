@@ -43,7 +43,8 @@ function registerCompatibilityBlocks(xml: string): string[] {
             Blockly.Blocks[type] = {
                 init(this: any) {
                     this.appendDummyInput('__compatibility_header').appendField(`Imported: ${type}`);
-                    const source = doc.querySelector(`block[type="${CSS.escape(type)}"], shadow[type="${CSS.escape(type)}"]`);
+                    const source = Array.from(doc.querySelectorAll('block, shadow'))
+                        .find(node => node.getAttribute('type') === type) as Element | undefined;
                     source?.querySelectorAll(':scope > field').forEach((field: Element) => {
                         const name = field.getAttribute('name');
                         if (name) this.appendDummyInput(`__field_${name}`).appendField(field.textContent || '', name);
@@ -56,11 +57,35 @@ function registerCompatibilityBlocks(xml: string): string[] {
                         const name = statement.getAttribute('name');
                         if (name) this.appendStatementInput(name).setCheck(null).appendField(name);
                     });
-                    this.setPreviousStatement(true, null);
-                    this.setNextStatement(true, null);
+                    const isValueBlock = source?.parentElement?.tagName.toLowerCase() === 'value';
+                    if (isValueBlock) this.setOutput(true, null);
+                    else {
+                        this.setPreviousStatement(true, null);
+                        this.setNextStatement(true, null);
+                    }
                     this.setColour(210);
                     this.setTooltip('Imported compatibility block. Original XML preserved.');
                 },
+            };
+            Blockly.JavaScript.javascriptGenerator.forBlock[type] = (block: any) => {
+                const generator = Blockly.JavaScript.javascriptGenerator;
+                const purchase = block.getFieldValue?.('PURCHASE_LIST');
+                if (purchase) {
+                    const prediction = generator.valueToCode(block, 'PREDICTION', generator.ORDER_ATOMIC);
+                    return `Bot.purchase(${JSON.stringify(purchase)}${prediction ? `, ${prediction}` : ''});\n`;
+                }
+                const option = block.getFieldValue?.('OPTION');
+                const variableId = block.getFieldValue?.('VAR');
+                if (option !== null && option !== undefined && variableId) {
+                    const variable = generator.variableDB_?.getName(variableId, Blockly.Variables.CATEGORY_NAME) || JSON.stringify(variableId);
+                    if (block.outputConnection && !block.previousConnection) {
+                        return [`${variable} === ${JSON.stringify(option)}`, generator.ORDER_EQUALITY];
+                    }
+                    return `${variable} = ${JSON.stringify(option)};\n`;
+                }
+                const isValueBlock = block.outputConnection && !block.previousConnection;
+                if (isValueBlock) return ['0', generator.ORDER_ATOMIC];
+                return '';
             };
             registered.push(type);
         });
@@ -693,7 +718,6 @@ const BotExtractor = () => {
         try {
             const xml = decodeMarkup(bot.xml).trim();
             if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid');
-            const compatibilityBlocks = registerCompatibilityBlocks(xml);
 
             // The extractor is a sub-tab, so Blockly may not be mounted yet.
             // Switch first, wait for the real workspace, then import. Importing
@@ -705,6 +729,10 @@ const BotExtractor = () => {
                 workspace = window.Blockly?.derivWorkspace;
             }
             if (!workspace) throw new Error('Bot Builder workspace is still loading. Please try Load to Builder again.');
+            // Register foreign block definitions only after the real Blockly
+            // runtime is mounted. This is the temporary compatibility bridge
+            // for site-specific blocks not shipped by this app.
+            const compatibilityBlocks = registerCompatibilityBlocks(xml);
             await load_modal.loadStrategyToBuilder(
                 { id: tempId, xml, name: bot.name, save_type: 'pending' },
                 true
