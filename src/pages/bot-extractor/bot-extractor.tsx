@@ -888,7 +888,7 @@ const BotExtractor = () => {
                             <button className='bot-extractor__drawer-close' onClick={() => setIsBotDrawerOpen(false)} type='button' aria-label='Close'>×</button>
                         </div>
                         <div className='bot-extractor__drawer-list'>
-                            {extractedBots.map((bot, index) => (
+                            {extractedBots.slice().reverse().map((bot, index) => (
                                 <div key={`${bot.source}-${index}`} className='bot-extractor__bot-card'>
                                     <div className='bot-extractor__bot-info'>
                                         <div className='bot-extractor__bot-name'>{bot.name}</div>
