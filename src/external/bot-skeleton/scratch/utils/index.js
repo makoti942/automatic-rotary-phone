@@ -7,7 +7,7 @@ import { LogTypes } from '../../constants/messages';
 import { error_message_map } from '../../utils/error-config';
 import { saveWorkspaceToRecent } from '../../utils/local-storage';
 import { observer as globalObserver } from '../../utils/observer';
-import { removeLimitedBlocks } from '../../utils/workspace';
+import { isPurchaseBlock, removeLimitedBlocks } from '../../utils/workspace';
 import BlockConversion from '../backward-compatibility';
 import DBotStore from '../dbot-store';
 import { saveAs } from '../shared';
@@ -82,8 +82,9 @@ export const validateErrorOnBlockDelete = () => {
     const blockX = blockRect?.left || 0;
     const blockY = blockRect?.top || 0;
     const mandatory_trade_option_block = getSelectedTradeType();
-    const required_block_types = [mandatory_trade_option_block, 'trade_definition', 'purchase', 'before_purchase'];
-    if (required_block_types?.includes(window.Blockly?.getSelected()?.type)) {
+    const selected_block = window.Blockly?.getSelected();
+    const required_block_types = [mandatory_trade_option_block, 'trade_definition', 'before_purchase'];
+    if (required_block_types.includes(selected_block?.type) || isPurchaseBlock(selected_block)) {
         if (
             blockY >= translate_Y - translate_offset &&
             blockY <= translate_Y + translate_offset &&
@@ -407,7 +408,9 @@ const getAllRequiredBlocks = (workspace, required_block_types) => {
 
 const getMissingBlocks = (workspace, required_block_types) => {
     return required_block_types.filter(blockType => {
-        return !workspace.getAllBlocks().some(block => block.type === blockType);
+        return !workspace.getAllBlocks().some(block =>
+            blockType === 'purchase' ? isPurchaseBlock(block) : block.type === blockType
+        );
     });
 };
 
@@ -420,8 +423,10 @@ const getDisabledBlocks = required_blocks_check => {
             .filter(block => required_block_types.includes(block.type))
             .map(block => [block.type, block.disabled])
     );
-    const mandatory_blocks = ['before_purchase', 'purchase', 'trade_definition', 'trade_definition_tradeoptions'];
-    const has_disabled_blocks = mandatory_blocks.some(type => disabled_blocks[type]);
+    const mandatory_blocks = ['before_purchase', 'trade_definition', 'trade_definition_tradeoptions'];
+    const has_disabled_blocks =
+        mandatory_blocks.some(type => disabled_blocks[type]) ||
+        workspace.getAllBlocks().some(block => isPurchaseBlock(block) && block.disabled);
 
     return has_disabled_blocks
         ? required_blocks_check.filter(block => block.disabled || block.childBlocks_?.some(child => child.disabled))
@@ -435,13 +440,15 @@ const throwNewErrorMessage = (error_blocks, key) => {
         else if (key === 'missing' && block) globalObserver.emit('ui.log.error', error_message_map?.()?.[block]?.[key]);
         else if (key === 'disabled' && block) {
             let parent_block_error = false;
-            const parent_error_message = error_message_map?.()?.[block.type]?.[key];
+            const parent_error_message = error_message_map?.()?.[block.type]?.[key] ||
+                (isPurchaseBlock(block) ? error_message_map?.()?.purchase?.[key] : undefined);
             if (block.disabled && parent_error_message) {
                 globalObserver.emit('ui.log.error', parent_error_message);
                 parent_block_error = true;
             } else if (!parent_block_error && block.childBlocks_) {
                 block.childBlocks_.forEach(childBlock => {
-                    const child_error_message = error_message_map?.()?.[childBlock.type]?.[key];
+                    const child_error_message = error_message_map?.()?.[childBlock.type]?.[key] ||
+                        (isPurchaseBlock(childBlock) ? error_message_map?.()?.purchase?.[key] : undefined);
                     if (child_error_message) globalObserver.emit('ui.log.error', child_error_message);
                 });
             }
