@@ -1,5 +1,6 @@
 const MAX_PAGES = 24;
 const MAX_BYTES = 4_000_000;
+const MAX_SCRIPT_BYTES = 12_000_000;
 const TIMEOUT_MS = 8_000;
 const MAX_BOTS = 250;
 
@@ -8,6 +9,7 @@ function decodeMarkup(value) {
     .replace(/\\u003[cC]/g, '<').replace(/\\u003[eE]/g, '>')
     .replace(/\\x3[cC]/g, '<').replace(/\\x3[eE]/g, '>')
     .replace(/\\u0026/g, '&').replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+    .replace(/\\u([0-9a-f]{4})/gi, (_, code) => String.fromCharCode(parseInt(code, 16)))
     .replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'").replace(/&amp;/gi, '&');
 }
@@ -48,12 +50,16 @@ function nameFromXml(xml) {
 
 function nameFromContext(content, position, source) {
   const beforeDocument = content.slice(0, position);
-  const moduleMatches = [...beforeDocument.matchAll(/(?:^|[,{}])(\d+):function\(/g)];
-  const moduleId = moduleMatches.pop()?.[1];
+  const moduleMatches = [...beforeDocument.matchAll(/(?:^|[,{}])(?:(\d+):function\(|(\d+)\(e,n,l\)\{)/g)];
+  const moduleMatch = moduleMatches.pop();
+  const moduleId = moduleMatch?.[1] || moduleMatch?.[2];
   if (moduleId) {
     const escapedId = moduleId.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const moduleFile = content.match(new RegExp(`["']([^"']+\\.xml)["']\\s*:\\s*["']${escapedId}["']`, 'i'));
-    if (moduleFile) return normalizeName(moduleFile[1].replace(/^\.\//, '').replace(/\.xml$/i, ''));
+    if (moduleFile) {
+      const fileName = moduleFile[1].replace(/^\.\//, '').split('/').pop() || moduleFile[1];
+      return normalizeName(fileName.replace(/\.xml$/i, ''));
+    }
   }
   const before = content.slice(Math.max(0, position - 2500), position);
   const match = [...before.matchAll(/(?:name|label|title|displayName|botName|strategyName)\s*[:=]\s*["'`]([^"'`]{2,140})["'`]/gi)].pop();
@@ -157,7 +163,16 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
       if (hash && !/[\\/]/.test(name)) add(`/static/js/async/${name}.${hash}.js`, true, true);
     }
     const contextEntries = /["']([^"']+\.xml)["']:\["[^"']+","(\d+)"\]/g;
+    const compactContextEntries = /["']([^"']+\.xml)["']\s*:\s*["']?(\d+)["']?/g;
     for (const match of content.matchAll(contextEntries)) {
+      const sourceName = match[1];
+      const chunkId = match[2];
+      candidateFiles.add(sourceName.replace(/^\.\//, ''));
+      const name = names.get(chunkId);
+      const hash = hashes.get(chunkId);
+      if (name && hash) add(`/static/js/async/${name}.${hash}.js`, true, true);
+    }
+    for (const match of content.matchAll(compactContextEntries)) {
       const sourceName = match[1];
       const chunkId = match[2];
       candidateFiles.add(sourceName.replace(/^\.\//, ''));
@@ -168,7 +183,8 @@ function addReferencedUrls(content, source, queue, targetHost, targetOrigin, can
   }
 }
 
-async function fetchText(url) {
+async function fetchText(url, options = {}) {
+  const maxBytes = options.maxBytes || MAX_BYTES;
   try {
     const response = await fetch(url, {
       redirect: 'follow',
@@ -180,9 +196,9 @@ async function fetchText(url) {
     });
     if (!response.ok) return null;
     const contentLength = Number(response.headers.get('content-length') || 0);
-    if (contentLength > MAX_BYTES) return null;
+    if (contentLength > maxBytes) return null;
     const text = await response.text();
-    return text.length <= MAX_BYTES ? { text, type: response.headers.get('content-type') || '' } : null;
+    return text.length <= maxBytes ? { text, type: response.headers.get('content-type') || '' } : null;
   } catch { return null; }
 }
 
@@ -312,7 +328,9 @@ async function fastBundleScan(startUrl) {
   }
   for (const match of page.text.matchAll(/https?:\/\/[^\s"'<>]+\.js(?:[?#][^\s"'<>]*)?/gi)) entryUrls.add(match[0]);
   const entries = [...entryUrls].slice(0, 12);
-  const entryResults = await Promise.allSettled(entries.map(async url => ({ url, result: await fetchText(url) })));
+  const entryResults = await Promise.allSettled(
+    entries.map(async url => ({ url, result: await fetchText(url, { maxBytes: MAX_SCRIPT_BYTES }) }))
+  );
   const chunkUrls = new Set();
   for (const item of entryResults) {
     if (item.status !== 'fulfilled' || !item.value.result) continue;
@@ -346,6 +364,10 @@ async function fastBundleScan(startUrl) {
     };
     const contextEntries = /["']([^"']+\.xml)["']:\[["'][^"']+["'],["'](\d+)["']\]/g;
     for (const match of result.text.matchAll(contextEntries)) {
+      addChunkForId(match[2]);
+    }
+    const compactContextEntries = /["']([^"']+\.xml)["']\s*:\s*["']?(\d+)["']?/g;
+    for (const match of result.text.matchAll(compactContextEntries)) {
       addChunkForId(match[2]);
     }
     // Also support the compact runtime mapping when the context map is
