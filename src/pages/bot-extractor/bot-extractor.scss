@@ -326,10 +326,10 @@
     &__drawer-list {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 16px;
         overflow-y: auto;
         padding: 16px 4px 20px 0;
-        .bot-extractor__bot-card { min-height: 116px; }
+        .bot-extractor__bot-card { min-height: 0; }
     }
 
     &__drawer-empty {
@@ -348,7 +348,7 @@
     &__bot-list {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-        gap: 10px;
+        gap: 16px;
         max-height: 80vh;
         overflow-y: auto;
         padding-right: 4px;
@@ -358,8 +358,10 @@
         display: flex;
         flex-direction: column;
         align-items: stretch;
-        justify-content: space-between;
-        min-height: 126px;
+        justify-content: flex-start;
+        min-height: 0;
+        height: auto;
+        box-sizing: border-box;
         padding: 12px 14px;
         background: linear-gradient(145deg, var(--general-section-1), rgba(99, 102, 241, 0.06));
         border-radius: 14px;
@@ -385,6 +387,9 @@
         flex: 0 0 auto;
         width: 100%;
         gap: 8px;
+        margin-top: 14px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(148, 163, 184, 0.16);
     }
 
     &__bot-name {
