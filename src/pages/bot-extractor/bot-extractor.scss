@@ -188,17 +188,6 @@
                 filter: brightness(1.1);
             }
         }
-
-        &--legacy {
-            background: linear-gradient(135deg, #0891b2, #06b6d4);
-            color: #fff;
-            border: 1px solid rgba(6, 182, 212, 0.55);
-
-            &:hover:not(:disabled) {
-                filter: brightness(1.08);
-                border-color: #67e8f9;
-            }
-        }
     }
 
     &__spinner {

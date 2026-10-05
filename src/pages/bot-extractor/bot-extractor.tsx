@@ -1299,7 +1299,7 @@ const BotExtractor = () => {
                 <div>
                     <h2 className='bot-extractor__title'>Bot Extractor</h2>
                     <p className='bot-extractor__subtitle'>
-                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files. One-click Legacy Prime extractor included.
+                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files
                     </p>
                 </div>
                 <button
@@ -1354,18 +1354,6 @@ const BotExtractor = () => {
                         title='Run extractor on this page (must be on a Deriv bot site)'
                     >
                         Run on This Page
-                    </button>
-                    <button
-                        className='bot-extractor__btn bot-extractor__btn--legacy'
-                        onClick={() => extractFromLegacyPrime()}
-                        disabled={isExtracting || isDeepExtracting}
-                        title='Extract public Legacy Prime stock Deriv XML templates + catalog premium products (legacyprime.live)'
-                    >
-                        {isExtracting ? (
-                            <><span className='bot-extractor__spinner' /> Legacy Prime...</>
-                        ) : (
-                            'Legacy Prime'
-                        )}
                     </button>
                 </div>
                 {progress && <div className='bot-extractor__progress'>{progress}</div>}
