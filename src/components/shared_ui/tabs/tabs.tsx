@@ -69,6 +69,15 @@ const Tabs = ({
     const last_chime_ref = React.useRef(0);
     const last_scroll_left_ref = React.useRef(0);
 
+    const getAudioContext = React.useCallback(() => {
+        const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
+        if (!AudioContextConstructor) return null;
+        const context = audio_context_ref.current ?? new AudioContextConstructor();
+        audio_context_ref.current = context;
+        if (context.state === 'suspended') void context.resume();
+        return context;
+    }, []);
+
     const playTabScrollChime = React.useCallback(() => {
         // Keep this asset-free and very short so tab navigation stays instant.
         // AudioContext is created from the user's tab interaction, avoiding
@@ -77,25 +86,22 @@ const Tabs = ({
         if (now - last_chime_ref.current < 55) return;
         last_chime_ref.current = now;
         try {
-            const AudioContextConstructor = window.AudioContext || (window as any).webkitAudioContext;
-            if (!AudioContextConstructor) return;
-            const context = audio_context_ref.current ?? new AudioContextConstructor();
-            audio_context_ref.current = context;
-            if (context.state === 'suspended') void context.resume();
+            const context = getAudioContext();
+            if (!context) return;
 
             const oscillator = context.createOscillator();
             const gain = context.createGain();
             const start = context.currentTime;
-            oscillator.type = 'sine';
-            oscillator.frequency.setValueAtTime(520, start);
-            oscillator.frequency.exponentialRampToValueAtTime(760, start + 0.045);
+            oscillator.type = 'triangle';
+            oscillator.frequency.setValueAtTime(560, start);
+            oscillator.frequency.exponentialRampToValueAtTime(840, start + 0.045);
             gain.gain.setValueAtTime(0.0001, start);
-            gain.gain.exponentialRampToValueAtTime(0.035, start + 0.008);
-            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.075);
+            gain.gain.exponentialRampToValueAtTime(0.105, start + 0.008);
+            gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.09);
             oscillator.connect(gain);
             gain.connect(context.destination);
             oscillator.start(start);
-            oscillator.stop(start + 0.08);
+            oscillator.stop(start + 0.095);
         } catch {
             // Sound is decorative; navigation must never fail if audio is blocked.
         }
@@ -107,6 +113,17 @@ const Tabs = ({
         last_scroll_left_ref.current = scrollLeft;
         playTabScrollChime();
     }, [playTabScrollChime]);
+
+    const handleTabStripWheel = React.useCallback((event: React.WheelEvent<HTMLUListElement>) => {
+        if (event.deltaX !== 0 || event.shiftKey) {
+            playTabScrollChime();
+        }
+    }, [playTabScrollChime]);
+
+    const primeTabScrollAudio = React.useCallback(() => {
+        getAudioContext();
+    }, [getAudioContext]);
+
     const pushHash = (hash: string) => {
         history.replace(`${history.location.pathname}${window.location.search}#${hash}`);
     };
@@ -208,6 +225,9 @@ const Tabs = ({
                         'dc-tabs__list--overflow-hidden': is_overflow_hidden,
                     })}
                     ref={tabs_wrapper_ref}
+                    onScroll={!is_scrollable ? handleTabStripScroll : undefined}
+                    onWheel={!is_scrollable ? handleTabStripWheel : undefined}
+                    onTouchStart={!is_scrollable ? primeTabScrollAudio : undefined}
                 >
                     <ThemedScrollbars
                         className='dc-themed-scrollbars-wrapper'
