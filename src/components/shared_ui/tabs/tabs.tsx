@@ -212,7 +212,12 @@ const Tabs = ({
             })}
             style={{ '--tab-width': `${tab_width}`, background: background_color } as React.CSSProperties}
         >
-            <div className={classNames({ [`dc-tabs__list--header--${className}`]: className })}>
+            <div
+                className={classNames({ [`dc-tabs__list--header--${className}`]: className })}
+                onScroll={handleTabStripScroll}
+                onWheel={handleTabStripWheel}
+                onTouchStart={primeTabScrollAudio}
+            >
                 <ul
                     className={classNames('dc-tabs__list', {
                         'dc-tabs__list--top': top,
