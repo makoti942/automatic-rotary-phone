@@ -991,20 +991,18 @@ const BotExtractor = () => {
                                         </span>
                                     </div>
                                 </div>
-                                <button
-                                    className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`}
-                                    onClick={() => loadBotToBuilder(bot)}
-                                    disabled={loadedBots.has(bot.source)}
-                                >
-                                    {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
-                                </button>
-                                <button
-                                    className='bot-extractor__btn bot-extractor__btn--download'
-                                    onClick={() => downloadBot(bot)}
-                                    type='button'
-                                >
-                                    Download XML
-                                </button>
+                                <div className='bot-extractor__bot-actions'>
+                                    <button
+                                        className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`}
+                                        onClick={() => loadBotToBuilder(bot)}
+                                        disabled={loadedBots.has(bot.source)}
+                                    >
+                                        {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                    </button>
+                                    <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
+                                        Download XML
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -1044,12 +1042,14 @@ const BotExtractor = () => {
                                             <span className='bot-extractor__bot-size'>{(bot.size / 1024).toFixed(1)} KB</span>
                                         </div>
                                     </div>
-                                    <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source)}>
-                                        {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
-                                    </button>
-                                    <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
-                                        Download XML
-                                    </button>
+                                    <div className='bot-extractor__bot-actions'>
+                                        <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source)}>
+                                            {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                        </button>
+                                        <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
+                                            Download XML
+                                        </button>
+                                    </div>
                                 </div>
                             ))}
                             {extractedBots.length > 0 && !extractedBots.some(bot => {
