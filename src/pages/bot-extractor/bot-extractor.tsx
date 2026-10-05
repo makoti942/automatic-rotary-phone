@@ -1312,18 +1312,14 @@ const BotExtractor = () => {
         let targetUrl = url.trim();
         if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
-        if (isLegacyPrimeUrl(targetUrl)) {
-            await extractFromLegacyPrime(targetUrl);
-            return;
-        }
-
         setIsDeepExtracting(true);
         setError('');
         setScanLog([]);
 
         const addLog = (msg: string) => setScanLog(prev => [...prev, msg]);
 
-        addLog('--- Deep Extract: Launching headless browser ---');
+        addLog('--- Deep Extract: Using /api/deep-extract server route ---');
+        addLog(`Target: ${targetUrl}`);
         setProgress('Starting browser...');
 
         try {
@@ -1344,11 +1340,11 @@ const BotExtractor = () => {
                 addLog(`Note: ${data.spaShells} path(s) returned SPA HTML (bots may not exist as .xml files on server)`);
             }
 
-            const allBots: ExtractedBot[] = data.bots.map((bot: any, i: number) => ({
+            const allBots: ExtractedBot[] = (Array.isArray(data.bots) ? data.bots : []).map((bot: any, i: number) => ({
                 name: bot.name || `Bot ${i + 1}`,
                 xml: bot.xml,
                 source: bot.source || targetUrl,
-                size: bot.size || bot.xml.length,
+                size: bot.size || bot.xml?.length || 0,
                 fromTab: 'Deep Extract',
             }));
 
@@ -1365,7 +1361,7 @@ const BotExtractor = () => {
         } finally {
             setIsDeepExtracting(false);
         }
-    }, [url, extractFromLegacyPrime]);
+    }, [url]);
 
     const extractFromCurrentPage = useCallback(async () => {
         setIsExtracting(true);
