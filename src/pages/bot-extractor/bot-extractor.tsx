@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
+import localForage from 'localforage';
 import './bot-extractor.scss';
 
 interface ExtractedBot {
@@ -20,6 +21,54 @@ function getBotSourceSite(source: string): string {
 }
 
 const EXTRACTED_BOTS_STORAGE_KEY = 'bot-extractor:extracted-bots:v1';
+const EXTRACTED_BOTS_DB_KEY = 'bot-extractor:extracted-bots:v2';
+
+/**
+ * Foreign bot sites can ship newer/custom Blockly block types. Register a
+ * visual compatibility block instead of deleting or rewriting those blocks.
+ * The original XML stays untouched; this only supplies Blockly with a shape
+ * so it can render and edit the imported document.
+ */
+function registerCompatibilityBlocks(xml: string): string[] {
+    if (typeof window === 'undefined' || !window.Blockly) return [];
+    const Blockly = window.Blockly as any;
+    const registered: string[] = [];
+    try {
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        const types = new Set(Array.from(doc.querySelectorAll('block, shadow'))
+            .map(node => node.getAttribute('type'))
+            .filter(Boolean) as string[]);
+        types.forEach(type => {
+            if (Blockly.Blocks[type]) return;
+            Blockly.Blocks[type] = {
+                init(this: any) {
+                    this.appendDummyInput('__compatibility_header').appendField(`Imported: ${type}`);
+                    const source = doc.querySelector(`block[type="${CSS.escape(type)}"], shadow[type="${CSS.escape(type)}"]`);
+                    source?.querySelectorAll(':scope > field').forEach((field: Element) => {
+                        const name = field.getAttribute('name');
+                        if (name) this.appendDummyInput(`__field_${name}`).appendField(field.textContent || '', name);
+                    });
+                    source?.querySelectorAll(':scope > value').forEach((value: Element) => {
+                        const name = value.getAttribute('name');
+                        if (name) this.appendValueInput(name).setCheck(null).appendField(name);
+                    });
+                    source?.querySelectorAll(':scope > statement').forEach((statement: Element) => {
+                        const name = statement.getAttribute('name');
+                        if (name) this.appendStatementInput(name).setCheck(null).appendField(name);
+                    });
+                    this.setPreviousStatement(true, null);
+                    this.setNextStatement(true, null);
+                    this.setColour(210);
+                    this.setTooltip('Imported compatibility block. Original XML preserved.');
+                },
+            };
+            registered.push(type);
+        });
+    } catch {
+        // Let the official loader report malformed XML; do not mutate it.
+    }
+    return registered;
+}
 
 function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
     const merged = [...existing];
@@ -261,15 +310,42 @@ const BotExtractor = () => {
             return Array.isArray(parsed) ? parsed.filter(bot => bot?.xml && bot?.name) : [];
         } catch { return []; }
     });
+    const [isLibraryHydrated, setIsLibraryHydrated] = useState(false);
     const [error, setError] = useState('');
     const [progress, setProgress] = useState('');
     const [loadedBots, setLoadedBots] = useState<Set<string>>(new Set());
     const [scanLog, setScanLog] = useState<string[]>([]);
     const [isBotDrawerOpen, setIsBotDrawerOpen] = useState(false);
+    const [botSearch, setBotSearch] = useState('');
 
     useEffect(() => {
-        try { window.localStorage.setItem(EXTRACTED_BOTS_STORAGE_KEY, JSON.stringify(extractedBots)); } catch {}
-    }, [extractedBots]);
+        let active = true;
+        (async () => {
+            try {
+                const saved = await localForage.getItem<ExtractedBot[]>(EXTRACTED_BOTS_DB_KEY);
+                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.xml && bot?.name));
+                else if (active) {
+                    const legacy = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
+                    const parsed = legacy ? JSON.parse(legacy) : [];
+                    if (Array.isArray(parsed) && parsed.length) {
+                        const valid = parsed.filter(bot => bot?.xml && bot?.name);
+                        setExtractedBots(valid);
+                        await localForage.setItem(EXTRACTED_BOTS_DB_KEY, valid);
+                    }
+                }
+            } catch {
+                // Keep the synchronously restored legacy list if IndexedDB is unavailable.
+            } finally {
+                if (active) setIsLibraryHydrated(true);
+            }
+        })();
+        return () => { active = false; };
+    }, []);
+
+    useEffect(() => {
+        if (!isLibraryHydrated) return;
+        localForage.setItem(EXTRACTED_BOTS_DB_KEY, extractedBots).catch(() => {});
+    }, [extractedBots, isLibraryHydrated]);
 
     const addLog = useCallback((msg: string) => {
         setScanLog(prev => [...prev, msg]);
@@ -617,6 +693,7 @@ const BotExtractor = () => {
         try {
             const xml = decodeMarkup(bot.xml).trim();
             if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid');
+            const compatibilityBlocks = registerCompatibilityBlocks(xml);
 
             // The extractor is a sub-tab, so Blockly may not be mounted yet.
             // Switch first, wait for the real workspace, then import. Importing
@@ -633,6 +710,9 @@ const BotExtractor = () => {
                 true
             );
             setLoadedBots(prev => new Set(prev).add(bot.source));
+            if (compatibilityBlocks.length) {
+                setError(`Loaded ${bot.name}. Preserved the original XML and added ${compatibilityBlocks.length} visual compatibility block(s): ${compatibilityBlocks.join(', ')}`);
+            }
         } catch (err: any) {
             setError(`Failed to load bot: ${err.message}`);
         }
@@ -887,8 +967,19 @@ const BotExtractor = () => {
                             </div>
                             <button className='bot-extractor__drawer-close' onClick={() => setIsBotDrawerOpen(false)} type='button' aria-label='Close'>×</button>
                         </div>
+                        <input
+                            className='bot-extractor__drawer-search'
+                            type='search'
+                            value={botSearch}
+                            onChange={event => setBotSearch(event.target.value)}
+                            placeholder='Search extracted bots...'
+                            aria-label='Search extracted bots'
+                        />
                         <div className='bot-extractor__drawer-list'>
-                            {extractedBots.slice().reverse().map((bot, index) => (
+                            {extractedBots.slice().reverse().filter(bot => {
+                                const query = botSearch.trim().toLowerCase();
+                                return !query || `${bot.name} ${getBotSourceSite(bot.source)} ${bot.fromTab}`.toLowerCase().includes(query);
+                            }).map((bot, index) => (
                                 <div key={`${bot.source}-${index}`} className='bot-extractor__bot-card'>
                                     <div className='bot-extractor__bot-info'>
                                         <div className='bot-extractor__bot-name'>{bot.name}</div>
@@ -903,6 +994,10 @@ const BotExtractor = () => {
                                     </button>
                                 </div>
                             ))}
+                            {extractedBots.length > 0 && !extractedBots.some(bot => {
+                                const query = botSearch.trim().toLowerCase();
+                                return !query || `${bot.name} ${getBotSourceSite(bot.source)} ${bot.fromTab}`.toLowerCase().includes(query);
+                            }) && <div className='bot-extractor__drawer-empty'>No bots match “{botSearch}”.</div>}
                         </div>
                     </aside>
                 </>
