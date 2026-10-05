@@ -115,7 +115,11 @@ function parseWebpackXmlChunks(jsContent: string, baseUrl: string): WebpackXmlCh
 
     const nameMap = new Map<string, string>();
     const hashMap = new Map<string, string>();
-    const runtimeMatch = jsContent.match(/(?:d\.u|__webpack_require__\.u)\s*=\s*[^;]{0,4000}/s);
+    // Rspack keeps the filename and hash maps in one long d.u expression. The
+    // old 4 KB window could cut the hash map in half after a site deployment,
+    // making every XML context entry look unresolved even though the chunks
+    // were still public.
+    const runtimeMatch = jsContent.match(/(?:d\.u|__webpack_require__\.u)\s*=\s*[^;]{0,16000}/s);
     const runtimeMaps = runtimeMatch
         ? [...runtimeMatch[0].matchAll(/\(\{([^{}]+)\}\)\[e\]/g)].map(entry => entry[1])
         : [];
@@ -125,7 +129,7 @@ function parseWebpackXmlChunks(jsContent: string, baseUrl: string): WebpackXmlCh
         }
     }
     if (runtimeMaps.length >= 2) {
-        for (const entry of runtimeMaps[1].matchAll(/(?:^|,)(\d+)\s*:\s*["']([a-f0-9]{6,})["']/g)) {
+        for (const entry of runtimeMaps[1].matchAll(/(?:^|,)(\d+)\s*:\s*["']([a-f0-9]{6,})["']/gi)) {
             hashMap.set(entry[1], entry[2]);
         }
     }
@@ -680,6 +684,7 @@ const BotExtractor = () => {
         const addLocalLog = (msg: string) => setScanLog(prev => [...prev, msg]);
         const seenContent = new Set<string>();
         const allBots: ExtractedBot[] = [];
+        const catalogBots: ExtractedBot[] = [];
 
         const fetchSafe = async (fetchTarget: string, timeout = 20000): Promise<string | null> => {
             for (const proxyFn of CORS_PROXIES) {
@@ -704,6 +709,7 @@ const BotExtractor = () => {
 
             let origin = LEGACY_PRIME_ORIGIN;
             try { origin = new URL(targetUrl).origin; } catch {}
+            catalogBots.push(...await discoverLegacyPrimeCatalog(origin, fetchSafe, addLocalLog));
 
             let entryScript = '';
             for (const pageUrl of [targetUrl, `${origin}/`, `${origin}/app`]) {
@@ -895,6 +901,9 @@ const BotExtractor = () => {
                 setProgress('');
             } else {
                 addLocalLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
+            }
+            if (catalogBots.length) {
+                setExtractedBots(prev => mergeExtractedBots(prev, catalogBots));
             }
         } catch (err: any) {
             setError(`Legacy Prime extraction failed: ${err.message}`);
