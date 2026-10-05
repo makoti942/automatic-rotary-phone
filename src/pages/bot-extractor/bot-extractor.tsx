@@ -10,6 +10,7 @@ interface ExtractedBot {
     source: string;
     size: number;
     fromTab: string;
+    catalogOnly?: boolean;
 }
 
 function getBotSourceSite(source: string): string {
@@ -295,11 +296,18 @@ function registerCompatibilityBlocks(xml: string): string[] {
 
 function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
     const merged = [...existing];
-    const seen = new Set(existing.map(bot => bot.xml.trim()));
+    const seen = new Set(existing.map(bot => bot.xml.trim() || `${bot.source}|${bot.name}`));
     for (const bot of incoming) {
         const xml = bot.xml.trim();
-        if (!xml || seen.has(xml)) continue;
-        seen.add(xml);
+        const catalogIndex = merged.findIndex(existingBot => existingBot.catalogOnly && existingBot.name.toLowerCase() === bot.name.toLowerCase() && xml);
+        if (catalogIndex >= 0) {
+            merged[catalogIndex] = { ...bot, xml, size: bot.size || xml.length };
+            seen.add(xml);
+            continue;
+        }
+        const key = xml || `${bot.source}|${bot.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
         merged.push({ ...bot, xml, size: bot.size || xml.length });
     }
     return merged.slice(-250);
@@ -310,6 +318,61 @@ const CORS_PROXIES = [
     (url: string) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
     (url: string) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
 ];
+
+const LEGACYPRIME_FREE_BOTS: Array<{ name: string; tab: string }> = [
+    { name: 'CFX Even/Odd', tab: 'Free Bots · Even/Odd' },
+    { name: 'CFX-025 Enhanced', tab: 'Free Bots · Even/Odd' },
+    { name: 'Even Odd Ghost V1 by Dexter', tab: 'Free Bots · Even/Odd' },
+    { name: 'CFX-025 Base', tab: 'Free Bots · Even/Odd' },
+    { name: 'PATEL (with Entry)', tab: 'Free Bots · Over/Under' },
+    { name: 'CEOSpeedBot (With Entry)', tab: 'Free Bots · Over/Under / Rise/Fall' },
+    { name: 'Over/Under Ghost by States FX', tab: 'Free Bots · Over/Under' },
+    { name: 'Over/Under Ghost V2 by States FX', tab: 'Free Bots · Over/Under' },
+    { name: 'Over2 Master', tab: 'Free Bots · Over/Under' },
+    { name: 'CFX Rise/Fall', tab: 'Free Bots · Rise/Fall' },
+    { name: 'MatchesMaster', tab: 'Free Bots · Matches' },
+    { name: 'Game Changer AI - etrades', tab: 'Free Bots · Multi-strategy' },
+    { name: 'Digit Hunter Pro', tab: 'Free Bots · Multi-strategy' },
+    { name: 'MarketMaker Pro Enhanced', tab: 'Free Bots · Multi-strategy' },
+    { name: 'Deriv Killer', tab: 'Free Bots · Multi-strategy' },
+];
+
+async function discoverLegacyPrimeCatalog(
+    baseUrl: string,
+    fetchText: (url: string, timeout?: number) => Promise<string | null>,
+    addLog: (message: string) => void,
+): Promise<ExtractedBot[]> {
+    const source = `${baseUrl}/api/membership/bots`;
+    const catalog: ExtractedBot[] = LEGACYPRIME_FREE_BOTS.map(bot => ({
+        name: bot.name,
+        xml: '',
+        source: `catalog:${baseUrl}#${encodeURIComponent(bot.name)}`,
+        size: 0,
+        fromTab: bot.tab,
+        catalogOnly: true,
+    }));
+
+    const membership = await fetchText(source, 8000);
+    try {
+        const payload = membership ? JSON.parse(membership) : null;
+        for (const bot of Array.isArray(payload?.bots) ? payload.bots : []) {
+            if (!bot?.name) continue;
+            catalog.push({
+                name: String(bot.name),
+                xml: '',
+                source: `catalog:${source}#${String(bot.id || bot.name)}`,
+                size: 0,
+                fromTab: 'Membership Bots',
+                catalogOnly: true,
+            });
+        }
+    } catch {
+        addLog('LegacyPrime membership catalog was not readable.');
+    }
+
+    addLog(`LegacyPrime catalog: ${catalog.length} named bot(s) found; XML access is shown honestly where the site protects it.`);
+    return catalog;
+}
 
 const COMMON_XML_DIRS = [
     '/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/',
@@ -539,7 +602,7 @@ const BotExtractor = () => {
         try {
             const saved = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
             const parsed = saved ? JSON.parse(saved) : [];
-            return Array.isArray(parsed) ? parsed.filter(bot => bot?.xml && bot?.name) : [];
+            return Array.isArray(parsed) ? parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly)) : [];
         } catch { return []; }
     });
     const [isLibraryHydrated, setIsLibraryHydrated] = useState(false);
@@ -556,12 +619,12 @@ const BotExtractor = () => {
         (async () => {
             try {
                 const saved = await localForage.getItem<ExtractedBot[]>(EXTRACTED_BOTS_DB_KEY);
-                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.xml && bot?.name));
+                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly)));
                 else if (active) {
                     const legacy = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
                     const parsed = legacy ? JSON.parse(legacy) : [];
                     if (Array.isArray(parsed) && parsed.length) {
-                        const valid = parsed.filter(bot => bot?.xml && bot?.name);
+                        const valid = parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly));
                         setExtractedBots(valid);
                         await localForage.setItem(EXTRACTED_BOTS_DB_KEY, valid);
                     }
@@ -942,6 +1005,11 @@ const BotExtractor = () => {
             discoverAssets(mainHtml, targetUrl);
             addLog(`Main page scanned, ${discoveredFiles.size} .xml files found`);
 
+            if (/^(?:www\.)?legacyprime\.live$/i.test(new URL(targetUrl).hostname)) {
+                addLog('\n--- LegacyPrime catalog discovery ---');
+                allBots.push(...await discoverLegacyPrimeCatalog(baseUrl, fetchTextSafe, addLog));
+            }
+
             addLog('\n--- Step 2: Scanning JS bundles ---');
             setProgress('Scanning JavaScript bundles...');
             const jsUrls = new Set<string>();
@@ -1166,7 +1234,10 @@ const BotExtractor = () => {
     }, [url, addLog, extractFromLegacyPrime]);
 
     const loadBotToBuilder = useCallback(async (bot: ExtractedBot) => {
-        if (!bot.xml) return;
+        if (!bot.xml) {
+            setError(`${bot.name} is listed in the public catalog, but its XML requires access on the source site.`);
+            return;
+        }
         const tempId = `extracted_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
             const xml = decodeMarkup(bot.xml).trim();
@@ -1200,6 +1271,10 @@ const BotExtractor = () => {
     }, [load_modal, setActiveTab]);
 
     const downloadBot = useCallback((bot: ExtractedBot) => {
+        if (!bot.xml) {
+            setError(`${bot.name} cannot be downloaded because the source site did not expose its XML publicly.`);
+            return;
+        }
         const password = window.prompt('Enter the Bot Builder download password:');
         if (password !== BOT_DOWNLOAD_PASSWORD) {
             if (password !== null) setError('Incorrect download password.');
@@ -1437,14 +1512,14 @@ const BotExtractor = () => {
 
                     <div className='bot-extractor__bot-list'>
                         {extractedBots.slice(-12).map((bot, index) => (
-                            <div key={index} className='bot-extractor__bot-card'>
+                            <div key={index} className={`bot-extractor__bot-card ${bot.catalogOnly ? 'bot-extractor__bot-card--catalog-only' : ''}`}>
                                 <div className='bot-extractor__bot-info'>
                                     <div className='bot-extractor__bot-name'>{bot.name}</div>
                                     <div className='bot-extractor__bot-meta'>
                                         <span className='bot-extractor__bot-source'>From {getBotSourceSite(bot.source)}</span>
                                         <span className='bot-extractor__bot-tab'>{bot.fromTab}</span>
                                         <span className='bot-extractor__bot-size'>
-                                            {(bot.size / 1024).toFixed(1)} KB
+                                            {bot.catalogOnly ? 'XML access required' : `${(bot.size / 1024).toFixed(1)} KB`}
                                         </span>
                                     </div>
                                 </div>
@@ -1452,12 +1527,12 @@ const BotExtractor = () => {
                                     <button
                                         className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`}
                                         onClick={() => loadBotToBuilder(bot)}
-                                        disabled={loadedBots.has(bot.source)}
+                                        disabled={loadedBots.has(bot.source) || bot.catalogOnly}
                                     >
-                                        {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                        {bot.catalogOnly ? 'XML access required' : loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
                                     </button>
-                                    <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
-                                        Download XML
+                                    <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button' disabled={bot.catalogOnly}>
+                                        {bot.catalogOnly ? 'XML not public' : 'Download XML'}
                                     </button>
                                 </div>
                             </div>
@@ -1500,21 +1575,21 @@ const BotExtractor = () => {
                                 const query = botSearch.trim().toLowerCase();
                                 return !query || `${bot.name} ${getBotSourceSite(bot.source)} ${bot.fromTab}`.toLowerCase().includes(query);
                             }).map((bot, index) => (
-                                <div key={`${bot.source}-${index}`} className='bot-extractor__bot-card'>
+                                <div key={`${bot.source}-${index}`} className={`bot-extractor__bot-card ${bot.catalogOnly ? 'bot-extractor__bot-card--catalog-only' : ''}`}>
                                     <div className='bot-extractor__bot-info'>
                                         <div className='bot-extractor__bot-name'>{bot.name}</div>
                                         <div className='bot-extractor__bot-meta'>
                                             <span className='bot-extractor__bot-source'>From {getBotSourceSite(bot.source)}</span>
                                             <span className='bot-extractor__bot-tab'>{bot.fromTab}</span>
-                                            <span className='bot-extractor__bot-size'>{(bot.size / 1024).toFixed(1)} KB</span>
+                                            <span className='bot-extractor__bot-size'>{bot.catalogOnly ? 'XML access required' : `${(bot.size / 1024).toFixed(1)} KB`}</span>
                                         </div>
                                     </div>
                                     <div className='bot-extractor__bot-actions'>
-                                        <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source)}>
-                                            {loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
+                                        <button className={`bot-extractor__btn bot-extractor__btn--load ${loadedBots.has(bot.source) ? 'bot-extractor__btn--loaded' : ''}`} onClick={() => loadBotToBuilder(bot)} disabled={loadedBots.has(bot.source) || bot.catalogOnly}>
+                                            {bot.catalogOnly ? 'XML access required' : loadedBots.has(bot.source) ? 'Loaded ✓' : 'Load to Builder'}
                                         </button>
-                                        <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button'>
-                                            Download XML
+                                        <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button' disabled={bot.catalogOnly}>
+                                            {bot.catalogOnly ? 'XML not public' : 'Download XML'}
                                         </button>
                                     </div>
                                 </div>

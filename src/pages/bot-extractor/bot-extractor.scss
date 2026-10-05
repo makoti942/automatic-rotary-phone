@@ -396,6 +396,15 @@
             transform: translateY(-2px);
             box-shadow: 0 10px 24px rgba(99, 102, 241, 0.14);
         }
+
+        &--catalog-only {
+            border-style: dashed;
+            border-color: rgba(245, 158, 11, 0.45);
+            background: linear-gradient(145deg, var(--general-section-1), rgba(245, 158, 11, 0.06));
+
+            .bot-extractor__bot-tab { color: #fbbf24; background: rgba(245, 158, 11, 0.14); }
+            .bot-extractor__bot-size { color: #fbbf24; }
+        }
     }
 
     &__bot-info {
