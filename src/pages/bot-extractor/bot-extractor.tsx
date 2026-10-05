@@ -788,10 +788,50 @@ const BotExtractor = () => {
 
             setExtractedBots(prev => mergeExtractedBots(prev, allBots));
             setProgress('');
-            addLocalLog(`\n=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
+            addLocalLog(`\n=== Client extract: ${allBots.length} bot(s) ===`);
             addLocalLog('Stock Deriv templates are public on Legacy Prime. Premium AI bots are membership-gated.');
+
             if (!allBots.length) {
-                setError('No bots extracted from Legacy Prime. Public stock templates should normally be available — the site bundle layout may have changed.');
+                addLocalLog('\nClient webpack path found 0 bots — trying server deep-extract fallback...');
+                setProgress('Trying server deep extract...');
+                try {
+                    const res = await fetch('/api/deep-extract', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: targetUrl }),
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        const serverBots: ExtractedBot[] = (data.bots || []).map((bot: any, i: number) => ({
+                            name: bot.name || `Legacy Prime Bot ${i + 1}`,
+                            xml: bot.xml,
+                            source: bot.source || targetUrl,
+                            size: bot.size || bot.xml?.length || 0,
+                            fromTab: 'Legacy Prime',
+                        }));
+                        const valid = serverBots.filter(bot => bot.xml && isValidDerivBot(bot.xml));
+                        if (valid.length) {
+                            setExtractedBots(prev => mergeExtractedBots(prev, valid));
+                            addLocalLog(`Server fallback extracted ${valid.length} bot(s)`);
+                            addLocalLog(`=== COMPLETE: ${valid.length} bot(s) extracted ===`);
+                        } else {
+                            addLocalLog(`Server fallback returned ${data.count || 0} bot(s), none valid`);
+                            addLocalLog('=== COMPLETE: 0 bot(s) extracted ===');
+                            setError('No bots extracted from Legacy Prime. Public stock templates should normally be available — the site bundle layout may have changed.');
+                        }
+                    } else {
+                        addLocalLog(`Server fallback HTTP ${res.status}`);
+                        addLocalLog('=== COMPLETE: 0 bot(s) extracted ===');
+                        setError('No bots extracted from Legacy Prime. Public stock templates should normally be available — the site bundle layout may have changed.');
+                    }
+                } catch (fallbackErr: any) {
+                    addLocalLog(`Server fallback failed: ${fallbackErr.message}`);
+                    addLocalLog('=== COMPLETE: 0 bot(s) extracted ===');
+                    setError('No bots extracted from Legacy Prime. Public stock templates should normally be available — the site bundle layout may have changed.');
+                }
+                setProgress('');
+            } else {
+                addLocalLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
             }
         } catch (err: any) {
             setError(`Legacy Prime extraction failed: ${err.message}`);
@@ -1188,6 +1228,11 @@ const BotExtractor = () => {
         let targetUrl = url.trim();
         if (!targetUrl.startsWith('http')) targetUrl = 'https://' + targetUrl;
 
+        if (isLegacyPrimeUrl(targetUrl)) {
+            await extractFromLegacyPrime(targetUrl);
+            return;
+        }
+
         setIsDeepExtracting(true);
         setError('');
         setScanLog([]);
@@ -1236,7 +1281,7 @@ const BotExtractor = () => {
         } finally {
             setIsDeepExtracting(false);
         }
-    }, [url]);
+    }, [url, extractFromLegacyPrime]);
 
     const extractFromCurrentPage = useCallback(async () => {
         setIsExtracting(true);
