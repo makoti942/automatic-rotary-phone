@@ -270,15 +270,15 @@ $radius:   10px;
 }
 
 @keyframes mt-flash-win {
-    0%   { background: rgba($win, 0.38); box-shadow: inset 0 0 24px rgba($win, 0.5); }
-    60%  { background: rgba($win, 0.12); }
-    100% { background: rgba($win, 0.05); box-shadow: none; }
+    0%   { filter: brightness(1.5); box-shadow: 0 0 24px rgba($win, 0.65); }
+    60%  { filter: brightness(1.15); box-shadow: 0 0 12px rgba($win, 0.3); }
+    100% { filter: none; box-shadow: none; }
 }
 
 @keyframes mt-flash-loss {
-    0%   { background: rgba($loss, 0.38); box-shadow: inset 0 0 24px rgba($loss, 0.5); }
-    60%  { background: rgba($loss, 0.12); }
-    100% { background: rgba($loss, 0.05); box-shadow: none; }
+    0%   { filter: brightness(1.5); box-shadow: 0 0 24px rgba($loss, 0.65); }
+    60%  { filter: brightness(1.15); box-shadow: 0 0 12px rgba($loss, 0.3); }
+    100% { filter: none; box-shadow: none; }
 }
 
 .mt-digit-ring {
