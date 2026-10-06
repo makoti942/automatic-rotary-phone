@@ -130,7 +130,7 @@ const ManualTrade = observer(() => {
                                 </span>
                             )}
                         </div>
-                        <div className='mt-bars'>
+                        <div className='mt-bars' role='list' aria-label='Digit distribution'>
                             {digitLabels.map((label, i) => {
                                 const pct = digitPcts[i];
                                 const growth = digitGrowth[i] ?? 0;
@@ -141,36 +141,29 @@ const ManualTrade = observer(() => {
                                 const flashCls =
                                     tradeFlash && tradeFlash.digit === i
                                         ? tradeFlash.win
-                                            ? 'mt-bar-col--win'
-                                            : 'mt-bar-col--loss'
-                                        : isExit ? 'mt-bar-col--exit' : '';
+                                            ? 'mt-digit-card--win'
+                                            : 'mt-digit-card--loss'
+                                        : isExit ? 'mt-digit-card--exit' : '';
                                 const isHot = i === hotIdx && digitTotal > 0;
                                 const isLow = i === lowIdx && digitTotal > 0;
-                                // Scale bars relative to the hottest digit (baseline
-                                // 10%): with near-uniform distributions all bars at
-                                // pct*4 looked identical, so differences were invisible.
-                                const maxPct = Math.max(10, ...digitPcts);
-                                const fillHeight = pct > 0 ? Math.max(6, (pct / maxPct) * 100) : 0;
                                 const growthIcon = growth > 2 ? '▲' : growth > 0.5 ? '△' : growth < -2 ? '▼' : growth < -0.5 ? '▽' : '–';
                                 const growthClass = growth > 0.5 ? 'mt-growth--up' : growth < -0.5 ? 'mt-growth--dn' : 'mt-growth--flat';
                                 return (
                                     <div
                                         key={i}
-                                        className={`mt-bar-col ${isSelected ? 'mt-bar-col--sel' : ''} ${isLive ? 'mt-bar-col--live' : ''} ${isRunningTarget ? 'mt-bar-col--running' : ''} ${flashCls}`}
+                                        role='listitem'
+                                        className={`mt-digit-card ${isHot ? 'mt-digit-card--hot' : ''} ${isLow ? 'mt-digit-card--low' : ''} ${isSelected ? 'mt-digit-card--sel' : ''} ${isLive ? 'mt-digit-card--live' : ''} ${isRunningTarget ? 'mt-digit-card--running' : ''} ${flashCls}`}
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
-                                        {isHot && <span className='mt-badge mt-badge--hot'>HOT</span>}
-                                        {isLow && <span className='mt-badge mt-badge--low'>LOW</span>}
-                                        {isRunningTarget && <span className='mt-badge mt-badge--running'>TRADE</span>}
-                                        <div className='mt-bar-top'>
-                                            <span className='mt-bar-pct'>{pct.toFixed(1)}%</span>
-                                            <span className={`mt-growth ${growthClass}`}>{growthIcon}</span>
+                                        <div className='mt-digit-ring' style={{ '--mt-digit-pct': `${pct}%` } as React.CSSProperties}>
+                                            <div className='mt-digit-ring__content'>
+                                                <span className='mt-digit-ring__digit'>{label}</span>
+                                                <span className='mt-digit-ring__pct'>{pct.toFixed(1)}%</span>
+                                            </div>
                                         </div>
-                                        <div className='mt-bar-track'>
-                                            <div className='mt-bar-fill' style={{ height: `${fillHeight}%` }} />
-                                        </div>
-                                        <span className={`mt-bar-lbl ${isSelected ? 'mt-bar-lbl--hi' : ''}`}>{label}</span>
+                                        <span className={`mt-growth ${growthClass}`}>{growthIcon} <span className='mt-growth__value'>{Math.abs(growth).toFixed(1)}</span></span>
+                                        {isLive && <span className='mt-digit-current-arrow' aria-label='Current appearing digit' />}
                                     </div>
                                 );
                             })}

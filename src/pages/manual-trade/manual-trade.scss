@@ -203,95 +203,70 @@ $radius:   10px;
 }
 
 .mt-bars {
-    display: flex;
-    align-items: stretch;
-    gap: clamp(5px, 1.2vw, 12px);
-    height: clamp(150px, 24vw, 200px);
+    display: grid;
+    grid-template-columns: repeat(5, minmax(54px, 1fr));
+    gap: 18px clamp(8px, 2vw, 22px);
+    padding: 4px 3px 10px;
 
     @include mobile-or-tablet-screen {
-        gap: clamp(3px, 1.4vw, 8px);
-        height: clamp(130px, 30vw, 170px);
+        gap: 14px 5px;
+        padding: 3px 0 8px;
     }
 }
 
-.mt-bar-col {
-    flex: 1;
+.mt-digit-card {
     display: flex;
     flex-direction: column;
+    align-items: center;
     cursor: pointer;
     position: relative;
     min-width: 0;
-    border-radius: 6px;
-    transition: background 0.15s;
+    border-radius: 50%;
+    transition: transform 0.2s, filter 0.2s;
 
     &:hover {
-        background: rgba($text, 0.04);
+        transform: translateY(-2px);
+        filter: brightness(1.18);
     }
 
-    &--running {
-        background: rgba(#38bdf8, 0.14);
-        box-shadow: inset 0 0 0 1px rgba(#38bdf8, 0.62), 0 0 16px rgba(#38bdf8, 0.12);
-
-        .mt-bar-fill { background: linear-gradient(180deg, #38bdf8, #2563eb) !important; box-shadow: 0 0 14px rgba(#38bdf8, 0.6); }
-        .mt-bar-lbl, .mt-bar-pct { color: #7dd3fc; }
+    &--hot .mt-digit-ring {
+        --mt-ring-color: #22c55e;
+        box-shadow: 0 0 18px rgba($win, 0.16);
     }
 
-    &--sel {
-        background: rgba($accent, 0.08);
-
-        .mt-bar-fill {
-            background: linear-gradient(180deg, $accent, $accent2) !important;
-            box-shadow: 0 0 10px rgba($accent, 0.45);
-        }
+    &--low .mt-digit-ring {
+        --mt-ring-color: #ef3340;
+        box-shadow: 0 0 18px rgba($loss, 0.16);
     }
 
-    /* Bright live cursor on the digit that just appeared */
-    &--live {
-        background: rgba(#fbbf24, 0.07);
-        animation: mt-live-pulse 1.1s ease-in-out infinite;
-
-        .mt-bar-lbl {
-            color: #fbbf24;
-            text-shadow: 0 0 10px rgba(#fbbf24, 0.7);
-        }
-        .mt-bar-track { border-bottom-color: rgba(#fbbf24, 0.55); }
+    &--sel .mt-digit-ring {
+        outline: 2px solid rgba($accent, 0.8);
+        outline-offset: 4px;
     }
 
-    /* Win / loss flash on the exit-spot digit at settlement */
-    &--win {
-        background: rgba($win, 0.14);
+    &--running .mt-digit-ring {
+        outline: 2px solid rgba(#38bdf8, 0.7);
+        outline-offset: 4px;
+    }
+
+    &--live .mt-digit-ring {
+        animation: mt-live-ring-pulse 1.1s ease-in-out infinite;
+    }
+
+    &--win .mt-digit-ring {
+        --mt-ring-color: #22c55e;
         animation: mt-flash-win 4s ease-out forwards;
-
-        .mt-bar-lbl {
-            color: $win;
-            font-weight: 800;
-            transform: scale(1.25);
-        }
-        .mt-bar-fill {
-            background: linear-gradient(180deg, $win, rgba($win, 0.5)) !important;
-            box-shadow: 0 0 16px rgba($win, 0.65);
-        }
     }
 
-    &--loss {
-        background: rgba($loss, 0.14);
+    &--loss .mt-digit-ring {
+        --mt-ring-color: #ef3340;
         animation: mt-flash-loss 4s ease-out forwards;
-
-        .mt-bar-lbl {
-            color: $loss;
-            font-weight: 800;
-            transform: scale(1.25);
-        }
-        .mt-bar-fill {
-            background: linear-gradient(180deg, $loss, rgba($loss, 0.5)) !important;
-            box-shadow: 0 0 16px rgba($loss, 0.65);
-        }
     }
 }
 
-@keyframes mt-live-pulse {
-    0%, 100% { box-shadow: inset 0 0 0 1px rgba(#fbbf24, 0.35); }
-    50%      { box-shadow: inset 0 0 14px 2px rgba(#fbbf24, 0.28); }
+@keyframes mt-live-ring-pulse {
+    0%, 100% { filter: drop-shadow(0 0 0 rgba($loss, 0)); }
+    50% { filter: drop-shadow(0 0 8px rgba($loss, 0.42)); }
 }
 
 @keyframes mt-flash-win {
@@ -306,80 +281,76 @@ $radius:   10px;
     100% { background: rgba($loss, 0.05); box-shadow: none; }
 }
 
-.mt-bar-top {
+.mt-digit-ring {
+    --mt-ring-color: #3b424d;
+    position: relative;
+    width: clamp(58px, 7vw, 80px);
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: conic-gradient(from -90deg, var(--mt-ring-color) 0 var(--mt-digit-pct), #272c33 var(--mt-digit-pct) 100%);
+    transition: box-shadow 0.2s, transform 0.2s;
+
+    &::before {
+        content: '';
+        position: absolute;
+        width: calc(clamp(58px, 7vw, 80px) - 10px);
+        aspect-ratio: 1;
+        border-radius: 50%;
+        background: $bg2;
+        box-shadow: inset 0 0 0 1px rgba(#fff, 0.02);
+    }
+}
+
+.mt-digit-ring__content {
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: flex-end;
-    gap: 2px;
-    height: 42px;
-    padding-bottom: 4px;
-    min-width: 0;
+    line-height: 1.05;
 }
 
-.mt-bar-pct {
-    font-size: clamp(9px, 1.6vw, 13px);
-    color: $text;
+.mt-digit-ring__digit {
+    color: #f8fafc;
+    font-size: clamp(18px, 2.4vw, 26px);
     font-weight: 800;
-    line-height: 1;
+}
+
+.mt-digit-ring__pct {
+    margin-top: 4px;
+    color: #a8b0bb;
+    font-size: clamp(10px, 1.4vw, 13px);
+    font-weight: 500;
 }
 
 .mt-growth {
-    font-size: 11px;
+    margin-top: 6px;
+    font-size: 9px;
+    font-weight: 700;
     line-height: 1;
     &--up  { color: $win; }
     &--dn  { color: $loss; }
     &--flat { color: $muted; }
 }
 
-/* Plot area — bars grow from a shared baseline */
-.mt-bar-track {
-    flex: 1;
-    display: flex;
-    align-items: flex-end;
-    justify-content: center;
-    border-bottom: 1px solid $border;
+.mt-growth__value {
+    font-weight: 500;
+    opacity: 0.8;
 }
 
-.mt-bar-fill {
-    width: 62%;
-    max-width: 34px;
-    background: linear-gradient(180deg, rgba($accent, 0.85), rgba($accent, 0.35));
-    border-radius: 5px 5px 0 0;
-    min-height: 3px;
-    transition: height 0.3s, opacity 0.2s, background 0.2s;
-}
-
-.mt-bar-col:hover .mt-bar-fill {
-    opacity: 0.85;
-}
-
-.mt-badge {
+.mt-digit-current-arrow {
     position: absolute;
-    top: -6px;
+    bottom: -14px;
     left: 50%;
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-top: 10px solid #ff5b5b;
     transform: translateX(-50%);
-    z-index: 1;
-    font-size: 9px;
-    font-weight: 800;
-    letter-spacing: 0.4px;
-    padding: 2px 5px;
-    border-radius: 4px;
-    line-height: 1.2;
-    white-space: nowrap;
-    &--hot { background: rgba($win, 0.18); color: $win; border: 1px solid rgba($win, 0.4); }
-    &--low { background: rgba($loss, 0.18); color: $loss; border: 1px solid rgba($loss, 0.4); }
-    &--running { top: -22px; background: rgba(#0284c7, 0.28); color: #7dd3fc; border: 1px solid rgba(#38bdf8, 0.65); box-shadow: 0 0 10px rgba(#38bdf8, 0.28); }
-}
-
-.mt-bar-lbl {
-    font-size: clamp(11px, 1.8vw, 14px);
-    color: $text;
-    text-align: center;
-    padding: 7px 0 2px;
-    font-weight: 700;
-    transition: transform 0.25s, color 0.2s;
-    &--hi { color: $accent; }
+    filter: drop-shadow(0 2px 3px rgba($loss, 0.45));
 }
 
 /* ── Trade section (right) ─────────────────────────── */
@@ -651,13 +622,13 @@ $radius:   10px;
     .mt-stats { padding: 8px 9px 7px; }
     .mt-stats-header { gap: 5px; margin-bottom: 7px; font-size: 10px; letter-spacing: 0.25px; }
     .mt-running-trade { padding: 3px 5px; font-size: 8px; }
-    .mt-bars { gap: 2px; height: 105px; }
-    .mt-bar-top { height: 27px; padding-bottom: 2px; }
-    .mt-bar-pct { font-size: 8px; }
-    .mt-growth { font-size: 8px; }
-    .mt-bar-lbl { padding: 3px 0 1px; font-size: 10px; }
-    .mt-badge { font-size: 7px; padding: 1px 3px; }
-    .mt-badge--running { top: -16px; }
+    .mt-bars { gap: 12px 2px; }
+    .mt-digit-ring { width: 48px; }
+    .mt-digit-ring::before { width: 40px; }
+    .mt-digit-ring__digit { font-size: 16px; }
+    .mt-digit-ring__pct { margin-top: 2px; font-size: 9px; }
+    .mt-growth { margin-top: 4px; font-size: 7px; }
+    .mt-digit-current-arrow { bottom: -11px; border-left-width: 5px; border-right-width: 5px; border-top-width: 8px; }
 
     .mt-trade-section { padding: 8px; }
     .mt-dd-btn { padding: 7px 9px; font-size: 12px; }
@@ -706,10 +677,9 @@ $radius:   10px;
 }
 
 /* ── Exit digit highlight (3s) ─────────────────────────────── */
-.mt-bar-col--exit {
-    .mt-bar-fill { background: linear-gradient(180deg, #f59e0b, #d97706) !important; }
-    .mt-bar-lbl { color: #f59e0b !important; font-weight: 700; }
-    .mt-bar-col--exit .mt-bar-pct { color: #f59e0b; }
+.mt-digit-card--exit {
+    .mt-digit-ring { --mt-ring-color: #f59e0b; }
+    .mt-digit-ring__pct { color: #f59e0b; }
 }
 
 /* ── Notification popups ───────────────────────────────────── */
