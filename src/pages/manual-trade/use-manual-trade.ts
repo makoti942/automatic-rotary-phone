@@ -76,6 +76,7 @@ export interface SessionTrade {
     status: 'open' | 'won' | 'lost';
     executedAt: number;
     closedAt?: number;
+    entryDigit?: number;
     exitDigit?: number;
 }
 
@@ -428,6 +429,14 @@ export function useManualTrade() {
                         const closedStatuses = ['sold', 'won', 'lost', 'closed', 'expired'];
                         const isSold = poc?.is_sold === true || Number(poc?.is_sold) === 1 || closedStatuses.includes(String(poc?.status ?? '').toLowerCase());
                         const hasSellValue = poc?.sell_price != null || poc?.sell_time != null || poc?.exit_tick != null;
+                        const entryValue = poc?.entry_tick ?? poc?.entry_tick_display ?? poc?.entry_spot ?? poc?.entry_price;
+                        const entryDigit = entryValue == null ? undefined : lastDigitOfPrice(entryValue);
+                        if (entryDigit !== undefined && trackedContractsRef.current.has(contractKey)) {
+                            setTradeHistory(previous => previous.map(trade => trade.contractId === Number(poc.contract_id) && trade.entryDigit === undefined ? {
+                                ...trade,
+                                entryDigit,
+                            } : trade));
+                        }
                         if ((!isSold && !hasSellValue) || !trackedContractsRef.current.has(contractKey)) return;
                         const key = String(poc.contract_id);
                         if (seenSoldRef.current.has(key)) return;
@@ -712,15 +721,16 @@ export function useManualTrade() {
                     stake: trade.stake,
                     openedAt: trade.openedAt,
                 });
-                setTradeHistory(previous => [...previous, {
-                    contractId: trade.contractId,
-                    symbol: activeSymbol,
+                        setTradeHistory(previous => [...previous, {
+                            contractId: trade.contractId,
+                            symbol: activeSymbol,
                     contractType: mode,
                     stake: trade.stake,
                     profit: null,
-                    status: 'open',
-                    executedAt: trade.openedAt,
-                }]);
+                            status: 'open',
+                            executedAt: trade.openedAt,
+                            entryDigit: trade.entryDigit,
+                        }]);
             } else {
                 setBuyError('Sandbox: insufficient balance or trade already open.');
             }

@@ -41,6 +41,7 @@ const ManualTrade = observer(() => {
 
     const [ddOpen, setDdOpen] = useState(false);
     const [historyOpen, setHistoryOpen] = useState(false);
+    const [historyClosing, setHistoryClosing] = useState(false);
     const [rawBarrier, setRawBarrier] = useState(String(selectedDigit));
     const [rawEntry, setRawEntry] = useState(String(entryDigitValue));
     const [rawDuration, setRawDuration] = useState(String(duration));
@@ -48,6 +49,12 @@ const ManualTrade = observer(() => {
     useEffect(() => setRawBarrier(String(selectedDigit)), [selectedDigit]);
     useEffect(() => setRawEntry(String(entryDigitValue)), [entryDigitValue]);
     useEffect(() => setRawDuration(String(duration)), [duration]);
+
+    const openHistory = () => {
+        setHistoryClosing(false);
+        setHistoryOpen(true);
+    };
+    const closeHistory = () => setHistoryClosing(true);
 
     const digitLabels = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
     const modeOptions = CONTRACT_MODE_OPTIONS[tradeType];
@@ -114,7 +121,7 @@ const ManualTrade = observer(() => {
                             <span className='mt-digit-label'>
                                 {lastDigit !== null ? 'Last Digit' : 'Awaiting tick…'}
                             </span>
-                            <button type='button' className='mt-history-trigger' onClick={() => setHistoryOpen(true)} aria-label='Show executed trades'>
+                            <button type='button' className='mt-history-trigger' onClick={openHistory} aria-label='Show executed trades'>
                                 <span className='mt-history-trigger-icon'>☰</span>
                                 Trades <b>{tradeHistory.length}</b>
                             </button>
@@ -330,14 +337,23 @@ const ManualTrade = observer(() => {
 
             {historyOpen && (
                 <>
-                    <div className='mt-history-backdrop' onClick={() => setHistoryOpen(false)} />
-                    <aside className='mt-history-drawer' aria-label='Executed trades'>
+                    <div className={`mt-history-backdrop ${historyClosing ? 'is-closing' : ''}`} onClick={closeHistory} />
+                    <aside
+                        className={`mt-history-drawer ${historyClosing ? 'is-closing' : ''}`}
+                        aria-label='Executed trades'
+                        onAnimationEnd={() => {
+                            if (historyClosing) {
+                                setHistoryOpen(false);
+                                setHistoryClosing(false);
+                            }
+                        }}
+                    >
                         <div className='mt-history-head'>
                             <div>
                                 <h2>Session Trades</h2>
                                 <span>{tradeHistory.length} executed trade{tradeHistory.length === 1 ? '' : 's'}</span>
                             </div>
-                            <button type='button' className='mt-history-close' onClick={() => setHistoryOpen(false)} aria-label='Close trade history'>←</button>
+                            <button type='button' className='mt-history-close' onClick={closeHistory} aria-label='Close trade history'>←</button>
                         </div>
                         <div className='mt-history-summary'>
                             <div><small>SESSION P/L</small><strong className={sessionProfit >= 0 ? 'is-profit' : 'is-loss'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div>
@@ -353,6 +369,10 @@ const ManualTrade = observer(() => {
                                         <span className={`mt-history-status mt-history-status--${trade.status}`}>{trade.status === 'open' ? 'RUNNING' : trade.status.toUpperCase()}</span>
                                     </div>
                                     <div className='mt-history-meta'><span>{SYMBOL_LABELS[trade.symbol] ?? trade.symbol}</span><span>#{trade.contractId}</span></div>
+                                    <div className='mt-history-spots'>
+                                        <div className='mt-history-spot mt-history-spot--entry'><small>ENTRY SPOT DIGIT</small><b>{trade.entryDigit ?? '—'}</b></div>
+                                        <div className='mt-history-spot mt-history-spot--exit'><small>EXIT SPOT DIGIT</small><b>{trade.exitDigit ?? '—'}</b></div>
+                                    </div>
                                     <div className='mt-history-values'>
                                         <div><small>STAKE</small><b>${trade.stake.toFixed(2)}</b></div>
                                         <div><small>PROFIT</small><b className={trade.profit !== null && trade.profit >= 0 ? 'is-profit' : trade.profit !== null ? 'is-loss' : ''}>{trade.profit === null ? '—' : `${trade.profit >= 0 ? '+' : ''}$${trade.profit.toFixed(2)}`}</b></div>

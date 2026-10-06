@@ -773,6 +773,7 @@ $radius:   10px;
     background: rgba(0, 0, 0, 0.46);
     animation: mt-history-fade 0.2s ease-out;
 }
+.mt-history-backdrop.is-closing { animation: mt-history-fade-out 0.28s ease-in forwards; }
 
 .mt-history-drawer {
     position: fixed;
@@ -780,7 +781,7 @@ $radius:   10px;
     right: 0;
     bottom: 0;
     z-index: 100001;
-    width: min(390px, 92vw);
+    width: min(330px, 86vw);
     padding: 0;
     overflow: hidden;
     background: $bg;
@@ -790,13 +791,14 @@ $radius:   10px;
     display: flex;
     flex-direction: column;
 }
+.mt-history-drawer.is-closing { animation: mt-history-slide-out 0.28s ease-in forwards; }
 
 .mt-history-head {
     display: flex;
     align-items: center;
     justify-content: space-between;
     gap: 14px;
-    padding: 14px 18px;
+    padding: 12px 14px;
     border-bottom: 1px solid $border;
     flex-shrink: 0;
     background: $bg;
@@ -806,15 +808,15 @@ $radius:   10px;
 .mt-history-head h2 { margin: 0 0 2px; color: $text; font-size: 15px; font-weight: 600; }
 .mt-history-head span { color: $muted; font-size: 11px; }
 .mt-history-close { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; margin-top: 2px; border: 1px solid $border; border-radius: 8px; background: rgba($text, 0.04); color: $muted; font-size: 24px; line-height: 1; cursor: pointer; &:hover { color: $text; background: rgba($text, 0.1); } }
-.mt-history-summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 16px 18px; padding: 13px; border: 1px solid $border; border-radius: 10px; background: rgba($accent, 0.07); flex-shrink: 0; }
+.mt-history-summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 12px 14px; padding: 10px; border: 1px solid $border; border-radius: 9px; background: rgba($accent, 0.07); flex-shrink: 0; }
 .mt-history-summary div { display: flex; flex-direction: column; gap: 4px; }
 .mt-history-summary small { color: $muted; font-size: 9px; letter-spacing: 0.6px; }
 .mt-history-summary strong { font-size: 20px; }
 .mt-history-summary .is-profit { color: $win; }
 .mt-history-summary .is-loss { color: $loss; }
 .mt-history-clear { padding: 7px 10px; border: 1px solid $border; border-radius: 7px; background: transparent; color: $muted; font-size: 11px; font-weight: 700; cursor: pointer; &:hover:not(:disabled) { color: $text; background: rgba($text, 0.08); } &:disabled { opacity: 0.4; cursor: not-allowed; } }
-.mt-history-list { display: flex; flex-direction: column; gap: 10px; padding: 0 18px 18px; overflow-y: auto; flex: 1; }
-.mt-history-card { padding: 13px; border: 1px solid $border; border-radius: 10px; background: $bg2; }
+.mt-history-list { display: flex; flex-direction: column; gap: 8px; padding: 0 14px 14px; overflow-y: auto; flex: 1; }
+.mt-history-card { padding: 10px; border: 1px solid $border; border-radius: 9px; background: $bg2; }
 .mt-history-card--won { border-color: rgba($win, 0.42); }
 .mt-history-card--lost { border-color: rgba($loss, 0.42); }
 .mt-history-card-top, .mt-history-meta, .mt-history-values { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -824,7 +826,15 @@ $radius:   10px;
 .mt-history-status--open { color: #7dd3fc; background: rgba(#0284c7, 0.18); }
 .mt-history-status--won { color: $win; background: rgba($win, 0.14); }
 .mt-history-status--lost { color: $loss; background: rgba($loss, 0.14); }
-.mt-history-values { margin-top: 13px; }
+.mt-history-spots { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-top: 10px; }
+.mt-history-spot { display: flex; align-items: center; justify-content: space-between; gap: 6px; padding: 6px 7px; border-radius: 6px; background: rgba($text, 0.04); }
+.mt-history-spot--entry { border-left: 2px solid #38bdf8; }
+.mt-history-spot--exit { border-left: 2px solid #f59e0b; }
+.mt-history-spot small { color: $muted; font-size: 7px; letter-spacing: 0.25px; line-height: 1.1; }
+.mt-history-spot b { color: $text; font-size: 16px; line-height: 1; }
+.mt-history-spot--entry b { color: #7dd3fc; }
+.mt-history-spot--exit b { color: #fbbf24; }
+.mt-history-values { margin-top: 10px; }
 .mt-history-values div { display: flex; flex-direction: column; gap: 3px; }
 .mt-history-values small { color: $muted; font-size: 9px; letter-spacing: 0.5px; }
 .mt-history-values b { color: $text; font-size: 14px; }
@@ -834,4 +844,6 @@ $radius:   10px;
 .mt-history-empty { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 48px 20px; color: $muted; text-align: center; }
 .mt-history-empty strong { color: $text; }
 @keyframes mt-history-slide { from { opacity: 0; transform: translateX(100%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes mt-history-slide-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
 @keyframes mt-history-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes mt-history-fade-out { from { opacity: 1; } to { opacity: 0; } }
