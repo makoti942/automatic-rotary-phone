@@ -250,7 +250,19 @@ $radius:   10px;
     }
 
     &--live .mt-digit-ring {
-        animation: mt-live-ring-pulse 1.1s ease-in-out infinite;
+        --mt-ring-color: #ff5252;
+        animation: mt-live-ring-pulse 1s ease-in-out infinite;
+
+        &::before {
+            background: linear-gradient(135deg, #ff6868, #ef4444);
+            box-shadow: inset 0 0 0 1px rgba(#fff, 0.35);
+        }
+
+        .mt-digit-ring__digit,
+        .mt-digit-ring__pct {
+            color: #fff;
+            text-shadow: 0 0 14px rgba(#ffd9d9, 0.95);
+        }
     }
 
     &--win .mt-digit-ring {
@@ -265,8 +277,8 @@ $radius:   10px;
 }
 
 @keyframes mt-live-ring-pulse {
-    0%, 100% { filter: drop-shadow(0 0 0 rgba($loss, 0)); }
-    50% { filter: drop-shadow(0 0 8px rgba($loss, 0.42)); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba($loss, 0), 0 0 0 0 rgba(#ff8a8a, 0); }
+    50% { box-shadow: 0 0 26px 6px rgba($loss, 0.9), 0 0 14px 2px rgba(#ffb3b3, 0.8); }
 }
 
 @keyframes mt-flash-win {
