@@ -163,7 +163,14 @@ const ManualTrade = observer(() => {
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
-                                        <div className='mt-digit-ring' style={{ '--mt-digit-pct': `${pct}%` } as React.CSSProperties}>
+                                        <div
+                                            className='mt-digit-ring'
+                                            style={{
+                                                '--mt-digit-pct': `${pct}%`,
+                                                '--mt-digit-arc-start': `${180 - (pct * 1.8)}deg`,
+                                                '--mt-digit-arc-end': `${180 + (pct * 1.8)}deg`,
+                                            } as React.CSSProperties}
+                                        >
                                             <div className='mt-digit-ring__content'>
                                                 <span className='mt-digit-ring__digit'>{label}</span>
                                                 <span className='mt-digit-ring__pct'>{pct.toFixed(1)}%</span>
@@ -371,7 +378,7 @@ const ManualTrade = observer(() => {
                                     <div className='mt-history-meta'><span>{SYMBOL_LABELS[trade.symbol] ?? trade.symbol}</span><span>#{trade.contractId}</span></div>
                                     <div className='mt-history-spots'>
                                         <div className='mt-history-spot mt-history-spot--entry'><small>ENTRY SPOT DIGIT</small><b>{trade.entryDigit ?? '—'}</b></div>
-                                        <div className='mt-history-spot mt-history-spot--exit'><small>EXIT SPOT DIGIT</small><b>{trade.exitDigit ?? '—'}</b></div>
+                                        <div className={`mt-history-spot mt-history-spot--exit ${trade.status === 'won' ? 'mt-history-spot--win' : trade.status === 'lost' ? 'mt-history-spot--loss' : ''}`}><small>EXIT SPOT DIGIT</small><b>{trade.exitDigit ?? '—'}</b></div>
                                     </div>
                                     <div className='mt-history-values'>
                                         <div><small>STAKE</small><b>${trade.stake.toFixed(2)}</b></div>

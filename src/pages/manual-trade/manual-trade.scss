@@ -284,18 +284,18 @@ $radius:   10px;
 .mt-digit-ring {
     --mt-ring-color: #3b424d;
     position: relative;
-    width: clamp(58px, 7vw, 80px);
+    width: clamp(68px, 8.5vw, 96px);
     aspect-ratio: 1;
     display: grid;
     place-items: center;
     border-radius: 50%;
-    background: conic-gradient(from -90deg, var(--mt-ring-color) 0 var(--mt-digit-pct), #272c33 var(--mt-digit-pct) 100%);
+    background: conic-gradient(from 0deg, #272c33 0 var(--mt-digit-arc-start), var(--mt-ring-color) var(--mt-digit-arc-start) var(--mt-digit-arc-end), #272c33 var(--mt-digit-arc-end) 360deg);
     transition: box-shadow 0.2s, transform 0.2s;
 
     &::before {
         content: '';
         position: absolute;
-        width: calc(clamp(58px, 7vw, 80px) - 10px);
+        width: calc(clamp(68px, 8.5vw, 96px) - 12px);
         aspect-ratio: 1;
         border-radius: 50%;
         background: $bg2;
@@ -623,12 +623,12 @@ $radius:   10px;
     .mt-stats-header { gap: 5px; margin-bottom: 7px; font-size: 10px; letter-spacing: 0.25px; }
     .mt-running-trade { padding: 3px 5px; font-size: 8px; }
     .mt-bars { gap: 12px 2px; }
-    .mt-digit-ring { width: 48px; }
-    .mt-digit-ring::before { width: 40px; }
+    .mt-digit-ring { width: 52px; }
+    .mt-digit-ring::before { width: 42px; }
     .mt-digit-ring__digit { font-size: 16px; }
     .mt-digit-ring__pct { margin-top: 2px; font-size: 9px; }
     .mt-growth { margin-top: 4px; font-size: 7px; }
-    .mt-digit-current-arrow { bottom: -11px; border-left-width: 5px; border-right-width: 5px; border-top-width: 8px; }
+    .mt-digit-current-arrow { bottom: -11px; border-left-width: 5px; border-right-width: 5px; border-bottom-width: 8px; }
 
     .mt-trade-section { padding: 8px; }
     .mt-dd-btn { padding: 7px 9px; font-size: 12px; }
@@ -834,6 +834,10 @@ $radius:   10px;
 .mt-history-spot b { color: $text; font-size: 16px; line-height: 1; }
 .mt-history-spot--entry b { color: #7dd3fc; }
 .mt-history-spot--exit b { color: #fbbf24; }
+.mt-history-spot--win { border-left-color: #38bdf8; }
+.mt-history-spot--win b { color: #38bdf8; }
+.mt-history-spot--loss { border-left-color: $loss; }
+.mt-history-spot--loss b { color: $loss; }
 .mt-history-values { margin-top: 10px; }
 .mt-history-values div { display: flex; flex-direction: column; gap: 3px; }
 .mt-history-values small { color: $muted; font-size: 9px; letter-spacing: 0.5px; }
