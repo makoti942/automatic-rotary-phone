@@ -678,8 +678,19 @@ $radius:   10px;
 
 /* ── Exit digit highlight (3s) ─────────────────────────────── */
 .mt-digit-card--exit {
+    background: radial-gradient(circle, rgba(#f59e0b, 0.24) 0 48%, transparent 70%);
+    box-shadow: 0 0 0 1px rgba(#f59e0b, 0.4), 0 0 22px rgba(#f59e0b, 0.36);
+    animation: mt-exit-pulse 1.2s ease-in-out infinite;
+
     .mt-digit-ring { --mt-ring-color: #f59e0b; }
-    .mt-digit-ring__pct { color: #f59e0b; }
+    .mt-digit-ring__digit,
+    .mt-digit-ring__pct,
+    .mt-growth { color: #ffd166; text-shadow: 0 0 10px rgba(#f59e0b, 0.7); }
+}
+
+@keyframes mt-exit-pulse {
+    0%, 100% { filter: brightness(1); }
+    50% { filter: brightness(1.22); }
 }
 
 /* ── Notification popups ───────────────────────────────────── */

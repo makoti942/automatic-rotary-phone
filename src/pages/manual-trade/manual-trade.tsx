@@ -152,7 +152,7 @@ const ManualTrade = observer(() => {
                                     <div
                                         key={i}
                                         role='listitem'
-                                        className={`mt-digit-card ${isHot ? 'mt-digit-card--hot' : ''} ${isLow ? 'mt-digit-card--low' : ''} ${isSelected ? 'mt-digit-card--sel' : ''} ${isLive ? 'mt-digit-card--live' : ''} ${isRunningTarget ? 'mt-digit-card--running' : ''} ${flashCls}`}
+                                        className={`mt-digit-card ${isHot ? 'mt-digit-card--hot' : ''} ${isLow ? 'mt-digit-card--low' : ''} ${isSelected ? 'mt-digit-card--sel' : ''} ${isLive ? 'mt-digit-card--live' : ''} ${isRunningTarget ? 'mt-digit-card--running' : ''} ${isExit ? 'mt-digit-card--exit' : ''} ${flashCls}`}
                                         onClick={() => setSelectedDigit(i)}
                                         title={`Digit ${i}: ${pct.toFixed(1)}% (${growth >= 0 ? '+' : ''}${growth.toFixed(1)}pp)`}
                                     >
