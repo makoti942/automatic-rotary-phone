@@ -910,11 +910,12 @@ $radius:   10px;
 .mt-mini-chart__surface .smartcharts-mobile,
 .mt-mini-chart__surface .cq-context,
 .mt-mini-chart__surface .ciq-chart-area,
+.mt-mini-chart__surface .ciq-chart,
 .mt-mini-chart__surface .chartContainer {
+    height: 100% !important;
     max-height: 100% !important;
     overflow: hidden;
 }
-.mt-mini-chart__surface .chartContainer { height: 100% !important; }
 .mt-mini-chart__surface .sc-toolbar-widget { top: 54px; transform: scale(0.78); transform-origin: top left; }
 .mt-mini-chart__surface .sc-navigation-widget { bottom: 12px; transform: scale(0.78); transform-origin: bottom left; }
 @media (max-width: 700px) {
