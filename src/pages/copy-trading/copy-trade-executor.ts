@@ -1,176 +1,286 @@
-import { getFollowers, getFollowerStats, setFollowerStats, clearFollowerStats, dbSet, pushFollowerTrade } from './firebase-config';
-
-// ══════════════════════════════════════════════════════════════
-// INLINED from @/auth/NewDerivAuth — NEVER import that module
-// ══════════════════════════════════════════════════════════════
-
-function convertToNewFormat(data: any): any {
-    if (!data || typeof data !== 'object') return data;
-    const out = Array.isArray(data) ? data.map(convertToNewFormat) : { ...data };
-    if (out.proposal === 1 && out.symbol) { out.underlying_symbol = out.symbol; delete out.symbol; }
-    if ('buy' in out) { out.buy = String(out.buy); }
-    if (out.parameters && typeof out.parameters === 'object') {
-        out.parameters = { ...out.parameters };
-        if ('symbol' in out.parameters) { out.parameters.underlying_symbol = out.parameters.symbol; delete out.parameters.symbol; }
-    }
-    return out;
-}
-
-function parseEventDetail(detail: any): any {
-    if (!detail) return null;
-    if (typeof detail === 'string') { try { return JSON.parse(detail); } catch { return null; } }
-    if (detail.data && typeof detail.data === 'string') { try { return JSON.parse(detail.data); } catch { return null; } }
-    return detail;
-}
-
-function onNewSystemMessageLocal(cb: (data: any) => void): () => void {
-    if (typeof window === 'undefined') return () => {};
-    const handler = (event: Event) => {
-        try { const parsed = parseEventDetail((event as CustomEvent).detail); if (parsed) cb(parsed); } catch (_) {}
-    };
-    window.addEventListener('newSystemMessage', handler);
-    return () => window.removeEventListener('newSystemMessage', handler);
-}
-
-function sendViaNewSystemLocal(msg: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-        const ws = (window as any)._newSystemWS;
-        if (!ws || ws.readyState !== WebSocket.OPEN) { reject(new Error('WebSocket not open')); return; }
-        const reqId = msg.req_id || Date.now();
-        const toSend = { ...convertToNewFormat(msg), req_id: reqId };
-        const msgType = Object.keys(msg).find(k => k !== 'passthrough' && k !== 'req_id');
-        const handler = (event: Event) => {
-            try {
-                const parsed = parseEventDetail((event as CustomEvent).detail);
-                if (!parsed) return;
-                if (parsed.req_id === reqId || (msgType && parsed.msg_type === msgType)) {
-                    window.removeEventListener('newSystemMessage', handler);
-                    if (parsed.error) reject(parsed); else resolve(parsed);
-                }
-            } catch (_) {}
-        };
-        window.addEventListener('newSystemMessage', handler);
-        ws.send(JSON.stringify(toSend));
-        setTimeout(() => { window.removeEventListener('newSystemMessage', handler); reject(new Error('Timeout')); }, 30000);
-    });
-}
-
-// ══════════════════════════════════════════════════════════════
-// Per-follower trade via DIRECT TOKEN AUTH (fast, instant)
-// 1. Open WS to Deriv
-// 2. Authorize with follower's API token
-// 3. Send proposal → buy
-// No OTP, no REST call — direct WebSocket trading
-// ══════════════════════════════════════════════════════════════
+// Direct multi-account copy execution for the Copy Trading tab.
+// Tokens stay in this browser's localStorage and are never sent to Firebase.
 
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
 const WS_URL = `wss://api.derivws.com/trading/v1/websockets/v3?app_id=${APP_ID}`;
+const STORAGE_KEY = 'mw_copy_api_accounts';
 
-async function buyOnFollowerAccount(
-    followerToken: string,
-    accountId: string,
-    contractParams: Record<string, unknown>,
-    stake: number
-): Promise<any> {
-    const tag = accountId.slice(-4);
-    const ws = new WebSocket(WS_URL);
+type AccountStatus = 'connecting' | 'connected' | 'error';
 
+export interface CopyAccount {
+    id: string;
+    loginid: string;
+    name: string;
+    balance: number | null;
+    currency: string;
+    isDemo: boolean;
+    status: AccountStatus;
+    tokenHint: string;
+    error?: string;
+}
+
+interface StoredAccount {
+    id: string;
+    token: string;
+    loginid?: string;
+    name?: string;
+    balance?: number | null;
+    currency?: string;
+    isDemo?: boolean;
+}
+
+interface PendingRequest {
+    resolve: (data: any) => void;
+    reject: (error: Error) => void;
+    timer: ReturnType<typeof setTimeout>;
+}
+
+interface AccountSession extends StoredAccount {
+    ws: WebSocket | null;
+    status: AccountStatus;
+    error?: string;
+    pending: Map<number, PendingRequest>;
+    nextReqId: number;
+}
+
+const sessions = new Map<string, AccountSession>();
+const managedSockets = new WeakSet<WebSocket>();
+const listeners = new Set<(accounts: CopyAccount[]) => void>();
+let initialized = false;
+let interceptorInstalled = false;
+let origProtoSend: ((data: string | ArrayBuffer | Blob) => void) | null = null;
+let proposalParams: Record<string, unknown> | null = null;
+let messageUnsub: (() => void) | null = null;
+
+function readStored(): StoredAccount[] {
+    try {
+        const value = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+        return Array.isArray(value) ? value.filter(a => a && a.id && a.token) : [];
+    } catch { return []; }
+}
+
+function persist() {
+    try {
+        const records = Array.from(sessions.values()).map(({ ws, pending, nextReqId, status, error, ...record }) => record);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    } catch {}
+}
+
+function accountView(session: AccountSession): CopyAccount {
+    return {
+        id: session.id,
+        loginid: session.loginid || 'Authorizing…',
+        name: session.name || 'Authorizing account…',
+        balance: session.balance ?? null,
+        currency: session.currency || 'USD',
+        isDemo: !!session.isDemo,
+        status: session.status,
+        tokenHint: `••••${session.token.slice(-4)}`,
+        error: session.error,
+    };
+}
+
+function notify() {
+    const value = Array.from(sessions.values()).map(accountView);
+    listeners.forEach(listener => listener(value));
+}
+
+function parseName(authorize: any): string {
+    return authorize?.fullname || [authorize?.first_name, authorize?.last_name].filter(Boolean).join(' ') || authorize?.loginid || 'Deriv account';
+}
+
+function failPending(session: AccountSession, error: Error) {
+    session.pending.forEach(request => {
+        clearTimeout(request.timer);
+        request.reject(error);
+    });
+    session.pending.clear();
+}
+
+function request(session: AccountSession, message: Record<string, unknown>): Promise<any> {
     return new Promise((resolve, reject) => {
-        let done = false;
-        const cleanup = () => { done = true; try { ws.close(); } catch {} };
-        const timeout = setTimeout(() => { cleanup(); if (!done) reject(new Error('Follower buy timeout')); }, 30000);
+        if (!session.ws || session.ws.readyState !== WebSocket.OPEN) {
+            reject(new Error('Account connection is not ready'));
+            return;
+        }
+        const reqId = ++session.nextReqId;
+        const timer = setTimeout(() => {
+            session.pending.delete(reqId);
+            reject(new Error('Account request timed out'));
+        }, 30000);
+        session.pending.set(reqId, { resolve, reject, timer });
+        session.ws.send(JSON.stringify({ ...message, req_id: reqId }));
+    });
+}
 
-        ws.onopen = () => {
-            console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
-            ws.send(JSON.stringify({ authorize: followerToken }));
-        };
+function handleSessionMessage(session: AccountSession, data: any) {
+    if (data.error) {
+        const error = new Error(data.error.message || 'Deriv account request failed');
+        if (!session.loginid) {
+            session.status = 'error';
+            session.error = error.message;
+            notify();
+        }
+        if (data.req_id && session.pending.has(data.req_id)) {
+            const pending = session.pending.get(data.req_id)!;
+            clearTimeout(pending.timer);
+            session.pending.delete(data.req_id);
+            pending.reject(error);
+        }
+        return;
+    }
+    if (data.authorize) {
+        const auth = data.authorize;
+        session.loginid = String(auth.loginid || '');
+        session.name = parseName(auth);
+        session.currency = String(auth.currency || 'USD');
+        session.isDemo = Boolean(auth.is_virtual || String(auth.loginid || '').startsWith('VRTC'));
+        session.balance = auth.balance != null ? Number(auth.balance) : session.balance ?? null;
+        session.status = 'connected';
+        session.error = undefined;
+        persist();
+        notify();
+        request(session, { balance: 1, subscribe: 1 }).catch(() => {});
+        return;
+    }
+    if (data.balance) {
+        session.balance = Number(data.balance.balance);
+        session.currency = String(data.balance.currency || session.currency || 'USD');
+        persist();
+        notify();
+    }
+    if (data.req_id && session.pending.has(data.req_id)) {
+        const pending = session.pending.get(data.req_id)!;
+        clearTimeout(pending.timer);
+        session.pending.delete(data.req_id);
+        pending.resolve(data);
+    }
+}
 
-        ws.onmessage = (event) => {
-            if (done) return;
+function connect(session: AccountSession): Promise<CopyAccount> {
+    return new Promise((resolve, reject) => {
+        let settled = false;
+        try {
+            session.ws = new WebSocket(WS_URL);
+            managedSockets.add(session.ws);
+        }
+        catch (error: any) {
+            session.status = 'error';
+            session.error = error?.message || 'Unable to open account connection';
+            notify();
+            reject(error);
+            return;
+        }
+        session.status = 'connecting';
+        session.error = undefined;
+        notify();
+        const timeout = setTimeout(() => {
+            if (!settled) {
+                settled = true;
+                session.status = 'error';
+                session.error = 'Authorization timed out';
+                try { session.ws?.close(); } catch {}
+                notify();
+                reject(new Error(session.error));
+            }
+        }, 30000);
+        session.ws.onopen = () => session.ws?.send(JSON.stringify({ authorize: session.token }));
+        session.ws.onmessage = event => {
             try {
                 const data = JSON.parse(event.data);
-                if (data.error) {
-                    console.error(`[CopyTrade] ...${tag} error:`, data.error.message);
-                    cleanup();
+                const wasAuthorized = session.status === 'connected';
+                handleSessionMessage(session, data);
+                if (!settled && !wasAuthorized && session.status === 'connected') {
+                    settled = true;
                     clearTimeout(timeout);
-                    reject(new Error(data.error.message));
-                    return;
-                }
-                // Step 1: Authorized → send proposal
-                if (data.authorize) {
-                    console.log(`[CopyTrade] ...${tag} authorized, sending proposal: ${contractParams.contract_type}...`);
-                    ws.send(JSON.stringify({
-                        proposal: 1,
-                        amount: stake,
-                        basis: 'stake',
-                        contract_type: contractParams.contract_type,
-                        currency: contractParams.currency,
-                        duration: contractParams.duration,
-                        duration_unit: contractParams.duration_unit,
-                        underlying_symbol: contractParams.underlying_symbol,
-                        barrier: contractParams.barrier,
-                        req_id: 1,
-                    }));
-                    return;
-                }
-                // Step 2: Proposal received → buy
-                if (data.req_id === 1 && data.proposal) {
-                    console.log(`[CopyTrade] ...${tag} proposal: ${data.proposal.id}, buying...`);
-                    ws.send(JSON.stringify({ buy: data.proposal.id, price: data.proposal.ask_price, req_id: 2 }));
-                    return;
-                }
-                // Step 3: Buy success → resolve
-                if (data.req_id === 2 && data.buy) {
-                    console.log(`[CopyTrade] ...${tag} BUY SUCCESS:`, data.buy.contract_id);
-                    cleanup();
-                    clearTimeout(timeout);
-                    resolve(data.buy);
+                    persist();
+                    resolve(accountView(session));
                 }
             } catch {}
         };
-
-        ws.onerror = (err) => {
-            console.error(`[CopyTrade] ...${tag} WS error:`, err);
-            cleanup();
-            clearTimeout(timeout);
-            if (!done) reject(new Error('Follower WS connection failed'));
-        };
-
-        ws.onclose = () => {
-            if (!done) {
-                cleanup();
+        session.onerror = () => {
+            if (!settled) {
+                settled = true;
                 clearTimeout(timeout);
-                reject(new Error('Follower WS closed'));
+                session.status = 'error';
+                session.error = 'Account connection failed';
+                notify();
+                reject(new Error(session.error));
+            }
+        };
+        session.onclose = () => {
+            failPending(session, new Error('Account connection closed'));
+            if (session.status === 'connected') {
+                session.status = 'error';
+                session.error = 'Connection closed';
+                notify();
+            }
+            if (!settled) {
+                settled = true;
+                clearTimeout(timeout);
+                reject(new Error(session.error || 'Account connection closed'));
             }
         };
     });
 }
 
-// ══════════════════════════════════════════════════════════════
-// Global interceptor
-// ══════════════════════════════════════════════════════════════
-
-let interceptorInstalled = false;
-let masterId: string | null = null;
-let unsubs: (() => void)[] = [];
-let countedContractIds: Set<string> = new Set();
-let cachedFollowers: Record<string, any> = {};
-let lastProposalParams: Record<string, any> | null = null;
-let origProtoSend: ((data: string | ArrayBuffer | Blob) => void) | null = null;
-
-export function refreshCachedFollowers(f: Record<string, any>) {
-    cachedFollowers = f;
+function createSession(record: StoredAccount): AccountSession {
+    return { ...record, ws: null, status: 'connecting', pending: new Map(), nextReqId: 0 };
 }
 
-function extractProposalParams(msg: any): Record<string, unknown> | null {
-    const raw = msg;
-    const p = (raw.parameters && typeof raw.parameters === 'object')
-        ? { ...raw, ...raw.parameters }
-        : raw;
-    if (!p.contract_type || p.amount == null || !p.basis) return null;
+export async function initializeCopyAccounts(): Promise<void> {
+    if (!initialized) {
+        initialized = true;
+        readStored().forEach(record => {
+            if (!sessions.has(record.id)) sessions.set(record.id, createSession(record));
+        });
+        notify();
+        await Promise.allSettled(Array.from(sessions.values()).map(connect));
+    }
+    installCopyTradeInterceptor();
+}
+
+export function subscribeCopyAccounts(listener: (accounts: CopyAccount[]) => void): () => void {
+    listeners.add(listener);
+    listener(Array.from(sessions.values()).map(accountView));
+    return () => listeners.delete(listener);
+}
+
+export async function addCopyToken(token: string): Promise<CopyAccount> {
+    const cleanToken = token.trim();
+    if (!cleanToken) throw new Error('Enter an API token first.');
+    if (Array.from(sessions.values()).some(account => account.token === cleanToken)) {
+        throw new Error('This API token is already connected.');
+    }
+    const id = `copy_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    const session = createSession({ id, token: cleanToken });
+    sessions.set(id, session);
+    notify();
+    try {
+        const account = await connect(session);
+        persist();
+        return account;
+    } catch (error) {
+        sessions.delete(id);
+        notify();
+        throw error;
+    }
+}
+
+export function removeCopyToken(id: string) {
+    const session = sessions.get(id);
+    if (!session) return;
+    failPending(session, new Error('Account removed'));
+    try { session.ws?.close(); } catch {}
+    sessions.delete(id);
+    persist();
+    notify();
+}
+
+function convertProposalParams(message: any): Record<string, unknown> | null {
+    const p = message?.parameters && typeof message.parameters === 'object' ? { ...message, ...message.parameters } : message;
+    if (!p?.contract_type || p.amount == null || !p.basis) return null;
     const params: Record<string, unknown> = {
-        amount: Number(p.amount) || 1,
-        basis: p.basis || 'stake',
         contract_type: p.contract_type,
         currency: p.currency || 'USD',
         duration: p.duration || 1,
@@ -182,252 +292,59 @@ function extractProposalParams(msg: any): Record<string, unknown> | null {
     return params;
 }
 
-// Buy ONE follower: open WS → auth → proposal → buy
-async function buyOnFollower(
-    follower: any,
-    contractParams: Record<string, unknown>,
-    stake: number
-): Promise<{ contractId: string; balance?: number } | null> {
-    const tag = follower.account_id?.slice(-4) || '?';
-    let ws: WebSocket;
-    try {
-        ws = new WebSocket(WS_URL);
-    } catch (e) {
-        console.error(`[CopyTrade] ...${tag} WS creation failed:`, e);
-        return null;
-    }
-
-    return new Promise((resolve) => {
-        let done = false;
-        const cleanup = () => { done = true; try { ws.close(); } catch {} };
-        const timeout = setTimeout(() => { cleanup(); resolve(null); }, 20000);
-
-        ws.onopen = () => {
-            console.log(`[CopyTrade] ...${tag} WS open, authorizing...`);
-            ws.send(JSON.stringify({ authorize: follower.token }));
-        };
-
-        ws.onmessage = (event) => {
-            if (done) return;
-            try {
-                const data = JSON.parse(event.data);
-                if (data.error) {
-                    console.error(`[CopyTrade] ...${tag} error:`, data.error.message);
-                    cleanup(); clearTimeout(timeout); resolve(null);
-                    return;
-                }
-                if (data.authorize) {
-                    console.log(`[CopyTrade] ...${tag} auth OK, sending proposal: ${contractParams.contract_type}...`);
-                    ws.send(JSON.stringify({
-                        proposal: 1,
-                        amount: stake,
-                        basis: 'stake',
-                        contract_type: contractParams.contract_type,
-                        currency: contractParams.currency,
-                        duration: contractParams.duration,
-                        duration_unit: contractParams.duration_unit,
-                        underlying_symbol: contractParams.underlying_symbol,
-                        barrier: contractParams.barrier,
-                        req_id: 1,
-                    }));
-                    return;
-                }
-                if (data.req_id === 1 && data.proposal) {
-                    console.log(`[CopyTrade] ...${tag} proposal ${data.proposal.id}, buying...`);
-                    ws.send(JSON.stringify({ buy: data.proposal.id, price: data.proposal.ask_price, req_id: 2 }));
-                    return;
-                }
-                if (data.req_id === 2 && data.buy) {
-                    console.log(`[CopyTrade] ...${tag} BUY OK:`, data.buy.contract_id);
-                    cleanup(); clearTimeout(timeout);
-                    resolve({ contractId: data.buy.contract_id, balance: data.buy.balance });
-                }
-            } catch {}
-        };
-
-        ws.onerror = (err) => {
-            console.error(`[CopyTrade] ...${tag} WS error:`, err);
-            cleanup(); clearTimeout(timeout); resolve(null);
-        };
-        ws.onclose = () => { if (!done) { cleanup(); clearTimeout(timeout); resolve(null); } };
-    });
+async function executeOnAccount(session: AccountSession, params: Record<string, unknown>, stake: number) {
+    if (session.status !== 'connected' || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+    const proposal = await request(session, { proposal: 1, amount: stake, basis: 'stake', ...params });
+    if (!proposal?.proposal?.id) throw new Error('No proposal returned');
+    await request(session, { buy: proposal.proposal.id, price: proposal.proposal.ask_price });
 }
 
-export function installCopyTradeInterceptor(mId: string) {
+function copyCurrentTrade(stake: number) {
+    if (!proposalParams) return;
+    const params = { ...proposalParams };
+    const activeLoginId = (() => { try { return localStorage.getItem('active_loginid') || ''; } catch { return ''; } })();
+    const targets = Array.from(sessions.values()).filter(session => session.status === 'connected' && session.loginid !== activeLoginId);
+    if (!targets.length) return;
+    Promise.allSettled(targets.map(session => executeOnAccount(session, params, stake)));
+}
+
+export function installCopyTradeInterceptor() {
     if (interceptorInstalled) return;
     interceptorInstalled = true;
-    masterId = mId;
-    countedContractIds = new Set();
-    cachedFollowers = {};
-    lastProposalParams = null;
-    console.log('[CopyTrade] Interceptor installed for master:', mId);
-
-    getFollowers(mId).then(f => { if (f) cachedFollowers = f; }).catch(() => {});
-
-    // Patch WebSocket.prototype.send to intercept ALL outgoing messages
-    // This catches proposals from ANY WebSocket (bot's internal WS, _newSystemWS, etc.)
     try {
         const Proto = (WebSocket as any).prototype;
         origProtoSend = Proto.send;
         Proto.send = function (data: string | ArrayBuffer | Blob) {
             try {
-                if (typeof data === 'string') {
-                    const msg = JSON.parse(data);
-                    if (msg.proposal === 1) {
-                        const params = extractProposalParams(msg);
-                        if (params) {
-                            lastProposalParams = params;
-                            console.log('[CopyTrade] Intercepted PROPOSAL:', params.contract_type,
-                                '| barrier:', (params as any).barrier ?? 'none');
-                        }
+                if (typeof data === 'string' && !managedSockets.has(this as WebSocket)) {
+                    const message = JSON.parse(data);
+                    if (message.proposal === 1) {
+                        const params = convertProposalParams(message);
+                        if (params) proposalParams = params;
                     }
                 }
             } catch {}
             return origProtoSend!.call(this, data);
         };
-        console.log('[CopyTrade] WebSocket.prototype.send patched');
-    } catch (e) {
-        console.error('[CopyTrade] Failed to patch WebSocket.prototype.send:', e);
+    } catch {}
+    if (typeof window !== 'undefined') {
+        const handler = (event: Event) => {
+            try {
+                const raw = (event as CustomEvent).detail;
+                const data = typeof raw?.data === 'string' ? JSON.parse(raw.data) : raw;
+                if (data?.msg_type === 'buy' && data.buy?.contract_id) copyCurrentTrade(Number(data.buy.buy_price) || 1);
+            } catch {}
+        };
+        window.addEventListener('newSystemMessage', handler);
+        messageUnsub = () => window.removeEventListener('newSystemMessage', handler);
     }
-
-    const unsub1 = onNewSystemMessageLocal((data: any) => {
-        if (data.msg_type !== 'buy' || !data.buy || !data.buy.contract_id) return;
-
-        const cid = String(data.buy.contract_id);
-        if (countedContractIds.has(cid)) return;
-        countedContractIds.add(cid);
-        if (countedContractIds.size > 500) {
-            const arr = Array.from(countedContractIds);
-            countedContractIds = new Set(arr.slice(-200));
-        }
-
-        const stake = Number(data.buy.buy_price) || 1;
-        console.log('[CopyTrade] Master BUY:', cid, '| stake:', stake,
-            '| captured params:', lastProposalParams?.contract_type || 'NONE');
-
-        const entries = Object.entries(cachedFollowers).filter(([, f]) => f.token);
-        if (entries.length === 0) { console.log('[CopyTrade] No followers'); return; }
-
-        // Use intercepted proposal params (instant) or fall back to POC
-        (async () => {
-            let contractParams: Record<string, unknown> | null = null;
-
-            if (lastProposalParams) {
-                contractParams = { ...lastProposalParams, amount: stake };
-                console.log('[CopyTrade] Using intercepted params:', contractParams.contract_type);
-            } else {
-                console.log('[CopyTrade] No intercepted params, querying POC...');
-                try {
-                    const res = await sendViaNewSystemLocal({
-                        proposal_open_contract: 1, contract_id: cid, subscribe: 0,
-                    });
-                    const c = res?.proposal_open_contract;
-                    if (c && c.contract_type && c.contract_type !== 'CALL' && c.contract_type !== 'PUT') {
-                        contractParams = {
-                            contract_type: c.contract_type,
-                            currency: c.currency || 'USD',
-                            duration: c.duration || 1,
-                            duration_unit: c.duration_unit || 't',
-                            underlying_symbol: c.underlying || '1HZ100V',
-                            barrier: c.barrier, barrier2: c.barrier2, amount: stake,
-                        };
-                    }
-                } catch {}
-            }
-
-            if (!contractParams) {
-                console.log('[CopyTrade] Could not determine contract params — followers skipped');
-                return;
-            }
-
-            console.log(`[CopyTrade] Contract: ${contractParams.contract_type} | barrier: ${(contractParams as any).barrier ?? 'none'} | ${entries.length} followers`);
-
-            const tradeTime = Date.now();
-            for (const [fid] of entries) {
-                pushFollowerTrade(mId, fid, {
-                    id: `pending_${tradeTime}_${fid}`,
-                    type: String(contractParams.contract_type),
-                    stake, pnl: 0, time: tradeTime, status: 'pending',
-                });
-            }
-
-            await Promise.all(entries.map(async ([fid, follower]) => {
-                try {
-                    const result = await buyOnFollower(follower, contractParams!, stake);
-                    if (result) {
-                        pushFollowerTrade(mId, fid, {
-                            id: result.contractId,
-                            type: String(contractParams!.contract_type),
-                            stake, pnl: 0, time: tradeTime, status: 'pending',
-                        });
-                        if (result.balance != null) {
-                            dbSet(`masters/${mId}/followers/${fid}/balance`, Number(result.balance));
-                        }
-                    }
-                } catch (err: any) {
-                    console.error(`[CopyTrade] ${fid} failed:`, err.message);
-                }
-            }));
-        })();
-    });
-    unsubs.push(unsub1);
 }
 
 export function uninstallCopyTradeInterceptor() {
+    messageUnsub?.();
+    messageUnsub = null;
     interceptorInstalled = false;
-    masterId = null;
-    unsubs.forEach(u => u());
-    unsubs = [];
-    countedContractIds = new Set();
-    cachedFollowers = {};
-    lastProposalParams = null;
-    // Restore WebSocket.prototype.send
-    try {
-        if (origProtoSend) {
-            (WebSocket as any).prototype.send = origProtoSend;
-        }
-    } catch {}
+    proposalParams = null;
+    try { if (origProtoSend) (WebSocket as any).prototype.send = origProtoSend; } catch {}
     origProtoSend = null;
-}
-
-// ══════════════════════════════════════════════════════════════
-// Public helpers
-// ══════════════════════════════════════════════════════════════
-
-export function subscribeBalance(): Promise<void> {
-    return sendViaNewSystemLocal({ balance: 1, subscribe: 1 }).then(() => {});
-}
-
-export function subscribeOpenContracts(): Promise<void> {
-    return sendViaNewSystemLocal({ proposal_open_contract: 1, subscribe: 1 }).then(() => {});
-}
-
-export function onTradeMessage(cb: (data: any) => void): () => void {
-    return onNewSystemMessageLocal(cb);
-}
-
-export async function resetFollowerStats(followerId: string) {
-    if (!masterId) return;
-    await clearFollowerStats(masterId, followerId);
-}
-
-export async function saveMyBalance(masterId: string, followerId: string, balance: number) {
-    try {
-        // Only save if follower entry still exists (wasn't removed)
-        const res = await fetch(`https://makoti-6ba23-default-rtdb.firebaseio.com/masters/${masterId}/followers/${followerId}/token.json`);
-        if (res.ok) {
-            const token = await res.json();
-            if (token) {
-                await dbSet(`masters/${masterId}/followers/${followerId}/balance`, balance);
-            }
-        }
-    } catch {}
-}
-
-export function hasContractBeenCounted(contractId: string): boolean {
-    return countedContractIds.has(contractId);
-}
-
-export function markContractCounted(contractId: string) {
-    countedContractIds.add(contractId);
 }

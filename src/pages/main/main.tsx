@@ -354,13 +354,11 @@ const AppWrapper = observer(() => {
         };
     }, [dashboard_strategies, active_tab]);
 
-    // ── Copy trade interceptor: always active if master ──
+    // ── Direct token copy execution stays active across tabs ──
     useEffect(() => {
-        const masterId = localStorage.getItem('mw_copy_master_id');
-        if (!masterId) return;
         let unsub: (() => void) | null = null;
         import('@/pages/copy-trading/copy-trade-executor').then(mod => {
-            mod.installCopyTradeInterceptor(masterId);
+            mod.initializeCopyAccounts();
             unsub = () => mod.uninstallCopyTradeInterceptor();
         }).catch(() => {});
         return () => { if (unsub) unsub(); };

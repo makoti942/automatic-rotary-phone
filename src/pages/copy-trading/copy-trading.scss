@@ -582,3 +582,61 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
 }
+
+/* ── Direct API token copy trading ─────────────────────────── */
+.ct__token-hero {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px;
+    margin-bottom: 12px;
+    background: linear-gradient(135deg, rgba(251, 191, 36, 0.11), rgba(99, 102, 241, 0.08));
+    border: 1px solid rgba(251, 191, 36, 0.25);
+    border-radius: 10px;
+}
+.ct__eyebrow { display: block; margin-bottom: 5px; color: #fbbf24; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+.ct__token-hero h3 { margin: 0 0 6px; color: var(--text-prominent); font-size: 17px; }
+.ct__token-hero .ct__setup-desc { max-width: 650px; margin: 0; }
+.ct__connection-pill { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; padding: 6px 9px; border: 1px solid rgba(74, 222, 128, 0.25); border-radius: 999px; color: #4ade80; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.ct__token-form { padding: 13px; margin-bottom: 10px; background: var(--general-section-1); border: 1px solid rgba(255,255,255,0.06); border-radius: 9px; }
+.ct__token-form label { display: block; margin-bottom: 6px; color: var(--text-prominent); font-size: 11px; font-weight: 700; }
+.ct__token-input-row { display: flex; gap: 8px; align-items: stretch; }
+.ct__token-input-row .ct__input { flex: 1; margin: 0; }
+.ct__token-submit { width: auto; min-width: 105px; margin: 0; }
+.ct__token-form small { display: block; margin-top: 7px; color: var(--text-less-prominent); font-size: 9px; }
+.ct__count { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; margin-left: 5px; border-radius: 999px; background: rgba(251,191,36,0.15); color: #fbbf24; font-size: 10px; }
+.ct__token-link { color: #fbbf24; font-size: 10px; text-decoration: none; }
+.ct__token-link:hover { text-decoration: underline; }
+.ct__account-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 8px; }
+.ct__account-card { padding: 10px; background: var(--general-section-2); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; }
+.ct__account-card--connected { border-color: rgba(74, 222, 128, 0.26); }
+.ct__account-card--error { border-color: rgba(248, 113, 113, 0.38); }
+.ct__account-card-head { display: flex; align-items: center; gap: 8px; }
+.ct__account-avatar { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; flex: 0 0 30px; border-radius: 50%; background: linear-gradient(135deg, #f59e0b, #d97706); color: #1e1b4b; font-size: 12px; font-weight: 800; }
+.ct__account-identity { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.ct__account-identity strong { overflow: hidden; color: var(--text-prominent); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.ct__account-identity span { overflow: hidden; margin-top: 2px; color: var(--text-less-prominent); font-family: monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.ct__account-remove { width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-less-prominent); font-size: 18px; line-height: 1; cursor: pointer; }
+.ct__account-remove:hover { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.1); color: #f87171; }
+.ct__account-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); }
+.ct__account-details div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.ct__account-details small { color: var(--text-less-prominent); font-size: 7px; letter-spacing: 0.45px; }
+.ct__account-details b { overflow: hidden; color: var(--text-prominent); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.ct__demo { color: #a78bfa !important; }
+.ct__real { color: #38bdf8 !important; }
+.ct__account-status--connected { color: #4ade80 !important; }
+.ct__account-status--connecting { color: #fbbf24 !important; }
+.ct__account-status--error { color: #f87171 !important; }
+.ct__account-error { margin-top: 7px; color: #f87171; font-size: 9px; line-height: 1.3; }
+.ct__execution-note { display: flex; align-items: flex-start; gap: 9px; padding: 11px 13px; margin-top: 10px; border: 1px solid rgba(56,189,248,0.2); border-radius: 8px; background: rgba(14,165,233,0.07); color: #7dd3fc; }
+.ct__execution-note-icon { font-size: 17px; font-weight: 800; }
+.ct__execution-note div { display: flex; flex-direction: column; gap: 3px; }
+.ct__execution-note strong { font-size: 10px; }
+.ct__execution-note span { color: var(--text-less-prominent); font-size: 9px; line-height: 1.4; }
+@media (max-width: 600px) {
+    .ct__token-hero { flex-direction: column; padding: 13px; }
+    .ct__token-input-row { flex-direction: column; }
+    .ct__token-submit { width: 100%; }
+    .ct__account-list { grid-template-columns: 1fr; }
+}
