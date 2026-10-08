@@ -8,7 +8,9 @@ export function calcPayout(contractType: string, barrier: number, stake: number)
         case 'DIGITOVER': probability = (9 - barrier) / 10; break;
         case 'DIGITUNDER': probability = barrier / 10; break;
         case 'DIGITEVEN':
-        case 'DIGITODD': probability = 0.5; break;
+        case 'DIGITODD':
+        case 'CALL':
+        case 'PUT': probability = 0.5; break;
     }
     if (probability <= 0) probability = 0.01;
     const multiplier = (1 / probability) * 0.95;

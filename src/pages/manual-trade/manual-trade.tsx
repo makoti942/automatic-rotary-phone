@@ -2,6 +2,7 @@ import React, { useMemo, useState, useEffect } from 'react';
 import { observer } from 'mobx-react-lite';
 import { useManualTrade, TradeType, ContractMode } from './use-manual-trade';
 import { SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
+import ManualRiseFallChart from './manual-rise-fall-chart';
 import './manual-trade.scss';
 
 const CONTRACT_MODE_OPTIONS: Record<TradeType, { value: ContractMode; label: string }[]> = {
@@ -17,12 +18,17 @@ const CONTRACT_MODE_OPTIONS: Record<TradeType, { value: ContractMode; label: str
         { value: 'DIGITEVEN', label: 'Even' },
         { value: 'DIGITODD', label: 'Odd' },
     ],
+    'rise-fall': [
+        { value: 'CALL', label: 'Rise' },
+        { value: 'PUT', label: 'Fall' },
+    ],
 };
 
 const TRADE_TYPE_LABELS: Record<TradeType, string> = {
     'matches-differs': 'Matches / Differs',
     'over-under': 'Over / Under',
     'even-odd': 'Even / Odd',
+    'rise-fall': 'Rise / Fall',
 };
 
 const ManualTrade = observer(() => {
@@ -129,12 +135,12 @@ const ManualTrade = observer(() => {
                         </div>
                     </div>
 
-                    <div className='mt-stats'>
+                    {tradeType === 'rise-fall' ? <ManualRiseFallChart symbol={activeSymbol} /> : <div className='mt-stats'>
                         <div className='mt-stats-header'>
                             <span>Digit Distribution (last {digitTotal} ticks)</span>
                             {activeTrade && (
                                 <span className='mt-running-trade'>
-                                    <i /> RUNNING · {activeTrade.contractType}{activeTrade.contractType !== 'DIGITEVEN' && activeTrade.contractType !== 'DIGITODD' ? ` ${activeTrade.selectedDigit}` : ''} · #{activeTrade.contractId}
+                                    <i /> RUNNING · {activeTrade.contractType}{!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(activeTrade.contractType) ? ` ${activeTrade.selectedDigit}` : ''} · #{activeTrade.contractId}
                                 </span>
                             )}
                         </div>
@@ -183,7 +189,7 @@ const ManualTrade = observer(() => {
                                 );
                             })}
                         </div>
-                    </div>
+                    </div>}
                 </div>
 
                 {/* Right column: trade controls */}
@@ -242,8 +248,8 @@ const ManualTrade = observer(() => {
                         </div>
                     )}
 
-                    {/* Entry Digit Toggle */}
-                    <div className='mt-entry-row'>
+                    {/* Entry Digit Toggle — only applicable to digit contracts */}
+                    {tradeType !== 'rise-fall' && <div className='mt-entry-row'>
                         <div className='mt-entry-switch-wrap'>
                             <span className='mt-label'>Entry Digit</span>
                             <button
@@ -276,7 +282,7 @@ const ManualTrade = observer(() => {
                                 />
                             </div>
                         )}
-                    </div>
+                    </div>}
 
                     {/* Stake + Duration */}
                     <div className='mt-input-row'>

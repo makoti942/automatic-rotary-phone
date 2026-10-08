@@ -258,7 +258,11 @@ export function feedSandboxTick(symbol: string, quote: number): void {
         if (entry.tickBuffer.length >= entry.trade.duration) {
             const lastTick = entry.tickBuffer[entry.tickBuffer.length - 1];
             const resultDigit = lastTick.digit;
-            const won = getWinCondition(entry.trade.contractType, entry.trade.barrier, resultDigit);
+            const won = entry.trade.contractType === 'CALL'
+                ? lastTick.quote > (entry.trade.entrySpot ?? lastTick.quote)
+                : entry.trade.contractType === 'PUT'
+                    ? lastTick.quote < (entry.trade.entrySpot ?? lastTick.quote)
+                    : getWinCondition(entry.trade.contractType, entry.trade.barrier, resultDigit);
             const profit = won ? entry.trade.payout - entry.trade.stake : -entry.trade.stake;
             const currentBal = getSandboxBalance();
             const newBal = currentBal + (won ? entry.trade.payout : 0);

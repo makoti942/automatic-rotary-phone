@@ -869,3 +869,33 @@ $radius:   10px;
 @keyframes mt-history-slide-out { from { opacity: 1; transform: translateX(0); } to { opacity: 0; transform: translateX(100%); } }
 @keyframes mt-history-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes mt-history-fade-out { from { opacity: 1; } to { opacity: 0; } }
+
+.mt-mini-chart {
+    min-height: 300px;
+    padding: 10px 12px 8px;
+    overflow: hidden;
+    background: $bg2;
+    border: 1px solid $border;
+    border-radius: $radius;
+    color: $text;
+}
+.mt-mini-chart__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    color: $text;
+    font-size: 12px;
+    font-weight: 700;
+}
+.mt-mini-chart__hint { color: $muted; font-size: 9px; font-weight: 500; }
+.mt-mini-chart__loading { display: grid; min-height: 250px; place-items: center; color: $muted; font-size: 11px; }
+.mt-mini-chart > .smartcharts,
+.mt-mini-chart > div:not(.mt-mini-chart__header) { min-height: 260px; height: 260px; }
+@media (max-width: 700px) {
+    .mt-mini-chart { min-height: 255px; padding: 8px; }
+    .mt-mini-chart__header { align-items: flex-start; flex-direction: column; gap: 2px; font-size: 11px; }
+    .mt-mini-chart > .smartcharts,
+    .mt-mini-chart > div:not(.mt-mini-chart__header) { min-height: 220px; height: 220px; }
+}

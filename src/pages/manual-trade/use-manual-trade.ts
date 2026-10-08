@@ -101,8 +101,8 @@ function lastDigitOfPrice(v: number | string): number {
     return digits && digits.length ? Number(digits[digits.length - 1]) : 0;
 }
 
-export type TradeType = 'matches-differs' | 'over-under' | 'even-odd';
-export type ContractMode = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD';
+export type TradeType = 'matches-differs' | 'over-under' | 'even-odd' | 'rise-fall';
+export type ContractMode = 'DIGITMATCH' | 'DIGITDIFF' | 'DIGITOVER' | 'DIGITUNDER' | 'DIGITEVEN' | 'DIGITODD' | 'CALL' | 'PUT';
 
 const VOLATILITY_SYMBOLS = ['R_10', 'R_25', 'R_50', 'R_75', 'R_100', '1HZ10V', '1HZ25V', '1HZ50V', '1HZ75V', '1HZ100V'];
 
@@ -660,6 +660,7 @@ export function useManualTrade() {
             case 'matches-differs': setContractMode('DIGITMATCH'); break;
             case 'over-under': setContractMode('DIGITOVER'); break;
             case 'even-odd': setContractMode('DIGITEVEN'); break;
+            case 'rise-fall': setContractMode('CALL'); break;
         }
     }, []);
 
@@ -692,7 +693,7 @@ export function useManualTrade() {
                 proposal: 1, amount, basis: 'stake', contract_type: contractMode,
                 currency: 'USD', duration, duration_unit: 't', symbol: activeSymbol, req_id: requestId,
             };
-            if (contractMode !== 'DIGITEVEN' && contractMode !== 'DIGITODD') params.barrier = selectedDigit;
+            if (!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(contractMode)) params.barrier = selectedDigit;
             sendViaNewSystemWithPromise(params).then((response: any) => {
                 if (proposalRequestRef.current !== requestId) return;
                 setProposal(response?.proposal ? {
@@ -731,7 +732,7 @@ export function useManualTrade() {
         setIsBuying(true);
         setBuyError(null);
 
-        if (entryEnabledRef.current) {
+        if (entryEnabledRef.current && mode.startsWith('DIGIT')) {
             const targetDigit = entryDigitRef.current;
             cancelEntryRef.current = false;
             setIsWaitingEntry(true);
@@ -753,7 +754,7 @@ export function useManualTrade() {
             const trade = executeSandboxTrade({
                 symbol: activeSymbol,
                 contractType: mode,
-                barrier: mode !== 'DIGITEVEN' && mode !== 'DIGITODD' ? selectedDigit : 0,
+                barrier: !['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(mode) ? selectedDigit : 0,
                 stake: amount,
                 duration,
                 entryDigit: lastDigitRef.current ?? 0,
@@ -801,7 +802,7 @@ export function useManualTrade() {
                 duration_unit: 't',
                 symbol: activeSymbol,
             };
-            if (mode !== 'DIGITEVEN' && mode !== 'DIGITODD') params.barrier = selectedDigit;
+            if (!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(mode)) params.barrier = selectedDigit;
 
             const buyReqId = ++reqIdRef.current;
             buyHandledByWsRef.current = false;
