@@ -328,3 +328,48 @@
 @media (prefers-reduced-motion: reduce) {
     .dc-tabs--main__tabs .dc-tabs__item, .dc-tabs--main__tabs .dc-tabs__item::before { transition: none; }
 }
+
+/* Colorful 3D tab symbols: each navigation area has its own visual identity. */
+.dc-tabs--main__tabs .dc-tabs__item .main-tab-icon {
+    position: relative;
+    z-index: 2;
+    flex: 0 0 auto;
+    width: 24px;
+    height: 24px;
+    margin-right: 0.6rem;
+    color: var(--main-tab-icon-color) !important;
+    fill: currentColor !important;
+    filter: drop-shadow(0 2px 0 var(--main-tab-icon-shadow)) drop-shadow(0 4px 5px var(--main-tab-icon-glow));
+    transform: translateY(-1px);
+    transition: filter 180ms ease, transform 180ms ease;
+}
+
+.dc-tabs--main__tabs .dc-tabs__item .main-tab-icon path,
+.dc-tabs--main__tabs .dc-tabs__item .main-tab-icon g,
+.dc-tabs--main__tabs .dc-tabs__item .main-tab-icon rect,
+.dc-tabs--main__tabs .dc-tabs__item .main-tab-icon circle { fill: currentColor !important; }
+
+.dc-tabs--main__tabs .main-tab-icon--dashboard { --main-tab-icon-color: #6ee7ff; --main-tab-icon-shadow: #1688aa; --main-tab-icon-glow: rgba(42, 196, 255, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--builder { --main-tab-icon-color: #c084fc; --main-tab-icon-shadow: #7027a8; --main-tab-icon-glow: rgba(168, 85, 247, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--charts { --main-tab-icon-color: #fbbf24; --main-tab-icon-shadow: #a16207; --main-tab-icon-glow: rgba(245, 158, 11, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--bots { --main-tab-icon-color: #34d399; --main-tab-icon-shadow: #087f5b; --main-tab-icon-glow: rgba(16, 185, 129, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--analysis { --main-tab-icon-color: #fb7185; --main-tab-icon-shadow: #a51d3b; --main-tab-icon-glow: rgba(244, 63, 94, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--manual { --main-tab-icon-color: #60a5fa; --main-tab-icon-shadow: #1d4ed8; --main-tab-icon-glow: rgba(59, 130, 246, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--trading-view { --main-tab-icon-color: #22d3ee; --main-tab-icon-shadow: #087e8f; --main-tab-icon-glow: rgba(6, 182, 212, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--copy { --main-tab-icon-color: #f472b6; --main-tab-icon-shadow: #9d174d; --main-tab-icon-glow: rgba(236, 72, 153, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--extractor { --main-tab-icon-color: #fb923c; --main-tab-icon-shadow: #9a3412; --main-tab-icon-glow: rgba(249, 115, 22, 0.55); }
+.dc-tabs--main__tabs .main-tab-icon--tutorials { --main-tab-icon-color: #a3e635; --main-tab-icon-shadow: #4d7c0f; --main-tab-icon-glow: rgba(132, 204, 22, 0.55); }
+
+.dc-tabs--main__tabs .dc-tabs__item:hover .main-tab-icon,
+.dc-tabs--main__tabs .dc-tabs__active .main-tab-icon {
+    filter: drop-shadow(0 2px 0 var(--main-tab-icon-shadow)) drop-shadow(0 0 8px var(--main-tab-icon-glow));
+    transform: translateY(-2px) scale(1.08);
+}
+
+@media (max-width: 900px) {
+    .dc-tabs--main__tabs .dc-tabs__item .main-tab-icon { width: 22px; height: 22px; margin-right: 0.4rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .dc-tabs--main__tabs .dc-tabs__item .main-tab-icon { transition: none; }
+}

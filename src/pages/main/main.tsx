@@ -400,6 +400,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedGrid2CaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--dashboard'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -415,6 +416,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedPuzzleCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--builder'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -428,6 +430,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedChartCandlestickCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--charts'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -451,6 +454,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedFileChartColumnCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--bots'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -466,6 +470,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedChartTrendUpCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--analysis'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -481,6 +486,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedPlayCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--manual'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -496,6 +502,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedChartTradingviewCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--trading-view'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -511,6 +518,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedCopyCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--copy'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -528,6 +536,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedFileArrowDownCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--extractor'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -545,6 +554,7 @@ const AppWrapper = observer(() => {
                                 label={
                                     <>
                                         <LabelPairedBookCircleQuestionCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--tutorials'
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
