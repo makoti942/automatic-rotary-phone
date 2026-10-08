@@ -174,7 +174,7 @@ export function useManualTrade() {
     const [selectedDigit, setSelectedDigit] = useState(_cfg.selectedDigit ?? 5);
     const [stake, setStake] = useState(_cfg.stake || '10');
     const [duration, setDuration] = useState(_cfg.duration || 1);
-    const [proposal, setProposal] = useState<ProposalInfo | null>(null);
+    const [proposalPayouts, setProposalPayouts] = useState<Partial<Record<ContractMode, number>>>({});
     const [isProposalLoading, setIsProposalLoading] = useState(false);
     const [isBuying, setIsBuying] = useState(false);
     const [isWaitingEntry, setIsWaitingEntry] = useState(false);
@@ -208,7 +208,7 @@ export function useManualTrade() {
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-    const proposalRequestRef = useRef(0);
+    const quoteBatchRef = useRef(0);
     const mountedRef = useRef(true);
 
     // Persist config to localStorage
@@ -363,15 +363,6 @@ export function useManualTrade() {
                     subIdRef.current = data.subscription.id;
                     return;
                 }
-                if (data.msg_type === 'proposal' && data.echo_req?.req_id === proposalRequestRef.current) {
-                    setIsProposalLoading(false);
-                    setProposal(data.proposal ? {
-                        askPrice: Number(data.proposal.ask_price),
-                        payout: Number(data.proposal.payout),
-                        id: data.proposal.id,
-                    } : null);
-                    return;
-                }
                 if (data.msg_type === 'buy') {
                     setIsBuying(false);
                     if (data.buy) {
@@ -506,10 +497,6 @@ export function useManualTrade() {
                     else setSymbols(FALLBACK_SYMBOLS);
                     setIsLoading(false);
                     return;
-                }
-                if (data.error && data.msg_type === 'proposal') {
-                    setIsProposalLoading(false);
-                    setProposal(null);
                 }
             } catch (_) {}
         });
@@ -664,55 +651,66 @@ export function useManualTrade() {
         }
     }, []);
 
-    // Keep the payout shown on the execution buttons aligned with the current
-    // contract type, barrier, stake, duration, and market.
+    // Request a separate live proposal for each action button. A Matches
+    // proposal and a Differs proposal, for example, have different odds.
     useEffect(() => {
         const amount = parseFloat(stake);
         if (!amount || amount <= 0 || !duration || !activeSymbol) {
-            setProposal(null);
+            setProposalPayouts({});
             return;
         }
+        const quoteModes: ContractMode[] = tradeType === 'matches-differs'
+            ? ['DIGITMATCH', 'DIGITDIFF']
+            : tradeType === 'over-under'
+                ? ['DIGITOVER', 'DIGITUNDER']
+                : tradeType === 'even-odd'
+                    ? ['DIGITEVEN', 'DIGITODD']
+                    : ['CALL', 'PUT'];
         if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current);
-        const requestId = ++reqIdRef.current;
-        proposalRequestRef.current = requestId;
-        setProposal(null);
+        const batchId = ++quoteBatchRef.current;
+        setProposalPayouts({});
         setIsProposalLoading(!isSandbox && isConnected);
         proposalTimerRef.current = setTimeout(() => {
             if (isSandbox) {
-                setProposal({ askPrice: amount, payout: calcPayout(contractMode, selectedDigit, amount), id: 'sandbox-quote' });
+                const sandboxPayouts = quoteModes.reduce<Partial<Record<ContractMode, number>>>((result, mode) => {
+                    result[mode] = Math.round(calcPayout(mode, selectedDigit, amount) * 0.97 * 100) / 100;
+                    return result;
+                }, {});
+                setProposalPayouts(sandboxPayouts);
                 setIsProposalLoading(false);
                 return;
             }
             if (!isConnected) {
-                setProposal(null);
                 setIsProposalLoading(false);
                 return;
             }
             setIsProposalLoading(true);
-            const params: Record<string, unknown> = {
-                proposal: 1, amount, basis: 'stake', contract_type: contractMode,
-                currency: 'USD', duration, duration_unit: 't', symbol: activeSymbol, req_id: requestId,
-            };
-            if (!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(contractMode)) params.barrier = selectedDigit;
-            sendViaNewSystemWithPromise(params).then((response: any) => {
-                if (proposalRequestRef.current !== requestId) return;
-                setProposal(response?.proposal ? {
-                    askPrice: Number(response.proposal.ask_price),
-                    payout: Number(response.proposal.payout),
-                    id: response.proposal.id,
-                } : null);
-                setIsProposalLoading(false);
-            }).catch(() => {
-                if (proposalRequestRef.current === requestId) {
-                    setProposal(null);
-                    setIsProposalLoading(false);
+            Promise.all(quoteModes.map(async mode => {
+                const requestId = ++reqIdRef.current;
+                const params: Record<string, unknown> = {
+                    proposal: 1, amount, basis: 'stake', contract_type: mode,
+                    currency: 'USD', duration, duration_unit: 't', symbol: activeSymbol, req_id: requestId,
+                };
+                if (!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(mode)) params.barrier = selectedDigit;
+                try {
+                    const response: any = await sendViaNewSystemWithPromise(params);
+                    const payout = Number(response?.proposal?.payout);
+                    return [mode, Number.isFinite(payout) ? Math.round(payout * 0.97 * 100) / 100 : null] as const;
+                } catch {
+                    return [mode, null] as const;
                 }
+            })).then(results => {
+                if (quoteBatchRef.current !== batchId) return;
+                const payouts: Partial<Record<ContractMode, number>> = {};
+                results.forEach(([mode, payout]) => { if (payout !== null) payouts[mode] = payout; });
+                setProposalPayouts(payouts);
+                setIsProposalLoading(false);
             });
         }, 120);
         return () => {
             if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current);
         };
-    }, [activeSymbol, contractMode, duration, isConnected, isSandbox, selectedDigit, stake]);
+    }, [activeSymbol, contractMode, duration, isConnected, isSandbox, selectedDigit, stake, tradeType]);
 
     // One-click execution: Deriv accepts buy(parameters) directly. Avoid the
     // old proposal -> buy round trip because it added a visible delay after
@@ -899,7 +897,7 @@ export function useManualTrade() {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
-        proposal, isProposalLoading,
+        proposalPayouts, isProposalLoading,
         isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
         entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,

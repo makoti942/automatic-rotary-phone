@@ -33,6 +33,7 @@ $radius:   10px;
 }
 @media (min-width: 701px) {
     .mt-page { scroll-padding-bottom: 72px; }
+    .mt-stats { position: relative; top: -72px; margin-bottom: -72px; }
 }
 
 .mt-loading {
