@@ -719,13 +719,14 @@ $radius:   10px;
 /* ── Notification popups ───────────────────────────────────── */
 .mt-notifications {
     position: fixed;
-    top: 16px;
-    right: 16px;
+    top: 50%;
+    right: 50%;
     z-index: 99999;
     display: flex;
     flex-direction: column;
     gap: 8px;
     pointer-events: none;
+    transform: translate(50%, -50%);
 }
 
 .mt-notif {
@@ -877,8 +878,8 @@ $radius:   10px;
 
 .mt-mini-chart {
     position: relative;
-    height: 310px;
-    min-height: 300px;
+    height: 350px;
+    min-height: 340px;
     padding: 10px 12px 8px;
     overflow: hidden;
     background: $bg2;
@@ -900,7 +901,7 @@ $radius:   10px;
 .mt-mini-chart__loading { display: grid; min-height: 250px; place-items: center; color: $muted; font-size: 11px; }
 .mt-mini-chart__surface {
     position: relative;
-    height: 270px;
+    height: 310px;
     min-height: 0;
     overflow: hidden;
     border-radius: 7px;
@@ -916,10 +917,14 @@ $radius:   10px;
     max-height: 100% !important;
     overflow: hidden;
 }
-.mt-mini-chart__surface .sc-toolbar-widget { top: 54px; transform: scale(0.78); transform-origin: top left; }
+.mt-mini-chart__surface .sc-toolbar-widget { top: 54px; transform: scale(0.78); transform-origin: top left; z-index: 20; }
 .mt-mini-chart__surface .sc-navigation-widget { bottom: 12px; transform: scale(0.78); transform-origin: bottom left; }
 @media (max-width: 700px) {
-    .mt-mini-chart { height: 265px; min-height: 255px; padding: 8px; }
+    .mt-mini-chart { height: 325px; min-height: 315px; padding: 8px; }
     .mt-mini-chart__header { align-items: flex-start; flex-direction: column; gap: 2px; font-size: 11px; }
-    .mt-mini-chart__surface { height: 225px; }
+    .mt-mini-chart__surface { height: 280px; }
+    .mt-mini-chart__surface .sc-toolbar-widget,
+    .mt-mini-chart__surface .sc-toolbar-widget--bottom { top: auto; bottom: 42px; left: 50%; transform: translateX(-50%) scale(0.88); transform-origin: bottom center; z-index: 30; }
+    .mt-mini-chart__surface .sc-toolbar-widget .cq-menu-dropdown { position: fixed !important; inset: 0 !important; z-index: 99999 !important; width: 100vw !important; height: 100vh !important; max-height: 100vh !important; overflow: hidden auto !important; }
+    .mt-mini-chart__surface .sc-toolbar-widget .sc-mcd { width: 100% !important; min-width: 0 !important; height: 100% !important; }
 }

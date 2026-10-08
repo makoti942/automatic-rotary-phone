@@ -144,3 +144,30 @@
     left: 0;
     top: 0;
 }
+
+@media (max-width: 768px) {
+    .bot .smartcharts-mobile .sc-toolbar-widget,
+    .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget {
+        bottom: 44px !important;
+        top: auto !important;
+        z-index: 30;
+    }
+
+    .bot .smartcharts-mobile .sc-toolbar-widget .cq-menu-dropdown,
+    .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget .cq-menu-dropdown {
+        position: fixed !important;
+        inset: 0 !important;
+        z-index: 99999 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        overflow: hidden auto !important;
+    }
+
+    .bot .smartcharts-mobile .sc-toolbar-widget .sc-mcd,
+    .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget .sc-mcd {
+        width: 100% !important;
+        min-width: 0 !important;
+        height: 100% !important;
+    }
+}

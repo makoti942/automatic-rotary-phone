@@ -48,7 +48,7 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
                         <ToolbarWidgets
                             updateChartType={setChartType}
                             updateGranularity={setGranularity}
-                            position='top'
+                            position={isMobile ? 'bottom' : 'top'}
                             isDesktop={isDesktop}
                         />
                     )}
