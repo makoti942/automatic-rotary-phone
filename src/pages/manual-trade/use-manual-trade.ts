@@ -673,7 +673,7 @@ export function useManualTrade() {
         proposalTimerRef.current = setTimeout(() => {
             if (isSandbox) {
                 const sandboxPayouts = quoteModes.reduce<Partial<Record<ContractMode, number>>>((result, mode) => {
-                    result[mode] = Math.round(calcPayout(mode, selectedDigit, amount) * 0.97 * 100) / 100;
+                    result[mode] = Math.round(calcPayout(mode, selectedDigit, amount) * 100) / 100;
                     return result;
                 }, {});
                 setProposalPayouts(sandboxPayouts);
@@ -695,7 +695,7 @@ export function useManualTrade() {
                 try {
                     const response: any = await sendViaNewSystemWithPromise(params);
                     const payout = Number(response?.proposal?.payout);
-                    return [mode, Number.isFinite(payout) ? Math.round(payout * 0.97 * 100) / 100 : null] as const;
+                    return [mode, Number.isFinite(payout) ? Math.round(payout * 100) / 100 : null] as const;
                 } catch {
                     return [mode, null] as const;
                 }
