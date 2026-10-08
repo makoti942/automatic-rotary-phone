@@ -32,14 +32,17 @@ import {
     setModalStateChangeCallback,
 } from '@/utils/trade-type-modal-handler';
 import {
-    LabelPairedChartLineCaptionRegularIcon,
+    LabelPairedBookCircleQuestionCaptionRegularIcon,
+    LabelPairedChartCandlestickCaptionRegularIcon,
+    LabelPairedChartTradingviewCaptionRegularIcon,
     LabelPairedChartTrendUpCaptionRegularIcon,
-    LabelPairedObjectsColumnCaptionRegularIcon,
-    LabelPairedPlayLgFillIcon,
-    LabelPairedPuzzlePieceTwoCaptionBoldIcon,
-    LabelPairedArrowRightCaptionRegularIcon,
+    LabelPairedCopyCaptionRegularIcon,
+    LabelPairedFileArrowDownCaptionRegularIcon,
+    LabelPairedFileChartColumnCaptionRegularIcon,
+    LabelPairedGrid2CaptionRegularIcon,
+    LabelPairedPlayCaptionRegularIcon,
+    LabelPairedPuzzleCaptionRegularIcon,
 } from '@deriv/quill-icons/LabelPaired';
-import { LegacyGuide1pxIcon } from '@deriv/quill-icons/Legacy';
 import { Localize, localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 import RunPanel from '../../components/run-panel';
@@ -396,7 +399,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedObjectsColumnCaptionRegularIcon
+                                        <LabelPairedGrid2CaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -411,7 +414,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedPuzzlePieceTwoCaptionBoldIcon
+                                        <LabelPairedPuzzleCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -424,7 +427,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedChartLineCaptionRegularIcon
+                                        <LabelPairedChartCandlestickCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -447,7 +450,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedPuzzlePieceTwoCaptionBoldIcon
+                                        <LabelPairedFileChartColumnCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -477,7 +480,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedPlayLgFillIcon
+                                        <LabelPairedPlayCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -492,7 +495,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedChartLineCaptionRegularIcon
+                                        <LabelPairedChartTradingviewCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -507,7 +510,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedArrowRightCaptionRegularIcon
+                                        <LabelPairedCopyCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -524,7 +527,7 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LabelPairedArrowRightCaptionRegularIcon
+                                        <LabelPairedFileArrowDownCaptionRegularIcon
                                             height='24px'
                                             width='24px'
                                             fill='var(--text-general)'
@@ -541,11 +544,10 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <LegacyGuide1pxIcon
-                                            height='16px'
-                                            width='16px'
+                                        <LabelPairedBookCircleQuestionCaptionRegularIcon
+                                            height='24px'
+                                            width='24px'
                                             fill='var(--text-general)'
-                                            className='icon-general-fill-g-path'
                                         />
                                         <Localize i18n_default_text='Tutorials' />
                                     </>
