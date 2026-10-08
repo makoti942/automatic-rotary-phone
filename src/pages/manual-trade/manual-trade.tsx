@@ -344,7 +344,7 @@ const ManualTrade = observer(() => {
                                             <>
                                                 <span className='mt-exec-label'>{label}</span>
                                                 <span className='mt-exec-payout'>
-                                                    {isProposalLoading ? 'Payout …' : proposalPayouts[opt.value] !== undefined ? `Payout (−3%) $${proposalPayouts[opt.value]!.toFixed(2)}` : 'Payout —'}
+                                                    {isProposalLoading ? 'Payout …' : proposalPayouts[opt.value] !== undefined ? `Payout $${proposalPayouts[opt.value]!.toFixed(2)}` : 'Payout —'}
                                                 </span>
                                             </>
                                         )}

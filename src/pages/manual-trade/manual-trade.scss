@@ -97,6 +97,8 @@ $radius:   10px;
 }
 
 .mt-tick-display {
+    position: relative;
+    z-index: 10;
     background: $bg2;
     border: 1px solid $border;
     border-radius: $radius;
@@ -155,6 +157,8 @@ $radius:   10px;
 
 /* ── Digit frequency bars ──────────────────────────── */
 .mt-stats {
+    position: relative;
+    z-index: 1;
     background: $bg2;
     border: 1px solid $border;
     border-radius: $radius;
@@ -902,6 +906,15 @@ $radius:   10px;
     border-radius: 7px;
 }
 .mt-mini-chart__surface > .smartcharts { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mt-mini-chart__surface .smartcharts-desktop,
+.mt-mini-chart__surface .smartcharts-mobile,
+.mt-mini-chart__surface .cq-context,
+.mt-mini-chart__surface .ciq-chart-area,
+.mt-mini-chart__surface .chartContainer {
+    max-height: 100% !important;
+    overflow: hidden;
+}
+.mt-mini-chart__surface .chartContainer { height: 100% !important; }
 .mt-mini-chart__surface .sc-toolbar-widget { top: 54px; transform: scale(0.78); transform-origin: top left; }
 .mt-mini-chart__surface .sc-navigation-widget { bottom: 12px; transform: scale(0.78); transform-origin: bottom left; }
 @media (max-width: 700px) {
