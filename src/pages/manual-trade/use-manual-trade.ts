@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onNewSystemMessage, sendViaNewSystem, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useSandbox } from '@/components/layout/header/sandbox-context';
+import { calcPayout } from '@/utils/sandbox-payout';
 
 export interface SymbolInfo {
     display_name: string;
@@ -207,6 +208,7 @@ export function useManualTrade() {
 
     const subIdRef = useRef<string | null>(null);
     const proposalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    const proposalRequestRef = useRef(0);
     const mountedRef = useRef(true);
 
     // Persist config to localStorage
@@ -361,7 +363,7 @@ export function useManualTrade() {
                     subIdRef.current = data.subscription.id;
                     return;
                 }
-                if (data.msg_type === 'proposal') {
+                if (data.msg_type === 'proposal' && data.echo_req?.req_id === proposalRequestRef.current) {
                     setIsProposalLoading(false);
                     setProposal(data.proposal ? {
                         askPrice: Number(data.proposal.ask_price),
@@ -661,6 +663,56 @@ export function useManualTrade() {
         }
     }, []);
 
+    // Keep the payout shown on the execution buttons aligned with the current
+    // contract type, barrier, stake, duration, and market.
+    useEffect(() => {
+        const amount = parseFloat(stake);
+        if (!amount || amount <= 0 || !duration || !activeSymbol) {
+            setProposal(null);
+            return;
+        }
+        if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current);
+        const requestId = ++reqIdRef.current;
+        proposalRequestRef.current = requestId;
+        setProposal(null);
+        setIsProposalLoading(!isSandbox && isConnected);
+        proposalTimerRef.current = setTimeout(() => {
+            if (isSandbox) {
+                setProposal({ askPrice: amount, payout: calcPayout(contractMode, selectedDigit, amount), id: 'sandbox-quote' });
+                setIsProposalLoading(false);
+                return;
+            }
+            if (!isConnected) {
+                setProposal(null);
+                setIsProposalLoading(false);
+                return;
+            }
+            setIsProposalLoading(true);
+            const params: Record<string, unknown> = {
+                proposal: 1, amount, basis: 'stake', contract_type: contractMode,
+                currency: 'USD', duration, duration_unit: 't', symbol: activeSymbol, req_id: requestId,
+            };
+            if (contractMode !== 'DIGITEVEN' && contractMode !== 'DIGITODD') params.barrier = selectedDigit;
+            sendViaNewSystemWithPromise(params).then((response: any) => {
+                if (proposalRequestRef.current !== requestId) return;
+                setProposal(response?.proposal ? {
+                    askPrice: Number(response.proposal.ask_price),
+                    payout: Number(response.proposal.payout),
+                    id: response.proposal.id,
+                } : null);
+                setIsProposalLoading(false);
+            }).catch(() => {
+                if (proposalRequestRef.current === requestId) {
+                    setProposal(null);
+                    setIsProposalLoading(false);
+                }
+            });
+        }, 120);
+        return () => {
+            if (proposalTimerRef.current) clearTimeout(proposalTimerRef.current);
+        };
+    }, [activeSymbol, contractMode, duration, isConnected, isSandbox, selectedDigit, stake]);
+
     // One-click execution: Deriv accepts buy(parameters) directly. Avoid the
     // old proposal -> buy round trip because it added a visible delay after
     // the user pressed the execution button.
@@ -846,6 +898,7 @@ export function useManualTrade() {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
+        proposal, isProposalLoading,
         isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
         entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,

@@ -33,6 +33,7 @@ const ManualTrade = observer(() => {
         selectedDigit, setSelectedDigit,
         stake, setStake, duration, setDuration,
         buyWithMode, isBuying, buyResult, buyError, clearBuyResult,
+        proposal, isProposalLoading,
         isConnected, isLoading, tradeFlash,
         notifications, exitDigit, activeTrade, tradeHistory, clearTradeHistory,
         entryDigitEnabled, setEntryDigitEnabled, entryDigitValue, setEntryDigitValue,
@@ -333,7 +334,14 @@ const ManualTrade = observer(() => {
                                         disabled={isBuying || !isConnected || (showDigit && selectedDigit < 0)}
                                         onClick={() => buyWithMode(opt.value)}
                                     >
-                                        {isBuying ? '…' : label}
+                                        {isBuying ? '…' : (
+                                            <>
+                                                <span className='mt-exec-label'>{label}</span>
+                                                <span className='mt-exec-payout'>
+                                                    {isProposalLoading ? 'Payout …' : proposal ? `Payout $${proposal.payout.toFixed(2)}` : 'Payout —'}
+                                                </span>
+                                            </>
+                                        )}
                                     </button>
                                 );
                             })
