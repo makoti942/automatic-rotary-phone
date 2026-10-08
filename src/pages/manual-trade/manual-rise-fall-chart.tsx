@@ -35,6 +35,7 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
             {!isReady ? (
                 <div className='mt-mini-chart__loading'>Loading candles…</div>
             ) : (
+                <div className='mt-mini-chart__surface'>
                 <SmartChart
                     id={`manual-rise-fall-${symbol}`}
                     key={`manual-rise-fall-${symbol}`}
@@ -74,6 +75,7 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
                     isLive
                     leftMargin={55}
                 />
+                </div>
             )}
         </div>
     );

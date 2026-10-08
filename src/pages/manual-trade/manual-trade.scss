@@ -872,6 +872,8 @@ $radius:   10px;
 @keyframes mt-history-fade-out { from { opacity: 1; } to { opacity: 0; } }
 
 .mt-mini-chart {
+    position: relative;
+    height: 310px;
     min-height: 300px;
     padding: 10px 12px 8px;
     overflow: hidden;
@@ -892,11 +894,18 @@ $radius:   10px;
 }
 .mt-mini-chart__hint { color: $muted; font-size: 9px; font-weight: 500; }
 .mt-mini-chart__loading { display: grid; min-height: 250px; place-items: center; color: $muted; font-size: 11px; }
-.mt-mini-chart > .smartcharts,
-.mt-mini-chart > div:not(.mt-mini-chart__header) { min-height: 260px; height: 260px; }
+.mt-mini-chart__surface {
+    position: relative;
+    height: 270px;
+    min-height: 0;
+    overflow: hidden;
+    border-radius: 7px;
+}
+.mt-mini-chart__surface > .smartcharts { position: absolute; inset: 0; width: 100%; height: 100%; }
+.mt-mini-chart__surface .sc-toolbar-widget { top: 54px; transform: scale(0.78); transform-origin: top left; }
+.mt-mini-chart__surface .sc-navigation-widget { bottom: 12px; transform: scale(0.78); transform-origin: bottom left; }
 @media (max-width: 700px) {
-    .mt-mini-chart { min-height: 255px; padding: 8px; }
+    .mt-mini-chart { height: 265px; min-height: 255px; padding: 8px; }
     .mt-mini-chart__header { align-items: flex-start; flex-direction: column; gap: 2px; font-size: 11px; }
-    .mt-mini-chart > .smartcharts,
-    .mt-mini-chart > div:not(.mt-mini-chart__header) { min-height: 220px; height: 220px; }
+    .mt-mini-chart__surface { height: 225px; }
 }
