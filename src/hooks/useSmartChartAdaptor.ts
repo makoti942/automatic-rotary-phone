@@ -78,10 +78,16 @@ export const useSmartChartAdaptor = (): UseSmartChartAdaptorReturn => {
         };
     }, []);
 
-    // Initialize adapter - runs once when chart_api.api is available
+    // Initialize the chart connection and adaptor together. The manual-trade
+    // page can mount before the chart tab, especially on mobile, so waiting
+    // only for an already-created chart_api left the mini chart blank.
     useEffect(() => {
-        if (!adapterInitialized && chart_api.api) {
+        if (adapterInitialized) return;
+        let cancelled = false;
+        const initialize = async () => {
             try {
+                if (!chart_api.api) await chart_api.init();
+                if (cancelled || !chart_api.api) return;
                 const transport = createTransport();
                 const services = createServices();
                 const championAdapter = buildSmartchartsChampionAdapter(transport, services, {
@@ -89,18 +95,20 @@ export const useSmartChartAdaptor = (): UseSmartChartAdaptorReturn => {
                     subscriptionTimeout: 30000,
                 });
 
-                if (isMountedRef.current) {
+                if (!cancelled && isMountedRef.current) {
                     setAdapter(championAdapter);
                     setAdapterInitialized(true);
                     setError(null);
                 }
             } catch (err) {
-                if (isMountedRef.current) {
+                if (!cancelled && isMountedRef.current) {
                     setError(err instanceof Error ? err : new Error('Failed to initialize adapter'));
                     setIsLoading(false);
                 }
             }
-        }
+        };
+        initialize();
+        return () => { cancelled = true; };
     }, [adapterInitialized]);
 
     // Load chart data when adapter is initialized
