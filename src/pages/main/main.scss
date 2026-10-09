@@ -1040,8 +1040,38 @@
 }
 
 // Chart tab — ensure chart type selector never clipped after switching to candles
-// Keep chart wrapper from clipping dropdowns, but don't promote modal_root when empty (would block touches)
 .dashboard__chart-wrapper .smartcharts .sc-toolbar,
 .dashboard__chart-wrapper .smartcharts .sc-toolbar__item {
     overflow: visible !important;
+}
+
+// ── Mobile scroll fix: prevent fixed-height clipping, allow dashboard cards to scroll ──
+@include mobile-or-tablet-screen {
+    .main {
+        height: auto !important;
+        min-height: calc(100vh - 6rem);
+        overflow: visible !important;
+        overflow-y: auto !important;
+        padding-bottom: 6rem; // clear footer
+        -webkit-overflow-scrolling: touch;
+    }
+    .bot-dashboard {
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+    }
+    .tab__dashboard,
+    .tab__dashboard__content {
+        height: auto !important;
+        min-height: auto !important;
+        overflow: visible !important;
+        -webkit-overflow-scrolling: touch;
+    }
+    .main__container .dc-tabs__content {
+        overflow: visible !important;
+    }
+    .main__container .dc-tabs__list {
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+    }
 }
