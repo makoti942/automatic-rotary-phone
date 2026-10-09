@@ -77,11 +77,13 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
 
         @include mobile-or-tablet-screen {
             display: inline-flex !important;
-            height: 100% !important;
+            height: 3.4rem !important;
+            min-width: 0;
+            max-width: 9rem;
             white-space: nowrap;
-            border-radius: 4px !important;
-            padding: 0 0.9rem !important;
-            font-size: 12px !important;
+            border-radius: 6px !important;
+            padding: 0 0.65rem !important;
+            font-size: 11px !important;
             font-weight: 700;
             letter-spacing: 0.02em;
             background: var(--general-section-1) !important;
@@ -89,6 +91,7 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
             color: var(--text-prominent) !important;
             box-shadow: 0 1px 2px rgba(0,0,0,0.06);
             transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+            flex: 0 0 auto;
 
             &:hover {
                 background: var(--state-hover) !important;
@@ -97,7 +100,7 @@ $hacker-glow: rgba(0, 255, 65, 0.6);
             }
             &:active { transform: translateY(0); }
 
-            .dc-btn__icon { margin-inline-end: 0.35rem; }
+            .dc-btn__icon { margin-inline-end: 0.28rem; }
         }
     }
 
