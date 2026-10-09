@@ -48,7 +48,7 @@ interface AccountSession extends StoredAccount {
 }
 
 async function resolveTokenAccount(token: string, previousLoginId?: string): Promise<{ account: DerivAccount; websocketUrl: string }> {
-    const accounts = await DerivWSAccountsService.fetchAccountsList(token);
+    const accounts = await DerivWSAccountsService.fetchAccountsList(token, false);
     const account = (previousLoginId && accounts.find(item => item.account_id === previousLoginId)) || accounts[0];
     if (!account) throw new Error('No Deriv account is available for this token.');
     const websocketUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(token, account.account_id);

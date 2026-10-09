@@ -118,10 +118,11 @@ export class DerivWSAccountsService {
      * @param accessToken Bearer token from OAuth authentication
      * @returns Promise with array of DerivAccount objects
      */
-    static async fetchAccountsList(accessToken: string): Promise<DerivAccount[]> {
+    static async fetchAccountsList(accessToken: string, persistToSession = true): Promise<DerivAccount[]> {
+        const cacheKey = `${accessToken}:${persistToSession ? 'session' : 'isolated'}`;
         // If there's already a fetch in progress, return that promise
-        if (this.accountsFetchPromises.has(accessToken)) {
-            return this.accountsFetchPromises.get(accessToken)!;
+        if (this.accountsFetchPromises.has(cacheKey)) {
+            return this.accountsFetchPromises.get(cacheKey)!;
         }
 
         // Create new fetch promise and cache it
@@ -153,24 +154,24 @@ export class DerivWSAccountsService {
                 }
 
                 // Store accounts in sessionStorage for future use
-                this.storeAccounts(accounts);
+                if (persistToSession) this.storeAccounts(accounts);
 
                 return accounts;
             } catch (error) {
                 console.error('[DerivWS] Error fetching accounts:', error);
                 // Clear the cached promise on error so retry is possible
-                this.accountsFetchPromises.delete(accessToken);
+                this.accountsFetchPromises.delete(cacheKey);
                 throw error;
             } finally {
                 // Clear the promise after completion (success or failure)
                 // This allows fresh fetches on subsequent calls
                 setTimeout(() => {
-                    this.accountsFetchPromises.delete(accessToken);
+                    this.accountsFetchPromises.delete(cacheKey);
                 }, 100);
             }
         })();
 
-        this.accountsFetchPromises.set(accessToken, accountsPromise);
+        this.accountsFetchPromises.set(cacheKey, accountsPromise);
         return accountsPromise;
     }
 
@@ -305,9 +306,19 @@ export class DerivWSAccountsService {
             const targetAccount =
                 (activeLoginId && accounts.find(a => a.account_id === activeLoginId)) || accounts[0];
 
-            // Step 4: Fetch OTP and WebSocket URL for the resolved account (always fresh OTP)
-            const websocketURL = await this.fetchOTPWebSocketURL(accessToken, targetAccount.account_id);
-            return websocketURL;
+            // Step 4: Fetch OTP and WebSocket URL for the resolved account (always fresh OTP).
+            // A 404 usually means sessionStorage contains an account from a different
+            // token/session. Refresh the account list once before giving up.
+            try {
+                return await this.fetchOTPWebSocketURL(accessToken, targetAccount.account_id);
+            } catch (error: any) {
+                if (!/\b404\b/.test(String(error?.message || error))) throw error;
+                accounts = await this.fetchAccountsList(accessToken, true);
+                if (!accounts || accounts.length === 0) throw new Error('No accounts available');
+                const refreshedTarget =
+                    (activeLoginId && accounts.find(a => a.account_id === activeLoginId)) || accounts[0];
+                return await this.fetchOTPWebSocketURL(accessToken, refreshedTarget.account_id);
+            }
         } catch (error) {
             console.error('[DerivWS] Error in authenticated WebSocket URL flow:', error);
             throw error;
