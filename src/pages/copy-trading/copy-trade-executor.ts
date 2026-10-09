@@ -350,10 +350,17 @@ function convertProposalParams(message: any): Record<string, unknown> | null {
 
 async function executeOnAccount(session: AccountSession, params: Record<string, unknown>, stake: number) {
     if (session.status !== 'connected' || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
-    const proposal = await request(session, { proposal: 1, amount: stake, basis: 'stake', ...params });
-    if (!proposal?.proposal?.id) throw new Error(proposal?.error?.message || 'No proposal returned');
-    const buy = await request(session, { buy: proposal.proposal.id, price: proposal.proposal.ask_price });
+    // Use Deriv's direct-buy form. A proposal round-trip per account adds
+    // visible latency and makes the copied contracts enter at different ticks.
+    const buy = await request(session, {
+        buy: 1,
+        price: stake,
+        parameters: { ...params, amount: stake, basis: 'stake' },
+    });
     if (!buy?.buy) throw new Error(buy?.error?.message || 'Buy was rejected');
+    // The socket is subscribed, but request a balance immediately as well so
+    // the account card reflects the debit without waiting for the next push.
+    await request(session, { balance: 1, subscribe: 1 });
 }
 function copyCurrentTrade(stake: number, sourceParams?: Record<string, unknown> | null) {
     const params = sourceParams ? { ...sourceParams } : proposalParams ? { ...proposalParams } : null;
