@@ -28,18 +28,13 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
         chart_api.api?.forgetAll('ticks');
     }, []);
 
+    // Detect the active MACD panel, not the indicator picker or any arbitrary second panel.
     useEffect(() => {
         const root = chartContainerRef.current;
         if (!root) return;
-        return observeChartPanelLayout(root);
-    }, []);
 
-    // Detect the active MACD panel, not the indicator picker or any arbitrary second panel.
-    useEffect(() => {
         const checkMacd = () => {
-            const container = chartContainerRef.current;
-            if (!container) return;
-            const panels = Array.from(container.querySelectorAll<HTMLElement>('.stx-panel'));
+            const panels = Array.from(root.querySelectorAll<HTMLElement>('.stx-panel'));
             const macdPanel = panels.find(panel => {
                 const panelInfo = [panel.id, panel.className, panel.getAttribute('data-name'), panel.textContent]
                     .join(' ');
@@ -52,13 +47,8 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
             });
             setHasMacd(!!macdPanel);
         };
-        checkMacd();
-        const container = chartContainerRef.current;
-        if (!container) return;
-        const observer = new MutationObserver(checkMacd);
-        observer.observe(container, { childList: true, subtree: true, characterData: true });
-        return () => observer.disconnect();
-    }, []);
+        return observeChartPanelLayout(root, checkMacd);
+    }, [symbol]);
 
     // Auto-switch to MACD-only when MACD is added (user wants chart to disappear, MACD takes its place)
     useEffect(() => {

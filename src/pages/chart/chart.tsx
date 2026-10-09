@@ -105,8 +105,8 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
             dir='ltr'
         >
             <SmartChart
-                id={`dbot-${symbol}-${chartInstanceId}`}
-                key={`chart-${symbol}`}
+                id={`dbot-${chartInstanceId}`}
+                key={`chart-${chartInstanceId}`}
                 barriers={barriers}
                 showLastDigitStats={show_digits_stats}
                 chartControlsWidgets={null}
