@@ -177,23 +177,3 @@
         height: 100% !important;
     }
 }
-
-// Equal height for indicator windows — chart and indicators share space equally
-.bot .smartcharts-equal-panels,
-.dashboard__chart-wrapper .smartcharts-equal-panels,
-.mt-mini-chart .smartcharts-equal-panels {
-    display: flex !important;
-    flex-direction: column !important;
-    height: 100% !important;
-    min-height: 0 !important;
-    width: 100% !important;
-
-    > .stx-panel {
-        flex: 1 1 0 !important;
-        height: auto !important;
-        min-height: 0 !important;
-        max-height: none !important;
-        box-sizing: border-box !important;
-        position: relative !important;
-    }
-}

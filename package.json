@@ -42,6 +42,7 @@
     "js-cookie": "^3.0.5",
     "localforage": "^1.10.0",
     "lodash.debounce": "^4.0.8",
+    "lucide-react": "^1.53.0",
     "lz-string": "^1.5.0",
     "mobx": "^6.12.3",
     "mobx-react-lite": "^4.0.7",

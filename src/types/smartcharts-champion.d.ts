@@ -75,6 +75,7 @@ declare module '@deriv-com/smartcharts-champion' {
     >;
 
     export interface TSettings {
+        assetInformation?: boolean;
         countdown?: boolean;
         historical?: boolean;
         lang?: string;
@@ -158,6 +159,7 @@ declare module '@deriv-com/smartcharts-champion' {
         isMobile?: boolean;
         enabledChartFooter?: boolean;
         enabledNavigationWidget?: boolean;
+        getIndicatorHeightRatio?: (chartHeight: number, indicatorCount: number) => { height: number; percent: number };
         yAxisMargin?: { top: number; bottom: number };
         leftMargin?: number;
         crosshairState?: number | null;
