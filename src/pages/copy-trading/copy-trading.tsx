@@ -60,65 +60,75 @@ const CopyTrading: React.FC = () => {
                 </div>
             </div>
 
-            <form className='ct__token-form' onSubmit={handleAddToken}>
-                <label htmlFor='copy-api-token'>Deriv API token</label>
-                <div className='ct__token-input-row'>
-                    <input
-                        id='copy-api-token'
-                        className='ct__input'
-                        type='password'
-                        autoComplete='off'
-                        placeholder='Paste a token with trading permission'
-                        value={token}
-                        onChange={event => setToken(event.target.value)}
-                        disabled={isAdding}
-                    />
-                    <button className='ct__btn ct__btn--primary ct__token-submit' type='submit' disabled={!token.trim() || isAdding}>
-                        {isAdding ? 'Checking…' : 'Add account'}
-                    </button>
-                </div>
-                <small>Tokens are stored locally in this browser and are not uploaded to Firebase.</small>
-            </form>
-
-            {statusMsg && <div className='ct__status' onClick={() => setStatusMsg('')}>{statusMsg}</div>}
-
-            <div className='ct__section'>
-                <div className='ct__section-header'>
-                    <span>Connected accounts <b className='ct__count'>{accounts.length}</b></span>
-                    <a className='ct__token-link' href='https://home.deriv.com/dashboard/profile/api-tokens' target='_blank' rel='noreferrer'>Create token ↗</a>
-                </div>
-                {accounts.length === 0 ? (
-                    <div className='ct__empty'>Add a Deriv API token to connect an account. You can add as many accounts as you need.</div>
-                ) : (
-                    <div className='ct__account-list'>
-                        {accounts.map(account => (
-                            <article className={`ct__account-card ct__account-card--${account.status}`} key={account.id}>
-                                <div className='ct__account-card-head'>
-                                    <div className='ct__account-avatar'>{account.name === 'Authorizing account…' ? '…' : account.name.slice(0, 1).toUpperCase()}</div>
-                                    <div className='ct__account-identity'>
-                                        <strong>{account.name}</strong>
-                                        <span>{account.loginid} · {account.tokenHint}</span>
-                                    </div>
-                                    <button className='ct__account-remove' type='button' onClick={() => removeCopyToken(account.id)} aria-label={`Remove ${account.name}`}>×</button>
-                                </div>
-                                <div className='ct__account-details'>
-                                    <div><small>ACCOUNT</small><b className={account.isDemo ? 'ct__demo' : 'ct__real'}>{account.isDemo ? 'DEMO' : 'REAL'}</b></div>
-                                    <div><small>BALANCE</small><b>{account.balance == null ? '—' : `${account.currency} ${account.balance.toFixed(2)}`}</b></div>
-                                    <div><small>STATUS</small><b className={`ct__account-status ct__account-status--${account.status}`}>{account.status === 'connected' ? 'READY' : account.status.toUpperCase()}</b></div>
-                                </div>
-                                {account.error && <div className='ct__account-error'>{account.error}</div>}
-                            </article>
-                        ))}
+            <div className='ct__workspace'>
+                <section className='ct__column ct__column--accounts'>
+                    <div className='ct__section'>
+                        <div className='ct__section-header'>
+                            <span>Connected accounts <b className='ct__count'>{accounts.length}</b></span>
+                            <span className='ct__column-label'>LIVE ACCOUNTS</span>
+                        </div>
+                        {accounts.length === 0 ? (
+                            <div className='ct__empty'>Add a Deriv API token from the panel on the right to connect an account.</div>
+                        ) : (
+                            <div className='ct__account-list'>
+                                {accounts.map(account => (
+                                    <article className={`ct__account-card ct__account-card--${account.status}`} key={account.id}>
+                                        <div className='ct__account-card-head'>
+                                            <div className='ct__account-avatar'>{account.name === 'Authorizing account…' ? '…' : account.name.slice(0, 1).toUpperCase()}</div>
+                                            <div className='ct__account-identity'>
+                                                <strong>{account.name}</strong>
+                                                <span>{account.loginid} · {account.tokenHint}</span>
+                                            </div>
+                                            <button className='ct__account-remove' type='button' onClick={() => removeCopyToken(account.id)} aria-label={`Remove ${account.name}`}>×</button>
+                                        </div>
+                                        <div className='ct__account-details'>
+                                            <div><small>ACCOUNT</small><b className={account.isDemo ? 'ct__demo' : 'ct__real'}>{account.isDemo ? 'DEMO' : 'REAL'}</b></div>
+                                            <div><small>BALANCE</small><b>{account.balance == null ? '—' : `${account.currency} ${account.balance.toFixed(2)}`}</b></div>
+                                            <div><small>STATUS</small><b className={`ct__account-status ct__account-status--${account.status}`}>{account.status === 'connected' ? 'READY' : account.status.toUpperCase()}</b></div>
+                                        </div>
+                                        {account.error && <div className='ct__account-error'>{account.error}</div>}
+                                    </article>
+                                ))}
+                            </div>
+                        )}
                     </div>
-                )}
-            </div>
+                    <div className='ct__execution-note'>
+                        <span className='ct__execution-note-icon'>↗</span>
+                        <div>
+                            <strong>Copy execution is active</strong>
+                            <span>Connected accounts receive the same contract parameters and stake when you execute a trade. Demo and real accounts can be used together.</span>
+                        </div>
+                    </div>
+                </section>
 
-            <div className='ct__execution-note'>
-                <span className='ct__execution-note-icon'>↗</span>
-                <div>
-                    <strong>Copy execution is active</strong>
-                    <span>Connected accounts receive the same contract parameters and stake when you execute a trade. Demo and real accounts can be used together.</span>
-                </div>
+                <aside className='ct__column ct__column--token'>
+                    <div className='ct__token-panel-heading'>
+                        <span className='ct__eyebrow'>ACCOUNT CONNECTION</span>
+                        <h4>Add API token</h4>
+                        <p>Connect another Deriv account for automatic trade execution.</p>
+                    </div>
+                    <form className='ct__token-form' onSubmit={handleAddToken}>
+                        <label htmlFor='copy-api-token'>Deriv API token</label>
+                        <div className='ct__token-input-row'>
+                            <input
+                                id='copy-api-token'
+                                className='ct__input'
+                                type='password'
+                                autoComplete='off'
+                                placeholder='Paste a token with trading permission'
+                                value={token}
+                                onChange={event => setToken(event.target.value)}
+                                disabled={isAdding}
+                            />
+                            <button className='ct__btn ct__btn--primary ct__token-submit' type='submit' disabled={!token.trim() || isAdding}>
+                                {isAdding ? 'Checking…' : 'Add account'}
+                            </button>
+                        </div>
+                        <small>Tokens stay in this browser and are not uploaded to Firebase.</small>
+                    </form>
+                    {statusMsg && <div className='ct__status' onClick={() => setStatusMsg('')}>{statusMsg}</div>}
+                    <a className='ct__token-link ct__token-link--card' href='https://home.deriv.com/dashboard/profile/api-tokens' target='_blank' rel='noreferrer'>Create a token in Deriv ↗</a>
+                </aside>
             </div>
         </div>
     );

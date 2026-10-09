@@ -640,3 +640,119 @@
     .ct__token-submit { width: 100%; }
     .ct__account-list { grid-template-columns: 1fr; }
 }
+
+/* ── Two-column copy-trading workspace ─────────────────────── */
+.ct {
+    box-sizing: border-box;
+    min-height: 0;
+    overflow-x: hidden;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+}
+
+.ct__workspace {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.82fr);
+    align-items: start;
+    gap: 14px;
+    min-width: 0;
+}
+
+.ct__column {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.ct__column--token {
+    position: sticky;
+    top: 0;
+}
+
+.ct__column-label {
+    color: var(--text-less-prominent);
+    font-size: 8px;
+    font-weight: 800;
+    letter-spacing: 0.7px;
+}
+
+.ct__token-panel-heading {
+    padding: 14px 14px 0;
+}
+
+.ct__token-panel-heading h4 {
+    margin: 0 0 5px;
+    color: var(--text-prominent);
+    font-size: 16px;
+}
+
+.ct__token-panel-heading p {
+    margin: 0;
+    color: var(--text-less-prominent);
+    font-size: 10px;
+    line-height: 1.45;
+}
+
+.ct__column--token .ct__token-form {
+    margin-bottom: 0;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.ct__column--token .ct__status {
+    margin-bottom: 0;
+}
+
+.ct__token-link--card {
+    align-self: flex-start;
+    margin: 0 14px 4px;
+}
+
+.ct__column--accounts .ct__section {
+    min-height: 230px;
+}
+
+.ct__column--accounts .ct__account-list {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    align-items: start;
+}
+
+@media (max-width: 900px) {
+    .ct__workspace {
+        grid-template-columns: minmax(0, 1fr) minmax(245px, 0.8fr);
+    }
+
+    .ct__column--accounts .ct__account-list {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 680px) {
+    .ct {
+        padding: 12px;
+        height: 100%;
+        overflow-y: auto;
+    }
+
+    .ct__workspace {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .ct__column--token {
+        position: static;
+        grid-row: 1;
+    }
+
+    .ct__column--accounts {
+        grid-row: 2;
+    }
+
+    .ct__token-panel-heading {
+        padding: 12px 12px 0;
+    }
+
+    .ct__column--accounts .ct__section {
+        min-height: 0;
+    }
+}
