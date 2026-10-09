@@ -929,17 +929,14 @@ $radius:   10px;
     .mt-mini-chart__surface .sc-toolbar-widget .sc-mcd { width: 100% !important; min-width: 0 !important; height: 100% !important; }
 }
 
-// ── MACD only: hide price candles, show MACD full height (instead of split) ──
-.mt-mini-chart--macd-only .mt-mini-chart__surface .ciq-chart .stx-panel:first-child {
+// ── MACD only: hide every other panel and let the MACD panel use the full chart area ──
+.mt-mini-chart--macd-only .mt-mini-chart__surface .mt-chart-panel--hidden {
     display: none !important;
 }
-.mt-mini-chart--macd-only .mt-mini-chart__surface .ciq-chart .stx-panel {
+.mt-mini-chart--macd-only .mt-mini-chart__surface .mt-chart-panel--macd-target {
+    flex: 1 1 0 !important;
     height: 100% !important;
-    top: 0 !important;
-}
-.mt-mini-chart--macd-only .mt-mini-chart__surface .stx-panel--macd,
-.mt-mini-chart--macd-only .mt-mini-chart__surface [data-name="MACD"] {
-    height: 100% !important;
+    max-height: none !important;
 }
 .mt-mini-chart__macd-toggle {
     padding: 4px 8px;
@@ -956,15 +953,20 @@ $radius:   10px;
     &:hover { border-color: var(--brand-primary); }
 }
 
-// Equal height for indicator windows — chart and indicators share equally
-.mt-mini-chart .ciq-chart {
+// Keep manual-trade panel sizing independent of the lazy-loaded chart tab.
+.mt-mini-chart .smartcharts-equal-panels {
     display: flex !important;
     flex-direction: column !important;
     height: 100% !important;
-    .stx-panel {
+    min-height: 0 !important;
+    width: 100% !important;
+
+    > .stx-panel {
         flex: 1 1 0 !important;
         height: auto !important;
-        min-height: 110px !important;
+        min-height: 0 !important;
+        max-height: none !important;
+        box-sizing: border-box !important;
         position: relative !important;
     }
 }

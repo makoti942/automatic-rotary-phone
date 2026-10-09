@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 /* [AI] - Analytics removed - rudderstack event tracking removed */
@@ -7,6 +7,7 @@ import ChunkLoader from '@/components/loader/chunk-loader';
 import chart_api from '@/external/bot-skeleton/services/api/chart-api';
 import { useSmartChartAdaptor } from '@/hooks/useSmartChartAdaptor';
 import { useStore } from '@/hooks/useStore';
+import { observeChartPanelLayout } from './chart-panel-layout';
 import { ChartTitle, SmartChart, TGranularity, TStateChangeListener } from '@deriv-com/smartcharts-champion';
 import { useDevice } from '@deriv-com/ui';
 import ToolbarWidgets from './toolbar-widgets';
@@ -14,6 +15,8 @@ import '@deriv-com/smartcharts-champion/dist/smartcharts.css';
 
 const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) => {
     const barriers: [] = [];
+    const chartInstanceId = useId().replace(/:/g, '');
+    const chartWrapperRef = useRef<HTMLDivElement>(null);
     const { common, ui } = useStore();
     const { chart_store, run_panel, dashboard } = useStore();
     const [isSafari, setIsSafari] = useState(false);
@@ -32,6 +35,12 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
 
     // Use the custom hook for SmartChart Adaptor
     const { chartData, getQuotes, subscribeQuotes, unsubscribeQuotes } = useSmartChartAdaptor();
+
+    useEffect(() => {
+        const root = chartWrapperRef.current;
+        if (!root) return;
+        return observeChartPanelLayout(root);
+    }, [symbol, chartData.activeSymbols.length]);
 
     const { isDesktop, isMobile } = useDevice();
     const { is_drawer_open } = run_panel;
@@ -87,6 +96,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
 
     return (
         <div
+            ref={chartWrapperRef}
             className={classNames('dashboard__chart-wrapper', {
                 'dashboard__chart-wrapper--expanded': is_drawer_open && isDesktop,
                 'dashboard__chart-wrapper--modal': is_chart_modal_visible && isDesktop,
@@ -95,7 +105,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
             dir='ltr'
         >
             <SmartChart
-                id={`dbot-${symbol}`}
+                id={`dbot-${symbol}-${chartInstanceId}`}
                 key={`chart-${symbol}`}
                 barriers={barriers}
                 showLastDigitStats={show_digits_stats}
