@@ -7,7 +7,6 @@ const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
 // Personal API tokens use Deriv's public WebSocket API. The /trading/v1
 // endpoint is for the newer OAuth/OTP flow and does not accept a normal
 // authorize message containing an API token.
-const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
 const STORAGE_KEY = 'mw_copy_api_accounts';
 
 type AccountStatus = 'connecting' | 'connected' | 'error';
@@ -63,6 +62,7 @@ let initialized = false;
 let interceptorInstalled = false;
 let origProtoSend: ((data: string | ArrayBuffer | Blob) => void) | null = null;
 let proposalParams: Record<string, unknown> | null = null;
+const proposalParamsById = new Map<string, Record<string, unknown>>();
 let messageUnsub: (() => void) | null = null;
 
 function readStored(): StoredAccount[] {
@@ -219,6 +219,9 @@ function connect(session: AccountSession): Promise<CopyAccount> {
             session.error = undefined;
             persist();
             notify();
+            request(session, { balance: 1, subscribe: 1 }).catch(error => {
+                console.warn('[CopyTrading] Balance subscription failed for', session.loginid, error);
+            });
             if (!settled) {
                 settled = true;
                 clearTimeout(timeout);
@@ -348,17 +351,26 @@ function convertProposalParams(message: any): Record<string, unknown> | null {
 async function executeOnAccount(session: AccountSession, params: Record<string, unknown>, stake: number) {
     if (session.status !== 'connected' || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
     const proposal = await request(session, { proposal: 1, amount: stake, basis: 'stake', ...params });
-    if (!proposal?.proposal?.id) throw new Error('No proposal returned');
-    await request(session, { buy: proposal.proposal.id, price: proposal.proposal.ask_price });
+    if (!proposal?.proposal?.id) throw new Error(proposal?.error?.message || 'No proposal returned');
+    const buy = await request(session, { buy: proposal.proposal.id, price: proposal.proposal.ask_price });
+    if (!buy?.buy) throw new Error(buy?.error?.message || 'Buy was rejected');
 }
-
-function copyCurrentTrade(stake: number) {
-    if (!proposalParams) return;
-    const params = { ...proposalParams };
+function copyCurrentTrade(stake: number, sourceParams?: Record<string, unknown> | null) {
+    const params = sourceParams ? { ...sourceParams } : proposalParams ? { ...proposalParams } : null;
+    if (!params || !Number.isFinite(stake) || stake <= 0) return;
     const activeLoginId = (() => { try { return localStorage.getItem('active_loginid') || ''; } catch { return ''; } })();
     const targets = Array.from(sessions.values()).filter(session => session.status === 'connected' && session.loginid !== activeLoginId);
     if (!targets.length) return;
-    Promise.allSettled(targets.map(session => executeOnAccount(session, params, stake)));
+    Promise.allSettled(targets.map(async session => {
+        try {
+            await executeOnAccount(session, params, stake);
+            console.info('[CopyTrading] Trade copied to', session.loginid);
+        } catch (error) {
+            console.error('[CopyTrading] Trade copy failed for', session.loginid, error);
+            session.error = error instanceof Error ? error.message : 'Trade copy failed';
+            notify();
+        }
+    }));
 }
 
 export function installCopyTradeInterceptor() {
@@ -375,6 +387,11 @@ export function installCopyTradeInterceptor() {
                         const params = convertProposalParams(message);
                         if (params) proposalParams = params;
                     }
+                    if (message.buy !== undefined && message.buy !== null) {
+                        const params = proposalParamsById.get(String(message.buy)) || convertProposalParams(message) || proposalParams;
+                        const stake = Number(message.parameters?.amount ?? message.price ?? params?.amount);
+                        if (params) copyCurrentTrade(stake, params);
+                    }
                 }
             } catch {}
             return origProtoSend!.call(this, data);
@@ -385,7 +402,9 @@ export function installCopyTradeInterceptor() {
             try {
                 const raw = (event as CustomEvent).detail;
                 const data = typeof raw?.data === 'string' ? JSON.parse(raw.data) : raw;
-                if (data?.msg_type === 'buy' && data.buy?.contract_id) copyCurrentTrade(Number(data.buy.buy_price) || 1);
+                const proposalId = data?.proposal?.id;
+                const params = proposalId && convertProposalParams(data?.echo_req);
+                if (proposalId && params) proposalParamsById.set(String(proposalId), params);
             } catch {}
         };
         window.addEventListener('newSystemMessage', handler);
@@ -398,6 +417,7 @@ export function uninstallCopyTradeInterceptor() {
     messageUnsub = null;
     interceptorInstalled = false;
     proposalParams = null;
+    proposalParamsById.clear();
     try { if (origProtoSend) (WebSocket as any).prototype.send = origProtoSend; } catch {}
     origProtoSend = null;
 }
