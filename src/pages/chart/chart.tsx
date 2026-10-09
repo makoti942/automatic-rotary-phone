@@ -106,7 +106,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
                     <ToolbarWidgets
                         updateChartType={updateChartType}
                         updateGranularity={updateGranularity}
-                        position={!isDesktop ? 'bottom' : 'top'}
+                        position='top'
                         isDesktop={isDesktop}
                     />
                 )}
