@@ -13,6 +13,7 @@ export default class BlocklyStore {
             is_loading: observable,
             active_tab: observable,
             _has_saved_bots: observable,
+            has_checked_saved_bots: observable,
             has_active_bot: computed,
             has_saved_bots: computed,
             setLoading: action,
@@ -24,6 +25,7 @@ export default class BlocklyStore {
 
     is_loading = false;
     active_tab = tabs_title.WORKSPACE;
+    has_checked_saved_bots = false;
 
     // Computed property to check if there's an active bot
     get has_active_bot(): boolean {
@@ -55,6 +57,8 @@ export default class BlocklyStore {
         } catch (e) {
             console.error('Error checking for saved workspaces:', e);
             this._has_saved_bots = false;
+        } finally {
+            this.has_checked_saved_bots = true;
         }
     };
 

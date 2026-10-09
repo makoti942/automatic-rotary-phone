@@ -98,19 +98,24 @@ const TradeAnimation = observer(({ className, should_show_overlay }: TTradeAnima
         }
     }
 
-    // Check if there are no active or saved bots
-    const has_no_bots = !has_active_bot && !has_saved_bots;
+    // Check if there are no active or saved bots — but don't disable until async check completes
+    // After refresh on Charts/Trading View etc, has_active_bot is false until Blockly mounts and
+    // has_saved_bots is false until IndexedDB check finishes (can take 1-2s). Without this guard
+    // the Run button shows "no bot has been created yet" prematurely.
+    const has_checked = blockly_store.has_checked_saved_bots;
+    const has_no_bots = has_checked && !has_active_bot && !has_saved_bots;
     const is_bot_builder_tab = active_tab === DBOT_TABS.BOT_BUILDER;
 
     // Disable the RUN button if:
     // 1. There are no active or saved bots AND the user is not in the bot builder tab
+    // 2. Only after we've actually checked for saved bots (prevents flash-disabled on other tabs after refresh)
     const should_disable_run = has_no_bots && !is_bot_builder_tab;
 
     const is_disabled = is_stop_button_visible ? false : shouldDisable || should_disable_run;
 
     // Show the tooltip when:
     // 1. The user is NOT in the bot builder tab, AND
-    // 2. There are no bots
+    // 2. There are no bots (and we've checked)
     const should_show_tooltip = !is_stop_button_visible && !is_bot_builder_tab && has_no_bots;
 
     const button_props = React.useMemo(() => {
