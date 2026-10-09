@@ -5,7 +5,7 @@ import ContractResultOverlay from '@/components/contract-result-overlay';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import { contract_stages } from '@/constants/contract-stage';
 import { useStore } from '@/hooks/useStore';
-import { LabelPairedPlayLgFillIcon, LabelPairedSquareLgFillIcon } from '@deriv/quill-icons/LabelPaired';
+import { LabelPairedObjectsColumnCaptionRegularIcon, LabelPairedPlayLgFillIcon, LabelPairedSquareLgFillIcon } from '@deriv/quill-icons/LabelPaired';
 import { Localize, localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 /* [AI] - Analytics event tracking removed - see migrate-docs/MONITORING_PACKAGES.md for re-implementation guide */
@@ -28,7 +28,7 @@ const TradeAnimation = observer(({ className, should_show_overlay }: TTradeAnima
     const { isMobile } = useDevice();
 
     const { is_contract_completed, profit, contract_info } = summary_card;
-    const { contract_stage, is_stop_button_visible, is_stop_button_disabled, is_paused, onRunButtonClick, onStopBotClick, onPauseBotClick, onResumeBotClick } =
+    const { contract_stage, is_stop_button_visible, is_stop_button_disabled, is_paused, onRunButtonClick, onStopBotClick, onPauseBotClick, onResumeBotClick, toggleDrawer, is_drawer_open } =
         run_panel;
     const [shouldDisable, setShouldDisable] = React.useState(false);
     const is_unavailable_for_payment_agent = false;
@@ -194,6 +194,16 @@ const TradeAnimation = observer(({ className, should_show_overlay }: TTradeAnima
                 </div>
             ) : (
                 <div className='animation__controls'>
+                    <Button
+                        id='db-run-panel__results-toggle'
+                        className='animation__results-button'
+                        icon={<LabelPairedObjectsColumnCaptionRegularIcon height='18px' width='18px' fill='currentColor' />}
+                        onClick={() => toggleDrawer(!is_drawer_open)}
+                        secondary
+                        has_effect
+                    >
+                        <span className='animation__results-label'>{localize('Results')}</span>
+                    </Button>
                     <Button
                         is_disabled={(is_disabled && !is_unavailable_for_payment_agent) || contract_stage === 3}
                         className={button_props.class}

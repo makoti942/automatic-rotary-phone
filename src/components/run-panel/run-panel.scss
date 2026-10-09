@@ -253,6 +253,11 @@
     }
 }
 
+// Hide old right-edge drawer handle — now relocated in front of Run button
+.run-panel .dc-drawer__toggle {
+    display: none !important;
+}
+
 .controls {
     &__section {
         @include flex-center(space-between);
