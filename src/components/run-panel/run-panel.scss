@@ -253,9 +253,11 @@
     }
 }
 
-// Hide old right-edge drawer handle — now relocated in front of Run button
-.run-panel .dc-drawer__toggle {
-    display: none !important;
+// Hide old right-edge drawer handle on mobile only — relocated in front of Run button
+@include mobile-or-tablet-screen {
+    .run-panel .dc-drawer__toggle {
+        display: none !important;
+    }
 }
 
 .controls {
