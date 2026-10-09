@@ -905,27 +905,30 @@
 
 .main__container .dc-tabs {
     border-radius: 12px 12px 0 0;
-    overflow: hidden;
+    overflow: visible; // keep dropdowns/menus from being clipped (chart type selector portals to modal_root)
     box-shadow: 0 1px 0 var(--border-normal) inset, 0 4px 16px rgba(15,23,42,0.06);
 
     &__list {
-        gap: 2px;
-        padding: 6px 8px 0;
+        gap: 8px; // separate tab names
+        padding: 8px 12px 0;
         border-bottom: 1px solid var(--border-normal);
         backdrop-filter: blur(8px);
         transition: background 0.3s ease, border-color 0.3s ease;
+        overflow: visible;
     }
 
     &__item {
         position: relative;
         color: var(--text-general);
         background: transparent;
-        font-weight: 600;
-        font-size: 13px;
-        letter-spacing: 0.01em;
+        font-weight: 650;
+        font-size: 14.5px; // bigger fronts
+        letter-spacing: 0.02em;
+        line-height: 1.2;
         border-radius: 10px 10px 0 0;
         transition: color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-        gap: 0;
+        gap: 2px;
+        padding: 0 14px; // more breathing room per tab
 
         &:hover {
             color: var(--text-prominent);
@@ -1034,4 +1037,26 @@
     box-shadow:
         0 2px 6px rgba(15,23,42,0.12),
         0 1px 0 rgba(255,255,255,0.9) inset;
+}
+
+// Chart tab — ensure chart type selector never clipped after switching to candles
+.dashboard__chart-wrapper,
+.dashboard__chart-wrapper .smartcharts {
+    overflow: visible !important;
+}
+.dashboard__chart-wrapper .smartcharts .sc-toolbar,
+.dashboard__chart-wrapper .smartcharts .sc-toolbar__item {
+    overflow: visible !important;
+    z-index: 6 !important;
+}
+.dashboard__chart-wrapper .smartcharts .ciq-menu,
+.dashboard__chart-wrapper .smartcharts .sc-chart-type,
+.dashboard__chart-wrapper .smartcharts .sc-interval {
+    z-index: 10 !important;
+}
+// Keep modal_root portal above tab header (tabs list z-index 5)
+#modal_root { z-index: 9998; }
+#modal_root:not(:empty) {
+    z-index: 9998 !important;
+    opacity: 1 !important;
 }
