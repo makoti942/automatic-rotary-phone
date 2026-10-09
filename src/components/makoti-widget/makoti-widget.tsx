@@ -65,7 +65,8 @@ export const MakotiWidget: React.FC = () => {
     if (!loggedIn) return null;
 
     /* ── FAB position (refs for zero-rerender drag) ─────────── */
-    const btnPosRef = useRef({ x: Math.max(PAD, window.innerWidth - 88), y: Math.max(PAD, window.innerHeight - 108) });
+    // Default 1cm (~38px) higher so FAB doesn't sit on the bottom edge
+    const btnPosRef = useRef({ x: Math.max(PAD, window.innerWidth - 88), y: Math.max(PAD, window.innerHeight - 146) });
     const winPosRef = useRef({ x: Math.max(PAD, window.innerWidth - 420), y: Math.max(PAD, window.innerHeight - 640) });
 
     /* ── Expose programmatic tab switching for Recovery Mode ── */
