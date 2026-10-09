@@ -148,11 +148,17 @@
 
 @media (max-width: 768px) {
     .bot .smartcharts-mobile .sc-toolbar-widget,
-    .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget {
+    .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget,
+    .mt-mini-chart .sc-toolbar-widget {
         top: 48px !important;
         bottom: auto !important;
-        z-index: 30;
+        position: absolute !important;
+        z-index: 30 !important;
+        background: var(--general-main-1) !important;
+        border-bottom: 1px solid var(--general-section-1) !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
     }
+}
 
     .bot .smartcharts-mobile .sc-toolbar-widget .cq-menu-dropdown,
     .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget .cq-menu-dropdown {
