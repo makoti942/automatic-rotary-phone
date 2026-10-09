@@ -924,7 +924,34 @@ $radius:   10px;
     .mt-mini-chart__header { align-items: flex-start; flex-direction: column; gap: 2px; font-size: 11px; }
     .mt-mini-chart__surface { height: 280px; }
     .mt-mini-chart__surface .sc-toolbar-widget,
-    .mt-mini-chart__surface .sc-toolbar-widget--bottom { top: auto; bottom: 42px; left: 50%; transform: translateX(-50%) scale(0.88); transform-origin: bottom center; z-index: 30; }
+    .mt-mini-chart__surface .sc-toolbar-widget--bottom { top: 48px !important; bottom: auto !important; left: 8px !important; transform: scale(0.88); transform-origin: top left; z-index: 30; }
     .mt-mini-chart__surface .sc-toolbar-widget .cq-menu-dropdown { position: fixed !important; inset: 0 !important; z-index: 99999 !important; width: 100vw !important; height: 100vh !important; max-height: 100vh !important; overflow: hidden auto !important; }
     .mt-mini-chart__surface .sc-toolbar-widget .sc-mcd { width: 100% !important; min-width: 0 !important; height: 100% !important; }
+}
+
+// ── MACD only: hide price candles, show MACD full height (instead of split) ──
+.mt-mini-chart--macd-only .mt-mini-chart__surface .ciq-chart .stx-panel:first-child {
+    display: none !important;
+}
+.mt-mini-chart--macd-only .mt-mini-chart__surface .ciq-chart .stx-panel {
+    height: 100% !important;
+    top: 0 !important;
+}
+.mt-mini-chart--macd-only .mt-mini-chart__surface .stx-panel--macd,
+.mt-mini-chart--macd-only .mt-mini-chart__surface [data-name="MACD"] {
+    height: 100% !important;
+}
+.mt-mini-chart__macd-toggle {
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid var(--general-section-2);
+    background: var(--general-section-1);
+    color: var(--text-general);
+    font-size: 10px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    &.is-active { background: var(--brand-primary); color: #fff; border-color: var(--brand-primary); }
+    &:hover { border-color: var(--brand-primary); }
 }
