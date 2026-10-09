@@ -1,8 +1,13 @@
 // Direct multi-account copy execution for the Copy Trading tab.
 // Tokens stay in this browser's localStorage and are never sent to Firebase.
 
+import { DerivWSAccountsService, type DerivAccount } from '@/services/derivws-accounts.service';
+
 const APP_ID = '33UD5Xga7WHSzXFtBYdmr';
-const WS_URL = `wss://api.derivws.com/trading/v1/websockets/v3?app_id=${APP_ID}`;
+// Personal API tokens use Deriv's public WebSocket API. The /trading/v1
+// endpoint is for the newer OAuth/OTP flow and does not accept a normal
+// authorize message containing an API token.
+const WS_URL = `wss://ws.derivws.com/websockets/v3?app_id=${APP_ID}`;
 const STORAGE_KEY = 'mw_copy_api_accounts';
 
 type AccountStatus = 'connecting' | 'connected' | 'error';
@@ -41,6 +46,14 @@ interface AccountSession extends StoredAccount {
     error?: string;
     pending: Map<number, PendingRequest>;
     nextReqId: number;
+}
+
+async function resolveTokenAccount(token: string, previousLoginId?: string): Promise<{ account: DerivAccount; websocketUrl: string }> {
+    const accounts = await DerivWSAccountsService.fetchAccountsList(token);
+    const account = (previousLoginId && accounts.find(item => item.account_id === previousLoginId)) || accounts[0];
+    if (!account) throw new Error('No Deriv account is available for this token.');
+    const websocketUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(token, account.account_id);
+    return { account, websocketUrl };
 }
 
 const sessions = new Map<string, AccountSession>();
@@ -115,8 +128,8 @@ function request(session: AccountSession, message: Record<string, unknown>): Pro
 
 function handleSessionMessage(session: AccountSession, data: any) {
     if (data.error) {
-        const error = new Error(data.error.message || 'Deriv account request failed');
-        if (!session.loginid) {
+        const error = new Error(data.error.message || data.error.code || 'Deriv account request failed');
+        if (session.status !== 'connected') {
             session.status = 'error';
             session.error = error.message;
             notify();
@@ -158,10 +171,25 @@ function handleSessionMessage(session: AccountSession, data: any) {
 }
 
 function connect(session: AccountSession): Promise<CopyAccount> {
-    return new Promise((resolve, reject) => {
+    return new Promise(async (resolve, reject) => {
         let settled = false;
+        let account: DerivAccount;
+        let websocketUrl: string;
         try {
-            session.ws = new WebSocket(WS_URL);
+            ({ account, websocketUrl } = await resolveTokenAccount(session.token, session.loginid));
+            session.loginid = account.account_id;
+            session.currency = account.currency || 'USD';
+            session.balance = Number(account.balance);
+            session.isDemo = account.account_type === 'demo';
+        } catch (error: any) {
+            session.status = 'error';
+            session.error = error?.message || 'Unable to validate API token';
+            notify();
+            reject(new Error(session.error));
+            return;
+        }
+        try {
+            session.ws = new WebSocket(websocketUrl);
             managedSockets.add(session.ws);
         }
         catch (error: any) {
@@ -184,19 +212,44 @@ function connect(session: AccountSession): Promise<CopyAccount> {
                 reject(new Error(session.error));
             }
         }, 30000);
-        session.ws.onopen = () => session.ws?.send(JSON.stringify({ authorize: session.token }));
+        session.ws.onopen = () => {
+            // The OTP in websocketUrl already authenticates this socket.
+            session.status = 'connected';
+            session.name = session.name || 'Deriv account';
+            session.error = undefined;
+            persist();
+            notify();
+            if (!settled) {
+                settled = true;
+                clearTimeout(timeout);
+                resolve(accountView(session));
+            }
+        };
         session.ws.onmessage = event => {
             try {
                 const data = JSON.parse(event.data);
                 const wasAuthorized = session.status === 'connected';
                 handleSessionMessage(session, data);
-                if (!settled && !wasAuthorized && session.status === 'connected') {
+                if (!settled && session.status === 'error') {
+                    settled = true;
+                    clearTimeout(timeout);
+                    reject(new Error(session.error || 'Deriv account request failed'));
+                } else if (!settled && !wasAuthorized && session.status === 'connected') {
                     settled = true;
                     clearTimeout(timeout);
                     persist();
                     resolve(accountView(session));
                 }
-            } catch {}
+            } catch (error: any) {
+                if (!settled) {
+                    settled = true;
+                    clearTimeout(timeout);
+                    session.status = 'error';
+                    session.error = error?.message || 'Invalid response from Deriv';
+                    notify();
+                    reject(new Error(session.error));
+                }
+            }
         };
         session.onerror = () => {
             if (!settled) {

@@ -48,7 +48,7 @@ interface OTPResponse {
  */
 export class DerivWSAccountsService {
     // Singleton instance for promise caching
-    private static accountsFetchPromise: Promise<DerivAccount[]> | null = null;
+    private static accountsFetchPromises: Map<string, Promise<DerivAccount[]>> = new Map();
     private static otpFetchPromises: Map<string, Promise<string>> = new Map();
 
     /**
@@ -64,7 +64,7 @@ export class DerivWSAccountsService {
      * Clears all cached promises (useful for testing or forced refresh)
      */
     static clearCache(): void {
-        this.accountsFetchPromise = null;
+        this.accountsFetchPromises.clear();
         this.otpFetchPromises.clear();
     }
 
@@ -120,12 +120,12 @@ export class DerivWSAccountsService {
      */
     static async fetchAccountsList(accessToken: string): Promise<DerivAccount[]> {
         // If there's already a fetch in progress, return that promise
-        if (this.accountsFetchPromise) {
-            return this.accountsFetchPromise;
+        if (this.accountsFetchPromises.has(accessToken)) {
+            return this.accountsFetchPromises.get(accessToken)!;
         }
 
         // Create new fetch promise and cache it
-        this.accountsFetchPromise = (async () => {
+        const accountsPromise = (async () => {
             try {
                 const baseURL = this.getDerivWSBaseURL();
                 const OptionsDir = brandConfig.platform.derivws.directories.options;
@@ -135,6 +135,7 @@ export class DerivWSAccountsService {
                     method: 'GET',
                     headers: {
                         Authorization: `Bearer ${accessToken}`,
+                        'Deriv-App-ID': process.env.NEXT_PUBLIC_DERIV_APP_ID || '33UD5Xga7WHSzXFtBYdmr',
                     },
                 });
 
@@ -158,18 +159,19 @@ export class DerivWSAccountsService {
             } catch (error) {
                 console.error('[DerivWS] Error fetching accounts:', error);
                 // Clear the cached promise on error so retry is possible
-                this.accountsFetchPromise = null;
+                this.accountsFetchPromises.delete(accessToken);
                 throw error;
             } finally {
                 // Clear the promise after completion (success or failure)
                 // This allows fresh fetches on subsequent calls
                 setTimeout(() => {
-                    this.accountsFetchPromise = null;
+                    this.accountsFetchPromises.delete(accessToken);
                 }, 100);
             }
         })();
 
-        return this.accountsFetchPromise;
+        this.accountsFetchPromises.set(accessToken, accountsPromise);
+        return accountsPromise;
     }
 
     /**
@@ -181,7 +183,7 @@ export class DerivWSAccountsService {
      */
     static async fetchOTPWebSocketURL(accessToken: string, accountId: string): Promise<string> {
         // Create a unique key for this account's OTP request
-        const cacheKey = `${accountId}`;
+        const cacheKey = `${accessToken}:${accountId}`;
 
         // If there's already a fetch in progress for this account, return that promise
         if (this.otpFetchPromises.has(cacheKey)) {
@@ -199,6 +201,7 @@ export class DerivWSAccountsService {
                     method: 'POST',
                     headers: {
                         Authorization: `Bearer ${accessToken}`,
+                        'Deriv-App-ID': process.env.NEXT_PUBLIC_DERIV_APP_ID || '33UD5Xga7WHSzXFtBYdmr',
                     },
                 });
 
