@@ -1040,23 +1040,8 @@
 }
 
 // Chart tab — ensure chart type selector never clipped after switching to candles
-.dashboard__chart-wrapper,
-.dashboard__chart-wrapper .smartcharts {
-    overflow: visible !important;
-}
+// Keep chart wrapper from clipping dropdowns, but don't promote modal_root when empty (would block touches)
 .dashboard__chart-wrapper .smartcharts .sc-toolbar,
 .dashboard__chart-wrapper .smartcharts .sc-toolbar__item {
     overflow: visible !important;
-    z-index: 6 !important;
-}
-.dashboard__chart-wrapper .smartcharts .ciq-menu,
-.dashboard__chart-wrapper .smartcharts .sc-chart-type,
-.dashboard__chart-wrapper .smartcharts .sc-interval {
-    z-index: 10 !important;
-}
-// Keep modal_root portal above tab header (tabs list z-index 5)
-#modal_root { z-index: 9998; }
-#modal_root:not(:empty) {
-    z-index: 9998 !important;
-    opacity: 1 !important;
 }
