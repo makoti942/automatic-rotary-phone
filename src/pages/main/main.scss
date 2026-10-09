@@ -1045,30 +1045,26 @@
     overflow: visible !important;
 }
 
-// ── Mobile scroll fix: prevent fixed-height clipping, allow dashboard cards to scroll ──
+// ── Mobile: keep dashboard scrollable without exposing off-screen drawer ──
 @include mobile-or-tablet-screen {
     .main {
         height: auto !important;
         min-height: calc(100vh - 6rem);
-        overflow: visible !important;
         overflow-y: auto !important;
-        padding-bottom: 6rem; // clear footer
+        padding-bottom: 6rem;
         -webkit-overflow-scrolling: touch;
     }
+    // Keep bot-dashboard clipped so closed bottom-sheet drawer stays hidden
     .bot-dashboard {
-        height: auto !important;
-        min-height: auto !important;
-        overflow: visible !important;
+        overflow: hidden !important;
     }
-    .tab__dashboard,
     .tab__dashboard__content {
         height: auto !important;
         min-height: auto !important;
-        overflow: visible !important;
+        max-height: none !important;
+        overflow-y: auto !important;
         -webkit-overflow-scrolling: touch;
-    }
-    .main__container .dc-tabs__content {
-        overflow: visible !important;
+        padding-bottom: 2rem;
     }
     .main__container .dc-tabs__list {
         -webkit-overflow-scrolling: touch;

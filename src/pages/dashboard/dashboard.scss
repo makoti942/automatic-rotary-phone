@@ -461,37 +461,57 @@
 
 // ── Professional dashboard layout: centered, responsive, no footer overlap ──
 .bot-dashboard {
-    height: auto;
-    min-height: calc(100vh - 4.4rem - 3.6rem);
-    overflow: visible;
-    overflow-y: auto;
+    height: calc(100vh - 4.4rem);
+    overflow: hidden;
+
+    @include desktop-screen {
+        height: auto;
+        min-height: calc(100vh - 4.4rem - 3.6rem);
+        overflow: visible;
+        overflow-y: auto;
+    }
+    @include mobile-or-tablet-screen {
+        height: calc(100vh - 4.4rem);
+        overflow: hidden;
+    }
 }
 
 .tab__dashboard {
     min-height: calc(100vh - 8rem - 3.6rem);
     align-items: flex-start;
     padding-bottom: 5rem; // clear fixed .app-footer (3.6rem)
+
+    @include mobile-or-tablet-screen {
+        min-height: auto;
+        padding-bottom: 6rem;
+    }
 }
 
 .tab__dashboard__content {
     height: auto;
     min-height: calc(100vh - 14rem);
-    overflow: visible;
     overflow-y: auto;
+    overflow-x: hidden;
     align-items: center;
     justify-content: flex-start;
     background: var(--general-main-1);
     color: var(--text-prominent);
+    -webkit-overflow-scrolling: touch;
 
     @include desktop-screen {
         padding: 2.4rem 2.4rem 5rem;
         justify-content: center;
+        overflow: visible;
     }
     @include mobile-or-tablet-screen {
-        height: auto;
-        min-height: calc(100vh - 14rem);
-        padding: 1.6rem 1.6rem 6rem;
-        overflow: visible;
+        height: calc(100vh - 14rem);
+        min-height: auto;
+        max-height: calc(100vh - 14rem);
+        padding: 1.2rem 1rem 6rem;
+        overflow-y: auto;
+        overflow-x: hidden;
+        align-items: flex-start;
+        justify-content: flex-start;
     }
 
     .quick-panel {
