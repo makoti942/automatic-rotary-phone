@@ -62,7 +62,8 @@
             transition: transform 0.25s ease;
 
             @include mobile-screen {
-                bottom: 80px;
+                top: 48px !important;
+                bottom: auto !important;
             }
 
             .app-contents .ciq-menu {
@@ -148,8 +149,8 @@
 @media (max-width: 768px) {
     .bot .smartcharts-mobile .sc-toolbar-widget,
     .dashboard__chart-wrapper .smartcharts-mobile .sc-toolbar-widget {
-        bottom: 44px !important;
-        top: auto !important;
+        top: 48px !important;
+        bottom: auto !important;
         z-index: 30;
     }
 
