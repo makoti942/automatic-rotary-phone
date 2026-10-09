@@ -46,8 +46,9 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
     // Auto-switch to MACD-only when MACD is added (user wants chart to disappear, MACD takes its place)
     useEffect(() => {
         if (hasMacd && !macdOnly) {
-            // Don't auto-switch immediately to avoid jarring — let user toggle, but we could auto:
-            // setMacdOnly(true);
+            setMacdOnly(true);
+        } else if (!hasMacd && macdOnly) {
+            setMacdOnly(false);
         }
     }, [hasMacd, macdOnly]);
 

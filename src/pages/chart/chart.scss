@@ -172,3 +172,19 @@
         height: 100% !important;
     }
 }
+
+// Equal height for indicator windows — chart and indicators share space equally
+.bot .ciq-chart,
+.dashboard__chart-wrapper .ciq-chart,
+.mt-mini-chart .ciq-chart {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+
+    .stx-panel {
+        flex: 1 1 0 !important;
+        height: auto !important;
+        min-height: 100px !important;
+        position: relative !important;
+    }
+}

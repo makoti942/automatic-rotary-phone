@@ -955,3 +955,16 @@ $radius:   10px;
     &.is-active { background: var(--brand-primary); color: #fff; border-color: var(--brand-primary); }
     &:hover { border-color: var(--brand-primary); }
 }
+
+// Equal height for indicator windows — chart and indicators share equally
+.mt-mini-chart .ciq-chart {
+    display: flex !important;
+    flex-direction: column !important;
+    height: 100% !important;
+    .stx-panel {
+        flex: 1 1 0 !important;
+        height: auto !important;
+        min-height: 110px !important;
+        position: relative !important;
+    }
+}
