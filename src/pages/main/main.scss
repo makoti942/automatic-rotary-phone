@@ -887,3 +887,151 @@
 @include mobile-or-tablet-screen {
     .trading-view-persistent { top: 4.15rem; }
 }
+
+// ── Professional, theme-aware tab strip + 3D colored icons (mirrors marketfliper) ──
+.main {
+    background: var(--general-main-1);
+    transition: background 0.3s ease, color 0.3s ease;
+}
+
+.theme--dark .main {
+    background: radial-gradient(120% 120% at 50% 0%, #0d2442 0%, #06101f 55%, #070f1e 100%);
+    color: #f6f8ff;
+}
+.theme--light .main {
+    background: linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%);
+    color: var(--text-prominent);
+}
+
+.main__container .dc-tabs {
+    border-radius: 12px 12px 0 0;
+    overflow: hidden;
+    box-shadow: 0 1px 0 var(--border-normal) inset, 0 4px 16px rgba(15,23,42,0.06);
+
+    &__list {
+        gap: 2px;
+        padding: 6px 8px 0;
+        border-bottom: 1px solid var(--border-normal);
+        backdrop-filter: blur(8px);
+        transition: background 0.3s ease, border-color 0.3s ease;
+    }
+
+    &__item {
+        position: relative;
+        color: var(--text-general);
+        background: transparent;
+        font-weight: 600;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+        border-radius: 10px 10px 0 0;
+        transition: color 160ms ease, background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+        gap: 0;
+
+        &:hover {
+            color: var(--text-prominent);
+            background: var(--general-hover);
+            transform: translateY(-0.5px);
+        }
+        &:active { transform: translateY(0); }
+    }
+
+    &__active {
+        color: var(--text-prominent) !important;
+        background: var(--general-main-1) !important;
+        box-shadow: 0 -2px 0 var(--brand-primary) inset, 0 4px 12px rgba(0,0,0,0.06);
+        font-weight: 700;
+    }
+
+    &__active-line { display: none; }
+}
+
+.theme--dark .main__container .dc-tabs {
+    background: #09182b;
+    box-shadow: 0 1px 0 rgba(119,151,192,0.08) inset, 0 8px 24px rgba(2,12,28,0.35);
+    &__list { background: #0d2037; border-bottom: 1px solid rgba(119,151,192,0.14); }
+    &__item {
+        color: #a4b4ca;
+        &:hover { color: #f6f8ff; background: rgba(54,96,156,0.22); }
+    }
+    &__active {
+        color: #fff !important;
+        background: linear-gradient(180deg, #204f98, #173e7a) !important;
+        box-shadow: inset 0 -3px 0 #39b9ff, 0 4px 16px rgba(32,79,152,0.35);
+    }
+}
+
+.theme--light .main__container .dc-tabs {
+    background: #ffffff;
+    box-shadow: 0 1px 0 #e2e8f0 inset, 0 4px 16px rgba(15,23,42,0.06);
+    &__list { background: #f1f5f9; border-bottom: 1px solid #e2e8f0; }
+    &__item {
+        color: #64748b;
+        &:hover { color: #0f172a; background: #ffffff; box-shadow: 0 1px 4px rgba(15,23,42,0.06); }
+    }
+    &__active {
+        color: #0f172a !important;
+        background: #ffffff !important;
+        box-shadow: inset 0 -3px 0 var(--brand-primary), 0 2px 8px rgba(15,23,42,0.06);
+    }
+}
+
+// 3D colored icon badges — gradient, depth, sheen, pop on active
+.tab-icon-3d {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    margin-inline-end: 8px;
+    flex-shrink: 0;
+    color: #fff;
+    font-size: 0;
+    box-shadow:
+        0 2px 6px rgba(0,0,0,0.18),
+        0 1px 0 rgba(255,255,255,0.22) inset,
+        0 -1px 0 rgba(0,0,0,0.12) inset;
+    transform: translateZ(0);
+    transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+    position: relative;
+    overflow: hidden;
+
+    &::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: linear-gradient(180deg, rgba(255,255,255,0.22) 0%, transparent 55%);
+        pointer-events: none;
+    }
+
+    svg { width: 18px !important; height: 18px !important; filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25)); }
+
+    .dc-tabs__active & {
+        transform: translateY(-0.5px) scale(1.02);
+        box-shadow:
+            0 4px 12px rgba(0,0,0,0.22),
+            0 1px 0 rgba(255,255,255,0.28) inset;
+    }
+
+    @include mobile-or-tablet-screen {
+        width: 24px; height: 24px; border-radius: 7px; margin-inline-end: 4px;
+        svg { width: 15px !important; height: 15px !important; }
+    }
+}
+
+.tab-icon-3d--dashboard { background: linear-gradient(135deg, #00d4ff 0%, #0ea5e9 55%, #2563eb 100%); }
+.tab-icon-3d--bot-builder { background: linear-gradient(135deg, #7b2ff7 0%, #a855f7 45%, #ec4899 100%); }
+.tab-icon-3d--charts { background: linear-gradient(135deg, #10b981 0%, #06b6d4 50%, #0ea5e9 100%); }
+.tab-icon-3d--trading-bots { background: linear-gradient(135deg, #f59e0b 0%, #f97316 45%, #ef4444 100%); }
+.tab-icon-3d--analysis { background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 45%, #ec4899 100%); }
+.tab-icon-3d--manual-trade { background: linear-gradient(135deg, #06b6d4 0%, #0891b2 40%, #0e7490 100%); }
+.tab-icon-3d--trading-view { background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 55%, #1e40af 100%); }
+.tab-icon-3d--copy-trading { background: linear-gradient(135deg, #ec4899 0%, #f43f5e 45%, #f97316 100%); }
+.tab-icon-3d--bot-extractor { background: linear-gradient(135deg, #8b5cf6 0%, #6366f1 50%, #06b6d4 100%); }
+.tab-icon-3d--tutorials { background: linear-gradient(135deg, #eab308 0%, #facc15 50%, #f59e0b 100%); color: #422006; svg path { fill: #422006 !important; } }
+
+.theme--light .tab-icon-3d {
+    box-shadow:
+        0 2px 6px rgba(15,23,42,0.12),
+        0 1px 0 rgba(255,255,255,0.9) inset;
+}
