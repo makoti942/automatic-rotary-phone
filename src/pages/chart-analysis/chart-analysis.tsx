@@ -183,17 +183,17 @@ const ChartAnalysis: React.FC = () => {
                         const minPrice = Math.min(...profile.buckets.map(bucket => bucket.price));
                         const span = maxPrice - minPrice || 1;
                         return (
-                            <div className='chart-analysis__profile' key={profile.id}>
-                                <div className='chart-analysis__range' style={{ left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }} />
+                            <div className='chart-analysis__profile' key={profile.id} style={{ left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}>
+                                <div className='chart-analysis__range' />
                                 {profile.buckets.map((bucket, index) => {
                                     const top = `${((maxPrice - bucket.price) / span) * 88 + 6}%`;
-                                    const width = Math.max(2, (profile.endRatio - profile.startRatio) * 100 * 0.72 * (bucket.pct / 100));
+                                    const width = Math.max(3, 72 * (bucket.pct / 100));
                                     const upWidth = bucket.count ? (bucket.up / bucket.count) * 100 : 50;
-                                    return <div key={index} className={`chart-analysis__bar ${bucket.inValueArea ? 'is-value-area' : ''}`} style={{ top, left: `${profile.endRatio * 100 - width}%`, width: `${width}%` }}><span className='chart-analysis__bar-up' style={{ width: `${upWidth}%` }} /><span className='chart-analysis__bar-down' style={{ width: `${100 - upWidth}%` }} /></div>;
+                                    return <div key={index} className={`chart-analysis__bar ${bucket.inValueArea ? 'is-value-area' : ''}`} style={{ top, left: 0, width: `${width}%` }}><span className='chart-analysis__bar-up' style={{ width: `${upWidth}%` }} /><span className='chart-analysis__bar-down' style={{ width: `${100 - upWidth}%` }} /></div>;
                                 })}
-                                <div className='chart-analysis__level chart-analysis__level--poc' style={{ top: `${((maxPrice - profile.poc) / span) * 88 + 6}%`, left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}><b>POC {profile.poc.toFixed(pip)}</b></div>
-                                <div className='chart-analysis__level chart-analysis__level--vah' style={{ top: `${((maxPrice - profile.vah) / span) * 88 + 6}%`, left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}><b>VAH {profile.vah.toFixed(pip)}</b></div>
-                                <div className='chart-analysis__level chart-analysis__level--val' style={{ top: `${((maxPrice - profile.val) / span) * 88 + 6}%`, left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}><b>VAL {profile.val.toFixed(pip)}</b></div>
+                                <div className='chart-analysis__level chart-analysis__level--poc' style={{ top: `${((maxPrice - profile.poc) / span) * 88 + 6}%`, left: 0, width: '100%' }}><b>POC {profile.poc.toFixed(pip)}</b></div>
+                                <div className='chart-analysis__level chart-analysis__level--vah' style={{ top: `${((maxPrice - profile.vah) / span) * 88 + 6}%`, left: 0, width: '100%' }}><b>VAH {profile.vah.toFixed(pip)}</b></div>
+                                <div className='chart-analysis__level chart-analysis__level--val' style={{ top: `${((maxPrice - profile.val) / span) * 88 + 6}%`, left: 0, width: '100%' }}><b>VAL {profile.val.toFixed(pip)}</b></div>
                                 <button className='chart-analysis__delete' onClick={() => removeProfile(profile.id)} aria-label='Delete profile'>×</button>
                             </div>
                         );

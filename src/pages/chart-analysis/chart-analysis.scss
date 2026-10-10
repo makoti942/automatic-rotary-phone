@@ -105,7 +105,7 @@
     color: #fff;
     font: 700 10px/1 monospace;
 }
-.chart-analysis__profile { position: absolute; inset: 0; pointer-events: none; }
+.chart-analysis__profile { position: absolute; top: 0; bottom: 0; pointer-events: none; }
 .chart-analysis__bar {
     position: absolute;
     display: flex;
