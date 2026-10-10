@@ -32,14 +32,17 @@ import {
     setModalStateChangeCallback,
 } from '@/utils/trade-type-modal-handler';
 import {
-    LabelPairedChartLineCaptionRegularIcon,
+    LabelPairedBookCircleQuestionCaptionRegularIcon,
+    LabelPairedChartCandlestickCaptionRegularIcon,
+    LabelPairedChartTradingviewCaptionRegularIcon,
     LabelPairedChartTrendUpCaptionRegularIcon,
-    LabelPairedObjectsColumnCaptionRegularIcon,
-    LabelPairedPlayLgFillIcon,
-    LabelPairedPuzzlePieceTwoCaptionBoldIcon,
-    LabelPairedArrowRightCaptionRegularIcon,
+    LabelPairedCopyCaptionRegularIcon,
+    LabelPairedFileArrowDownCaptionRegularIcon,
+    LabelPairedFileChartColumnCaptionRegularIcon,
+    LabelPairedGrid2CaptionRegularIcon,
+    LabelPairedPlayCaptionRegularIcon,
+    LabelPairedPuzzleCaptionRegularIcon,
 } from '@deriv/quill-icons/LabelPaired';
-import { LegacyGuide1pxIcon } from '@deriv/quill-icons/Legacy';
 import { Localize, localize } from '@deriv-com/translations';
 import { useDevice } from '@deriv-com/ui';
 import RunPanel from '../../components/run-panel';
@@ -51,6 +54,7 @@ import './main.scss';
 import TradingBots from '../free-bots/trading-bots';
 import ManualTrade from '../manual-trade';
 import Analysis from '../analysis/analysis';
+import ChartAnalysis from '../chart-analysis/chart-analysis';
 import TradingViewComponent from '@/components/trading-view-chart/trading-view';
 import TradingViewTrading from '@/components/trading-view-chart/trading-view-trading';
 import { MakotiWidget } from '@/components/makoti-widget/makoti-widget';
@@ -89,9 +93,9 @@ const AppWrapper = observer(() => {
         [key: string]: string;
     };
     const { clear } = summary_card;
-    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING, BOT_EXTRACTOR } = DBOT_TABS;
+    const { DASHBOARD, BOT_BUILDER, TRADING_BOTS, ANALYSIS, MANUAL_TRADE, COPY_TRADING, BOT_EXTRACTOR, CHART_ANALYSIS } = DBOT_TABS;
     const init_render = React.useRef(true);
-    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'bot_extractor', 'tutorial'];
+    const hash = ['dashboard', 'bot_builder', 'chart', 'trading_bots', 'analysis', 'manual_trade', 'trading_view', 'copy_trading', 'bot_extractor', 'chart_analysis', 'tutorial'];
     const { isDesktop } = useDevice();
     const location = useLocation();
     const navigate = useNavigate();
@@ -354,13 +358,11 @@ const AppWrapper = observer(() => {
         };
     }, [dashboard_strategies, active_tab]);
 
-    // ── Copy trade interceptor: always active if master ──
+    // ── Direct token copy execution stays active across tabs ──
     useEffect(() => {
-        const masterId = localStorage.getItem('mw_copy_master_id');
-        if (!masterId) return;
         let unsub: (() => void) | null = null;
         import('@/pages/copy-trading/copy-trade-executor').then(mod => {
-            mod.installCopyTradeInterceptor(masterId);
+            mod.initializeCopyAccounts();
             unsub = () => mod.uninstallCopyTradeInterceptor();
         }).catch(() => {});
         return () => { if (unsub) unsub(); };
@@ -386,7 +388,7 @@ const AppWrapper = observer(() => {
     // [/AI]
     return (
         <React.Fragment>
-            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
+            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS || active_tab === CHART_ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
                 <div
                     className={classNames('main__container', {
                         'main__container--active': active_tour && active_tab === DASHBOARD && !isDesktop,
@@ -398,13 +400,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--dashboard'>
-                                            <LabelPairedObjectsColumnCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedGrid2CaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--dashboard'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Dashboard' />
                                     </>
                                 }
@@ -415,13 +416,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--bot-builder'>
-                                            <LabelPairedPuzzlePieceTwoCaptionBoldIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedPuzzleCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--builder'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Bot Builder' />
                                     </>
                                 }
@@ -430,13 +430,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--charts'>
-                                            <LabelPairedChartLineCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedChartCandlestickCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--charts'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Charts' />
                                     </>
                                 }
@@ -455,13 +454,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--trading-bots'>
-                                            <LabelPairedPuzzlePieceTwoCaptionBoldIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedFileChartColumnCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--bots'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Trading Bots' />
                                     </>
                                 }
@@ -472,13 +470,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--analysis'>
-                                            <LabelPairedChartTrendUpCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedChartTrendUpCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--analysis'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Analysis' />
                                     </>
                                 }
@@ -489,13 +486,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--manual-trade'>
-                                            <LabelPairedPlayLgFillIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedPlayCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--manual'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Manual Trade' />
                                     </>
                                 }
@@ -506,13 +502,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--trading-view'>
-                                            <LabelPairedChartLineCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedChartTradingviewCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--trading-view'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Trading View' />
                                     </>
                                 }
@@ -523,13 +518,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--copy-trading'>
-                                            <LabelPairedArrowRightCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedCopyCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--copy'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Copy Trading' />
                                     </>
                                 }
@@ -542,13 +536,12 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--bot-extractor'>
-                                            <LabelPairedArrowRightCaptionRegularIcon
-                                                height='18px'
-                                                width='18px'
-                                                fill='white'
-                                            />
-                                        </span>
+                                        <LabelPairedFileArrowDownCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--extractor'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Bot Extractor' />
                                     </>
                                 }
@@ -561,14 +554,28 @@ const AppWrapper = observer(() => {
                             <div
                                 label={
                                     <>
-                                        <span className='tab-icon-3d tab-icon-3d--tutorials'>
-                                            <LegacyGuide1pxIcon
-                                                height='14px'
-                                                width='14px'
-                                                fill='#422006'
-                                                className='icon-general-fill-g-path'
-                                            />
-                                        </span>
+                                        <LabelPairedChartTrendUpCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--chart-analysis'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
+                                        <Localize i18n_default_text='Chart Analysis' />
+                                    </>
+                                }
+                                id='id-chart-analysis'
+                            >
+                                <ChartAnalysis />
+                            </div>
+                            <div
+                                label={
+                                    <>
+                                        <LabelPairedBookCircleQuestionCaptionRegularIcon
+                                            className='main-tab-icon main-tab-icon--tutorials'
+                                            height='24px'
+                                            width='24px'
+                                            fill='var(--text-general)'
+                                        />
                                         <Localize i18n_default_text='Tutorials' />
                                     </>
                                 }
