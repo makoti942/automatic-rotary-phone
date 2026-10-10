@@ -1,6 +1,6 @@
 import React, { PointerEvent, useCallback, useEffect, useRef, useState } from 'react';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
-import { PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
+import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS } from '@/components/makoti-widget/makoti-ws';
 import { useStore } from '@/hooks/useStore';
 import ChartWrapper from '../chart/chart-wrapper';
 import './chart-analysis.scss';
@@ -69,6 +69,7 @@ const ChartAnalysis: React.FC = () => {
     const ticksRef = useRef(ticks);
     ticksRef.current = ticks;
     const [toolActive, setToolActive] = useState(false);
+    const [selectionReady, setSelectionReady] = useState(false);
     const [dragStart, setDragStart] = useState<number | null>(null);
     const [dragEnd, setDragEnd] = useState<number | null>(null);
     const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -99,6 +100,8 @@ const ChartAnalysis: React.FC = () => {
     useEffect(() => {
         setTicks(cache.get(symbol) || []);
         setProfiles([]);
+        setToolActive(false);
+        setSelectionReady(false);
         loadTicks();
         return onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -123,17 +126,30 @@ const ChartAnalysis: React.FC = () => {
         const ratio = ratioFromEvent(event);
         setDragStart(ratio);
         setDragEnd(ratio);
+        setSelectionReady(false);
     };
     const onPointerMove = (event: PointerEvent) => {
         if (toolActive && dragStart !== null) setDragEnd(ratioFromEvent(event));
     };
     const onPointerUp = () => {
         if (!toolActive || dragStart === null || dragEnd === null) return;
+        if (Math.abs(dragEnd - dragStart) < 0.01) {
+            setDragStart(null);
+            setDragEnd(null);
+            setMessage('Drag across the chart to select a range.');
+            return;
+        }
+        setSelectionReady(true);
+        setMessage('Range selected. Tap “Lock profile” to calculate it.');
+    };
+    const lockProfile = () => {
+        if (!toolActive || !selectionReady || dragStart === null || dragEnd === null) return;
         const profile = calculateProfile(ticksRef.current, dragStart, dragEnd);
         if (profile) {
             setProfiles(current => [...current, profile]);
             setMessage(`Profile calculated from ${profile.total.toLocaleString()} Deriv ticks.`);
             setToolActive(false);
+            setSelectionReady(false);
         } else setMessage('Select a wider range with available tick data.');
         setDragStart(null);
         setDragEnd(null);
@@ -146,8 +162,21 @@ const ChartAnalysis: React.FC = () => {
             <div className='chart-analysis__toolbar'>
                 <div className='chart-analysis__title'><strong>Chart Analysis</strong><span>Fixed Range Tick Profile</span></div>
                 <div className='chart-analysis__actions'>
-                    <button className={`chart-analysis__tool ${toolActive ? 'is-active' : ''}`} onClick={() => { setToolActive(value => !value); setMessage('Drag across the chart to select a tick range.'); }}>
-                        <span>⌁</span> Fixed Range Profile
+                    <label className='chart-analysis__symbol'>
+                        <span>Market</span>
+                        <select value={symbol} onChange={event => chart_store.onSymbolChange(event.target.value)}>
+                            {ALL_SYMBOLS.map(item => <option key={item} value={item}>{SYMBOL_LABELS[item] || item}</option>)}
+                        </select>
+                    </label>
+                    <button className={`chart-analysis__tool ${toolActive ? 'is-active' : ''}`} onClick={() => {
+                        if (toolActive && selectionReady) { lockProfile(); return; }
+                        setToolActive(value => !value);
+                        setSelectionReady(false);
+                        setDragStart(null);
+                        setDragEnd(null);
+                        setMessage('Drag across the chart to select a tick range.');
+                    }}>
+                        <span>⌁</span> {toolActive && selectionReady ? 'Lock profile' : 'Fixed Range Profile'}
                     </button>
                     <button className='chart-analysis__clear' onClick={() => setProfiles([])} disabled={!profiles.length}>Clear</button>
                 </div>

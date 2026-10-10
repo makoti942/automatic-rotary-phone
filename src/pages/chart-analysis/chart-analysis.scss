@@ -29,6 +29,17 @@
 .chart-analysis__title span { color: var(--text-less-prominent); font-size: 10px; }
 
 .chart-analysis__actions { display: flex; align-items: center; gap: 7px; }
+.chart-analysis__symbol { display: flex; align-items: center; gap: 5px; color: var(--text-less-prominent); font-size: 10px; font-weight: 700; }
+.chart-analysis__symbol select {
+    min-width: 145px;
+    border: 1px solid color-mix(in srgb, #60a5fa 45%, transparent);
+    border-radius: 6px;
+    padding: 7px 8px;
+    background: var(--general-main-1);
+    color: var(--text-prominent);
+    font-size: 10px;
+    font-weight: 700;
+}
 .chart-analysis__tool,
 .chart-analysis__clear {
     border: 1px solid color-mix(in srgb, #f97316 48%, transparent);
@@ -52,7 +63,7 @@
     min-height: 300px;
     overflow: hidden;
 }
-.chart-analysis__chart-shell > .dashboard__chart-wrapper { height: 100%; }
+.chart-analysis__chart-shell > .dashboard__chart-wrapper { position: absolute; inset: 0; width: 100%; height: 100%; }
 .chart-analysis__overlay {
     position: absolute;
     inset: 0;
@@ -145,7 +156,9 @@
 
 @media (max-width: 768px) {
     .chart-analysis__toolbar { align-items: flex-start; flex-direction: column; padding: 8px 10px; }
-    .chart-analysis__actions { width: 100%; }
+    .chart-analysis__actions { width: 100%; flex-wrap: wrap; }
+    .chart-analysis__symbol { flex: 1 1 100%; }
+    .chart-analysis__symbol select { flex: 1; min-width: 0; min-height: 38px; }
     .chart-analysis__tool { flex: 1; min-height: 38px; }
     .chart-analysis__clear { min-height: 38px; }
     .chart-analysis__chart-shell { min-height: 260px; }
