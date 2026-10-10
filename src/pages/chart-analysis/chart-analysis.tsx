@@ -6,7 +6,7 @@ import ChartWrapper from '../chart/chart-wrapper';
 import './chart-analysis.scss';
 
 type TickPoint = { price: number; epoch: number };
-type Bucket = { price: number; count: number; pct: number; inValueArea: boolean };
+type Bucket = { price: number; count: number; up: number; down: number; pct: number; inValueArea: boolean };
 type Profile = { id: number; startRatio: number; endRatio: number; startEpoch: number; endEpoch: number; buckets: Bucket[]; poc: number; vah: number; val: number; total: number; };
 
 const cache = new Map<string, TickPoint[]>();
@@ -29,7 +29,13 @@ function calculateProfile(ticks: TickPoint[], startRatio: number, endRatio: numb
         const low = min + index * step;
         const high = index === bucketCount - 1 ? max + Number.EPSILON : low + step;
         const count = selected.filter(t => t.price >= low && t.price < high).length;
-        return { price: max === min ? min : low + step / 2, count, pct: 0, inValueArea: false };
+        return { price: max === min ? min : low + step / 2, count, up: 0, down: 0, pct: 0, inValueArea: false };
+    });
+    selected.forEach((tick, index) => {
+        const bucketIndex = max === min ? 0 : Math.min(bucketCount - 1, Math.floor((tick.price - min) / step));
+        const previous = selected[Math.max(0, index - 1)]?.price ?? tick.price;
+        if (tick.price >= previous) buckets[bucketIndex].up += 1;
+        else buckets[bucketIndex].down += 1;
     });
     const maxCount = Math.max(...buckets.map(b => b.count), 1);
     buckets.forEach(bucket => { bucket.pct = (bucket.count / maxCount) * 100; });
@@ -69,9 +75,8 @@ const ChartAnalysis: React.FC = () => {
     const ticksRef = useRef(ticks);
     ticksRef.current = ticks;
     const [toolActive, setToolActive] = useState(false);
-    const [selectionReady, setSelectionReady] = useState(false);
-    const [dragStart, setDragStart] = useState<number | null>(null);
-    const [dragEnd, setDragEnd] = useState<number | null>(null);
+    const [firstAnchor, setFirstAnchor] = useState<number | null>(null);
+    const [secondAnchor, setSecondAnchor] = useState<number | null>(null);
     const [profiles, setProfiles] = useState<Profile[]>([]);
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState('Select Fixed Range Tick Profile, then drag across the chart.');
@@ -101,7 +106,8 @@ const ChartAnalysis: React.FC = () => {
         setTicks(cache.get(symbol) || []);
         setProfiles([]);
         setToolActive(false);
-        setSelectionReady(false);
+        setFirstAnchor(null);
+        setSecondAnchor(null);
         loadTicks();
         return onNewSystemMessage((event: MessageEvent) => {
             try {
@@ -120,42 +126,25 @@ const ChartAnalysis: React.FC = () => {
         const rect = surfaceRef.current?.getBoundingClientRect();
         return rect ? clamp((event.clientX - rect.left) / rect.width) : 0;
     };
-    const onPointerDown = (event: PointerEvent) => {
+    const onChartTap = (event: PointerEvent) => {
         if (!toolActive) return;
-        event.currentTarget.setPointerCapture(event.pointerId);
         const ratio = ratioFromEvent(event);
-        setDragStart(ratio);
-        setDragEnd(ratio);
-        setSelectionReady(false);
-    };
-    const onPointerMove = (event: PointerEvent) => {
-        if (toolActive && dragStart !== null) setDragEnd(ratioFromEvent(event));
-    };
-    const onPointerUp = () => {
-        if (!toolActive || dragStart === null || dragEnd === null) return;
-        if (Math.abs(dragEnd - dragStart) < 0.01) {
-            setDragStart(null);
-            setDragEnd(null);
-            setMessage('Drag across the chart to select a range.');
+        if (firstAnchor === null) {
+            setFirstAnchor(ratio);
+            setMessage('First anchor marked. Tap another location to complete the range.');
             return;
         }
-        setSelectionReady(true);
-        setMessage('Range selected. Tap “Lock profile” to calculate it.');
-    };
-    const lockProfile = () => {
-        if (!toolActive || !selectionReady || dragStart === null || dragEnd === null) return;
-        const profile = calculateProfile(ticksRef.current, dragStart, dragEnd);
+        setSecondAnchor(ratio);
+        const profile = calculateProfile(ticksRef.current, firstAnchor, ratio);
         if (profile) {
             setProfiles(current => [...current, profile]);
             setMessage(`Profile calculated from ${profile.total.toLocaleString()} Deriv ticks.`);
-            setToolActive(false);
-            setSelectionReady(false);
+            setFirstAnchor(null);
+            setSecondAnchor(null);
         } else setMessage('Select a wider range with available tick data.');
-        setDragStart(null);
-        setDragEnd(null);
     };
     const removeProfile = (id: number) => setProfiles(current => current.filter(profile => profile.id !== id));
-    const activeRange = dragStart !== null && dragEnd !== null ? [Math.min(dragStart, dragEnd), Math.max(dragStart, dragEnd)] as const : null;
+    const activeRange = firstAnchor !== null && secondAnchor !== null ? [Math.min(firstAnchor, secondAnchor), Math.max(firstAnchor, secondAnchor)] as const : null;
 
     return (
         <div className='chart-analysis'>
@@ -169,14 +158,12 @@ const ChartAnalysis: React.FC = () => {
                         </select>
                     </label>
                     <button className={`chart-analysis__tool ${toolActive ? 'is-active' : ''}`} onClick={() => {
-                        if (toolActive && selectionReady) { lockProfile(); return; }
                         setToolActive(value => !value);
-                        setSelectionReady(false);
-                        setDragStart(null);
-                        setDragEnd(null);
-                        setMessage('Drag across the chart to select a tick range.');
+                        setFirstAnchor(null);
+                        setSecondAnchor(null);
+                        setMessage(toolActive ? 'Profile tool off.' : 'Tap the chart once for the first anchor, then tap again for the second anchor.');
                     }}>
-                        <span>⌁</span> {toolActive && selectionReady ? 'Lock profile' : 'Fixed Range Profile'}
+                        <span>⌁</span> {toolActive ? 'Tap-to-place anchors' : 'Fixed Range Profile'}
                     </button>
                     <button className='chart-analysis__clear' onClick={() => setProfiles([])} disabled={!profiles.length}>Clear</button>
                 </div>
@@ -186,10 +173,10 @@ const ChartAnalysis: React.FC = () => {
                 <div
                     ref={surfaceRef}
                     className={`chart-analysis__overlay ${toolActive ? 'is-selecting' : ''}`}
-                    onPointerDown={onPointerDown}
-                    onPointerMove={onPointerMove}
-                    onPointerUp={onPointerUp}
+                    onPointerUp={onChartTap}
                 >
+                    {firstAnchor !== null && <div className='chart-analysis__anchor' style={{ left: `${firstAnchor * 100}%` }}><b>1</b></div>}
+                    {secondAnchor !== null && <div className='chart-analysis__anchor' style={{ left: `${secondAnchor * 100}%` }}><b>2</b></div>}
                     {activeRange && <div className='chart-analysis__selection' style={{ left: `${activeRange[0] * 100}%`, width: `${(activeRange[1] - activeRange[0]) * 100}%` }} />}
                     {profiles.map(profile => {
                         const maxPrice = Math.max(...profile.buckets.map(bucket => bucket.price));
@@ -200,7 +187,9 @@ const ChartAnalysis: React.FC = () => {
                                 <div className='chart-analysis__range' style={{ left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }} />
                                 {profile.buckets.map((bucket, index) => {
                                     const top = `${((maxPrice - bucket.price) / span) * 88 + 6}%`;
-                                    return <div key={index} className={`chart-analysis__bar ${bucket.inValueArea ? 'is-value-area' : ''}`} style={{ top, left: `${profile.endRatio * 100}%`, width: `${Math.max(10, bucket.pct * 0.42)}%` }} />;
+                                    const width = Math.max(2, (profile.endRatio - profile.startRatio) * 100 * 0.72 * (bucket.pct / 100));
+                                    const upWidth = bucket.count ? (bucket.up / bucket.count) * 100 : 50;
+                                    return <div key={index} className={`chart-analysis__bar ${bucket.inValueArea ? 'is-value-area' : ''}`} style={{ top, left: `${profile.endRatio * 100 - width}%`, width: `${width}%` }}><span className='chart-analysis__bar-up' style={{ width: `${upWidth}%` }} /><span className='chart-analysis__bar-down' style={{ width: `${100 - upWidth}%` }} /></div>;
                                 })}
                                 <div className='chart-analysis__level chart-analysis__level--poc' style={{ top: `${((maxPrice - profile.poc) / span) * 88 + 6}%`, left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}><b>POC {profile.poc.toFixed(pip)}</b></div>
                                 <div className='chart-analysis__level chart-analysis__level--vah' style={{ top: `${((maxPrice - profile.vah) / span) * 88 + 6}%`, left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}><b>VAH {profile.vah.toFixed(pip)}</b></div>

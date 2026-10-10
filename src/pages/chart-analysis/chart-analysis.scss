@@ -86,16 +86,39 @@
     border-right: 1px solid rgba(249, 115, 22, .9);
     pointer-events: none;
 }
+.chart-analysis__anchor {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 3;
+    width: 1px;
+    border-left: 2px solid #f97316;
+    pointer-events: none;
+}
+.chart-analysis__anchor b {
+    position: absolute;
+    top: 14px;
+    left: 4px;
+    padding: 2px 5px;
+    border-radius: 4px;
+    background: #f97316;
+    color: #fff;
+    font: 700 10px/1 monospace;
+}
 .chart-analysis__profile { position: absolute; inset: 0; pointer-events: none; }
 .chart-analysis__bar {
     position: absolute;
-    height: 4px;
+    display: flex;
+    height: 7px;
     transform: translateY(-50%);
-    border-radius: 1px;
-    background: rgba(59, 130, 246, .65);
+    overflow: hidden;
+    border-radius: 2px 0 0 2px;
+    background: rgba(59, 130, 246, .38);
     pointer-events: none;
 }
-.chart-analysis__bar.is-value-area { background: rgba(34, 197, 94, .78); }
+.chart-analysis__bar-up { height: 100%; background: rgba(34, 197, 94, .85); }
+.chart-analysis__bar-down { height: 100%; background: rgba(239, 68, 68, .78); }
+.chart-analysis__bar.is-value-area { box-shadow: 0 0 0 1px rgba(255, 255, 255, .22); }
 .chart-analysis__level {
     position: absolute;
     height: 1px;
@@ -155,13 +178,14 @@
 .chart-analysis__status span { color: #f97316; }
 
 @media (max-width: 768px) {
+    .chart-analysis { min-height: calc(100vh - 7.5rem); }
     .chart-analysis__toolbar { align-items: flex-start; flex-direction: column; padding: 8px 10px; }
     .chart-analysis__actions { width: 100%; flex-wrap: wrap; }
     .chart-analysis__symbol { flex: 1 1 100%; }
     .chart-analysis__symbol select { flex: 1; min-width: 0; min-height: 38px; }
     .chart-analysis__tool { flex: 1; min-height: 38px; }
     .chart-analysis__clear { min-height: 38px; }
-    .chart-analysis__chart-shell { min-height: 260px; }
+    .chart-analysis__chart-shell { min-height: 460px; height: calc(100vh - 12.5rem); }
     .chart-analysis__status { flex-direction: column; gap: 2px; padding-bottom: 8px; }
     .chart-analysis__level b { font-size: 8px; }
 }
