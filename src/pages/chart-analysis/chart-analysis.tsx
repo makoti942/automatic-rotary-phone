@@ -145,6 +145,15 @@ const ChartAnalysis: React.FC = () => {
     };
     const removeProfile = (id: number) => setProfiles(current => current.filter(profile => profile.id !== id));
     const activeRange = firstAnchor !== null && secondAnchor !== null ? [Math.min(firstAnchor, secondAnchor), Math.max(firstAnchor, secondAnchor)] as const : null;
+    const tickAtRatio = (ratio: number | null) => {
+        if (ratio === null || ticks.length === 0) return null;
+        return ticks[Math.min(ticks.length - 1, Math.max(0, Math.round(ratio * (ticks.length - 1))))];
+    };
+    const firstTick = tickAtRatio(firstAnchor);
+    const secondTick = tickAtRatio(secondAnchor);
+    const selectedTickCount = activeRange && ticks.length > 1
+        ? Math.max(0, Math.ceil(activeRange[1] * (ticks.length - 1)) - Math.floor(activeRange[0] * (ticks.length - 1)) + 1)
+        : 0;
 
     return (
         <div className='chart-analysis'>
@@ -175,9 +184,9 @@ const ChartAnalysis: React.FC = () => {
                     className={`chart-analysis__overlay ${toolActive ? 'is-selecting' : ''}`}
                     onPointerUp={onChartTap}
                 >
-                    {firstAnchor !== null && <div className='chart-analysis__anchor' style={{ left: `${firstAnchor * 100}%` }}><b>1</b></div>}
-                    {secondAnchor !== null && <div className='chart-analysis__anchor' style={{ left: `${secondAnchor * 100}%` }}><b>2</b></div>}
-                    {activeRange && <div className='chart-analysis__selection' style={{ left: `${activeRange[0] * 100}%`, width: `${(activeRange[1] - activeRange[0]) * 100}%` }} />}
+                    {firstAnchor !== null && <div className='chart-analysis__anchor' style={{ left: `${firstAnchor * 100}%` }}><b>1 · {firstTick?.price.toFixed(pip) ?? '—'}</b></div>}
+                    {secondAnchor !== null && <div className='chart-analysis__anchor chart-analysis__anchor--second' style={{ left: `${secondAnchor * 100}%` }}><b>2 · {secondTick?.price.toFixed(pip) ?? '—'}</b></div>}
+                    {activeRange && <div className='chart-analysis__selection' style={{ left: `${activeRange[0] * 100}%`, width: `${(activeRange[1] - activeRange[0]) * 100}%` }}><span>{selectedTickCount.toLocaleString()} real ticks selected</span></div>}
                     {profiles.map(profile => {
                         const maxPrice = Math.max(...profile.buckets.map(bucket => bucket.price));
                         const minPrice = Math.min(...profile.buckets.map(bucket => bucket.price));
@@ -201,7 +210,7 @@ const ChartAnalysis: React.FC = () => {
                     {loading && <div className='chart-analysis__loading'>Loading Deriv tick history…</div>}
                 </div>
             </div>
-            <div className='chart-analysis__status'>{message}<span>Profile calculated from Deriv tick frequency, not exchange volume.</span></div>
+            <div className='chart-analysis__status'>{message}<span>Uses Deriv ticks_history prices and epochs. Synthetic markets provide tick frequency, not exchange trade volume.</span></div>
         </div>
     );
 };
