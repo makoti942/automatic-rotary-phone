@@ -6,3 +6,5 @@ allowBuilds:
 onlyBuiltDependencies:
   - "@parcel/watcher"
   - "core-js"
+patchedDependencies:
+  '@deriv-com/smartcharts-champion@1.9.17': patches/@deriv-com__smartcharts-champion@1.9.17.patch

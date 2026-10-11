@@ -162,37 +162,23 @@ const AppWrapper = observer(() => {
     React.useEffect(() => {
         const el_dashboard = document.getElementById('id-dbot-dashboard');
         const el_tutorial = document.getElementById('id-tutorials');
+        if (!el_dashboard || !el_tutorial || !('IntersectionObserver' in window)) return;
 
-        const observer_dashboard = new window.IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) {
-                    setLeftTabShadow(false);
-                    return;
-                }
-                setLeftTabShadow(true);
+        const observer = new window.IntersectionObserver(
+            entries => {
+                entries.forEach(entry => {
+                    const is_hidden = !entry.isIntersecting;
+                    if (entry.target === el_dashboard) setLeftTabShadow(is_hidden);
+                    if (entry.target === el_tutorial) setRightTabShadow(is_hidden);
+                });
             },
-            {
-                root: null,
-                threshold: 0.5, // set offset 0.1 means trigger if atleast 10% of element in viewport
-            }
+            { root: null, threshold: 0.5 }
         );
+        observer.observe(el_dashboard);
+        observer.observe(el_tutorial);
 
-        const observer_tutorial = new window.IntersectionObserver(
-            ([entry]) => {
-                if (entry.isIntersecting) {
-                    setRightTabShadow(false);
-                    return;
-                }
-                setRightTabShadow(true);
-            },
-            {
-                root: null,
-                threshold: 0.5, // set offset 0.1 means trigger if atleast 10% of element in viewport
-            }
-        );
-        observer_dashboard.observe(el_dashboard);
-        observer_tutorial.observe(el_tutorial);
-    });
+        return () => observer.disconnect();
+    }, [setLeftTabShadow, setRightTabShadow]);
 
     React.useEffect(() => {
         if (connectionStatus !== CONNECTION_STATUS.OPENED) {

@@ -121,9 +121,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
                 chartData={{ activeSymbols: chartData.activeSymbols, tradingTimes: chartData.tradingTimes }}
                 settings={settings}
                 symbol={symbol}
-                getIndicatorHeightRatio={(chartHeight, indicatorCount) =>
-                    getEqualIndicatorHeightRatio(chartHeight, indicatorCount)
-                }
+                getIndicatorHeightRatio={getEqualIndicatorHeightRatio}
                 topWidgets={() => <ChartTitle onChange={onSymbolChange} />}
                 isConnectionOpened={is_connection_opened}
                 getMarketsOrder={getMarketsOrder}

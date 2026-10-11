@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { SmartChart, TGranularity, TStateChangeListener } from '@deriv-com/smartcharts-champion';
 import { useDevice } from '@deriv-com/ui';
@@ -22,6 +22,15 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
     const [granularity, setGranularity] = useState(60);
     const [macdOnly, setMacdOnly] = useState(false);
     const [hasMacd, setHasMacd] = useState(false);
+    const getIndicatorHeightRatio = useCallback(
+        (chartHeight: number, indicatorCount: number) =>
+            getEqualIndicatorHeightRatio(
+                chartHeight,
+                indicatorCount,
+                !(macdOnly && hasMacd)
+            ),
+        [macdOnly, hasMacd]
+    );
 
     useEffect(() => () => {
         chart_api.api?.forgetAll('ticks');
@@ -104,13 +113,7 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
                             theme: ui.is_dark_mode_on ? 'dark' : 'light',
                         }}
                         symbol={symbol}
-                        getIndicatorHeightRatio={(chartHeight, indicatorCount) =>
-                            getEqualIndicatorHeightRatio(
-                                chartHeight,
-                                indicatorCount,
-                                !(macdOnly && hasMacd)
-                            )
-                        }
+                        getIndicatorHeightRatio={getIndicatorHeightRatio}
                         topWidgets={() => null}
                         isConnectionOpened={!!chart_api.api}
                         getMarketsOrder={chart_store.getMarketsOrder}
