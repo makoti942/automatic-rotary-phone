@@ -81,13 +81,27 @@
     position: absolute;
     top: 0;
     bottom: 0;
-    background: linear-gradient(180deg, rgba(249, 115, 22, .14), rgba(249, 115, 22, .035));
-    border: 1px dashed rgba(249, 115, 22, .78);
+    background: linear-gradient(180deg, rgba(249, 115, 22, .13), rgba(249, 115, 22, .025));
+    border-top: 2px solid rgba(249, 115, 22, .8);
+    border-bottom: 2px solid rgba(249, 115, 22, .55);
     box-shadow: inset 0 0 0 1px rgba(249, 115, 22, .08), 0 0 18px rgba(249, 115, 22, .08);
     pointer-events: none;
 }
 .chart-analysis__selection { z-index: 2; }
 .chart-analysis__range { left: 0; right: 0; }
+.chart-analysis__range-label {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 5px 8px;
+    border: 1px solid rgba(249, 115, 22, .35);
+    border-radius: 5px;
+    background: rgba(15, 23, 42, .88);
+    color: #fed7aa;
+    font: 700 10px/1 monospace;
+    white-space: nowrap;
+}
 .chart-analysis__selection span {
     position: absolute;
     top: 42px;

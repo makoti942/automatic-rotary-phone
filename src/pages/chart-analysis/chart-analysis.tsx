@@ -79,7 +79,7 @@ const ChartAnalysis: React.FC = () => {
     const [secondAnchor, setSecondAnchor] = useState<number | null>(null);
     const [profiles, setProfiles] = useState<Profile[]>([]);
     const [loading, setLoading] = useState(false);
-    const [message, setMessage] = useState('Select Fixed Range Tick Profile, then drag across the chart.');
+    const [message, setMessage] = useState('Select Fixed Range Tick Profile, then tap the first and last candle.');
 
     const loadTicks = useCallback(async () => {
         if (cache.has(symbol) && (cache.get(symbol)?.length || 0) >= 1000) {
@@ -193,7 +193,11 @@ const ChartAnalysis: React.FC = () => {
                         const span = maxPrice - minPrice || 1;
                         return (
                             <div className='chart-analysis__profile' key={profile.id} style={{ left: `${profile.startRatio * 100}%`, width: `${(profile.endRatio - profile.startRatio) * 100}%` }}>
-                                <div className='chart-analysis__range' />
+                                <div className='chart-analysis__range'>
+                                    <span className='chart-analysis__range-label'>
+                                        {profile.total.toLocaleString()} ticks · {new Date(profile.startEpoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} → {new Date(profile.endEpoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                    </span>
+                                </div>
                                 {profile.buckets.map((bucket, index) => {
                                     const top = `${((maxPrice - bucket.price) / span) * 88 + 6}%`;
                                     const width = Math.max(3, 72 * (bucket.pct / 100));
