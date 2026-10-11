@@ -74,6 +74,7 @@ const ChartAnalysis: React.FC = () => {
     const [ticks, setTicks] = useState<TickPoint[]>(() => cache.get(symbol) || []);
     const ticksRef = useRef(ticks);
     ticksRef.current = ticks;
+    const analysisTicksRef = useRef<TickPoint[] | null>(null);
     const [toolActive, setToolActive] = useState(false);
     const [firstAnchor, setFirstAnchor] = useState<number | null>(null);
     const [secondAnchor, setSecondAnchor] = useState<number | null>(null);
@@ -104,6 +105,7 @@ const ChartAnalysis: React.FC = () => {
 
     useEffect(() => {
         setTicks(cache.get(symbol) || []);
+        analysisTicksRef.current = null;
         setProfiles([]);
         setToolActive(false);
         setFirstAnchor(null);
@@ -117,7 +119,6 @@ const ChartAnalysis: React.FC = () => {
                 const next = [...ticksRef.current.filter(tick => tick.epoch !== nextTick.epoch), nextTick].sort((a, b) => a.epoch - b.epoch).slice(-5000);
                 cache.set(symbol, next);
                 setTicks(next);
-                setProfiles(current => current.map(profile => profile.endEpoch >= (next.at(-2)?.epoch || 0) ? calculateProfile(next, profile.startRatio, profile.endRatio) || profile : profile));
             } catch {}
         });
     }, [loadTicks, pip, symbol]);
@@ -129,30 +130,33 @@ const ChartAnalysis: React.FC = () => {
     const onChartTap = (event: PointerEvent) => {
         if (!toolActive) return;
         const ratio = ratioFromEvent(event);
+        if (!analysisTicksRef.current && ticksRef.current.length) analysisTicksRef.current = ticksRef.current.slice();
+        const sourceTicks = analysisTicksRef.current || ticksRef.current;
         if (firstAnchor === null) {
             setFirstAnchor(ratio);
             setMessage('First anchor marked. Tap another location to complete the range.');
             return;
         }
         setSecondAnchor(ratio);
-        const profile = calculateProfile(ticksRef.current, firstAnchor, ratio);
+        const profile = calculateProfile(sourceTicks, firstAnchor, ratio);
         if (profile) {
             setProfiles(current => [...current, profile]);
-            setMessage(`Profile calculated from ${profile.total.toLocaleString()} Deriv ticks.`);
+            setMessage(`POC calculated from ${profile.total.toLocaleString()} exact Deriv ticks. Snapshot frozen for repeatable results.`);
             setFirstAnchor(null);
             setSecondAnchor(null);
         } else setMessage('Select a wider range with available tick data.');
     };
     const removeProfile = (id: number) => setProfiles(current => current.filter(profile => profile.id !== id));
     const activeRange = firstAnchor !== null && secondAnchor !== null ? [Math.min(firstAnchor, secondAnchor), Math.max(firstAnchor, secondAnchor)] as const : null;
+    const displayTicks = analysisTicksRef.current || ticks;
     const tickAtRatio = (ratio: number | null) => {
-        if (ratio === null || ticks.length === 0) return null;
-        return ticks[Math.min(ticks.length - 1, Math.max(0, Math.round(ratio * (ticks.length - 1))))];
+        if (ratio === null || displayTicks.length === 0) return null;
+        return displayTicks[Math.min(displayTicks.length - 1, Math.max(0, Math.round(ratio * (displayTicks.length - 1))))];
     };
     const firstTick = tickAtRatio(firstAnchor);
     const secondTick = tickAtRatio(secondAnchor);
-    const selectedTickCount = activeRange && ticks.length > 1
-        ? Math.max(0, Math.ceil(activeRange[1] * (ticks.length - 1)) - Math.floor(activeRange[0] * (ticks.length - 1)) + 1)
+    const selectedTickCount = activeRange && displayTicks.length > 1
+        ? Math.max(0, Math.ceil(activeRange[1] * (displayTicks.length - 1)) - Math.floor(activeRange[0] * (displayTicks.length - 1)) + 1)
         : 0;
 
     return (
@@ -167,6 +171,8 @@ const ChartAnalysis: React.FC = () => {
                         </select>
                     </label>
                     <button className={`chart-analysis__tool ${toolActive ? 'is-active' : ''}`} onClick={() => {
+                        if (!toolActive) analysisTicksRef.current = ticksRef.current.slice();
+                        else analysisTicksRef.current = null;
                         setToolActive(value => !value);
                         setFirstAnchor(null);
                         setSecondAnchor(null);
@@ -214,7 +220,7 @@ const ChartAnalysis: React.FC = () => {
                     {loading && <div className='chart-analysis__loading'>Loading Deriv tick history…</div>}
                 </div>
             </div>
-            <div className='chart-analysis__status'>{message}<span>Uses Deriv ticks_history prices and epochs. Synthetic markets provide tick frequency, not exchange trade volume.</span></div>
+            <div className='chart-analysis__status'>{message}<span>POC = highest tick-count price row. Source: Deriv ticks_history prices and epochs; no guessed volume.</span></div>
         </div>
     );
 };
