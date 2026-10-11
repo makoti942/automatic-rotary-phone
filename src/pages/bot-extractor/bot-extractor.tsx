@@ -1328,6 +1328,9 @@ const BotExtractor = () => {
             }
 
             const data = await res.json();
+            if (data.mode === 'binarylab-public-catalog') {
+                addLog('Read the public BinaryLab Free Bots catalog and extracted its inline XML entries.');
+            }
             if (data.spaShells > 0) {
                 addLog(`Note: ${data.spaShells} path(s) returned SPA HTML (bots may not exist as .xml files on server)`);
             }

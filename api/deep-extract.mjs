@@ -136,10 +136,63 @@ function nameFromContext(content, position, source) {
   } catch { return null; }
 }
 
-export function extractXmlDocuments(content, source) {
-  const decoded = decodeMarkup(content);
-  if (isBuiltInBundle(source)) return [];
+function extractStructuredBotDocuments(content, source) {
+  const text = String(content || '');
+  if (!/^\s*(?:\{|\[)/.test(text) || !/"(?:xmlContent|xml_content|botXml|bot_xml|xml)"\s*:/i.test(text)) return [];
+  let payload;
+  try { payload = JSON.parse(text); }
+  catch {
+    try { payload = JSON.parse(decodeMarkup(text)); }
+    catch { return []; }
+  }
+
   const output = [];
+  const seen = new Set();
+  const visit = (value, depth = 0) => {
+    if (depth > 12 || output.length >= MAX_BOTS || !value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      for (const item of value) visit(item, depth + 1);
+      return;
+    }
+
+    const xmlValue = value.xmlContent || value.xml_content || value.botXml || value.bot_xml
+      || (typeof value.xml === 'string' && /<xml\b/i.test(decodeMarkup(value.xml)) ? value.xml : null);
+    if (typeof xmlValue === 'string') {
+      const xml = decodeMarkup(xmlValue).trim();
+      if (isValidBotXml(xml) && !seen.has(xml)) {
+        const fileName = typeof value.fileName === 'string' ? value.fileName.replace(/\.xml$/i, '') : '';
+        const rawName = [value.name, value.title, value.label, value.botName, value.bot_name]
+          .find(candidate => typeof candidate === 'string' && candidate.trim());
+        const rawCategory = [value.category, value.group]
+          .find(candidate => typeof candidate === 'string' && candidate.trim());
+        const name = normalizeName(rawName)
+          || nameFromXml(xml)
+          || normalizeName(fileName);
+        if (name && !isBuiltInBotName(name)) {
+          seen.add(xml);
+          output.push({
+            name,
+            xml,
+            source,
+            size: xml.length,
+            fromTab: normalizeName(rawCategory) || 'Custom Bots',
+          });
+        }
+      }
+    }
+
+    for (const [key, child] of Object.entries(value)) {
+      if (!['xmlContent', 'xml_content', 'botXml', 'bot_xml', 'xml'].includes(key)) visit(child, depth + 1);
+    }
+  };
+  visit(payload);
+  return output;
+}
+
+export function extractXmlDocuments(content, source) {
+  if (isBuiltInBundle(source)) return [];
+  const output = extractStructuredBotDocuments(content, source);
+  const decoded = decodeMarkup(content);
   const open = /<xml\b[^>]*>/gi;
   let match;
   while ((match = open.exec(decoded))) {
@@ -445,6 +498,22 @@ async function fastBundleScan(startUrl) {
   return found;
 }
 
+export async function extractBinaryLabFreeBots(start) {
+  const hostname = start.hostname.toLowerCase();
+  if (!['binarylab.site', 'www.binarylab.site', 'trade.binarylab.site'].includes(hostname)) return [];
+
+  const origins = [start.origin];
+  if (hostname !== 'www.binarylab.site') origins.push('https://www.binarylab.site');
+  for (const origin of new Set(origins)) {
+    const endpoint = new URL('/api/free-bots', origin).href;
+    const response = await fetchText(endpoint);
+    if (!response || !/^\s*\{/.test(response.text)) continue;
+    const bots = extractXmlDocuments(response.text, endpoint);
+    if (bots.length) return bots;
+  }
+  return [];
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
   const input = String(req.body?.url || '').trim();
@@ -467,6 +536,11 @@ export default async function handler(req, res) {
   for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
 
+  const binaryLabBots = await extractBinaryLabFreeBots(start);
+  for (const bot of binaryLabBots) {
+    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+  }
+
   const fastBots = await fastBundleScan(start.href);
   for (const bot of fastBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
@@ -474,7 +548,7 @@ export default async function handler(req, res) {
   if (bots.length) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'webpack-context' });
+    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: binaryLabBots.length ? 'binarylab-public-catalog' : 'webpack-context' });
   }
 
   const manifestBots = await extractManifestBots(start);
