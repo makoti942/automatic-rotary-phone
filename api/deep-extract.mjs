@@ -3,6 +3,58 @@ const MAX_BYTES = 4_000_000;
 const MAX_SCRIPT_BYTES = 12_000_000;
 const TIMEOUT_MS = 8_000;
 const MAX_BOTS = 250;
+const BUILT_IN_BOT_IDENTIFIERS = new Set([
+  '1 3 2 6',
+  'accumulators dalembert',
+  'accumulators dalembert on stat reset',
+  'accumulators martingale',
+  'accumulators martingale on stat reset',
+  'accumulators reverse dalembert',
+  'accumulators reverse dalembert on stat reset',
+  'accumulators reverse martingale',
+  'accumulators reverse martingale on stat reset',
+  'dalembert',
+  'dalembert max stake',
+  'dbot collection',
+  'martingale',
+  'martingale max stake',
+  'oscars grind',
+  'oscars grind max stake',
+  'reverse dalembert',
+  'reverse martingale',
+]);
+
+function normalizeBotIdentifier(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[’']/g, '')
+    .replace(/[_-]+/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function isBuiltInBotName(name) {
+  const normalized = normalizeBotIdentifier(name);
+  return BUILT_IN_BOT_IDENTIFIERS.has(normalized)
+    || BUILT_IN_BOT_IDENTIFIERS.has(normalized.replace(/\s+(?:bot|strategy)$/, ''));
+}
+
+export function isBuiltInBotSource(source) {
+  if (!source) return false;
+  const candidates = String(source).match(/https?:\/\/[^\s"'<>]+/gi) || [String(source)];
+  return candidates.some(candidate => {
+    let pathname = candidate.split(/[?#]/)[0];
+    try { pathname = new URL(candidate).pathname; } catch {}
+    let filename = pathname.split(/[\\/]/).pop() || '';
+    try { filename = decodeURIComponent(filename); } catch {}
+    const identifier = filename
+      .replace(/\.[a-f0-9]{6,}\.js$/i, '')
+      .replace(/\.(?:js|xml)$/i, '')
+      .replace(/-xml$/i, '');
+    return isBuiltInBotName(identifier);
+  });
+}
 
 function decodeMarkup(value) {
   return value
@@ -30,16 +82,7 @@ function isValidBotXml(value) {
 }
 
 function isBuiltInBundle(url) {
-  const matchesStockTemplate = /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(url);
-  if (!matchesStockTemplate) return false;
-  try {
-    const host = new URL(url).hostname;
-    // Official Deriv hosts ship these as noise. White-label sites use the
-    // same stock templates as their public Free Bots library (e.g. legacyprime.live).
-    return /(^|\.)deriv\.com$/i.test(host) || /derivbot/i.test(host) || /blockly/i.test(host);
-  } catch {
-    return false;
-  }
+  return isBuiltInBotSource(url);
 }
 
 function normalizeName(value) {
@@ -93,7 +136,7 @@ function nameFromContext(content, position, source) {
   } catch { return null; }
 }
 
-function extractXmlDocuments(content, source) {
+export function extractXmlDocuments(content, source) {
   const decoded = decodeMarkup(content);
   if (isBuiltInBundle(source)) return [];
   const output = [];
@@ -108,7 +151,7 @@ function extractXmlDocuments(content, source) {
       continue;
     }
     const name = nameFromXml(xml) || nameFromContext(decoded, match.index, source);
-    if (name) output.push({ name, xml, source, size: xml.length });
+    if (name && !isBuiltInBotName(name)) output.push({ name, xml, source, size: xml.length });
     open.lastIndex = end + 6;
   }
   return output;
@@ -234,12 +277,15 @@ async function extractManifestBots(start) {
     for (const entry of manifestBotEntries(parsed)) {
       try {
         const xmlUrl = new URL(entry.url, start.origin).href;
+        if (isBuiltInBotSource(xmlUrl) || isBuiltInBotName(entry.name)) continue;
         if (seen.has(xmlUrl)) continue;
         seen.add(xmlUrl);
         const result = await fetchText(xmlUrl);
         if (!result || !isValidBotXml(result.text)) continue;
         const fallback = decodeURIComponent(new URL(xmlUrl).pathname.split('/').pop() || 'Bot.xml').replace(/\.xml$/i, '');
-        found.push({ name: normalizeName(entry.name) || nameFromXml(result.text) || normalizeName(fallback), xml: decodeMarkup(result.text).trim(), source: `manifest:${xmlUrl}`, size: result.text.length, fromTab: entry.category });
+        const name = normalizeName(entry.name) || nameFromXml(result.text) || normalizeName(fallback);
+        if (!name || isBuiltInBotName(name)) continue;
+        found.push({ name, xml: decodeMarkup(result.text).trim(), source: `manifest:${xmlUrl}`, size: result.text.length, fromTab: entry.category });
         if (found.length >= MAX_BOTS) return found;
       } catch {}
     }

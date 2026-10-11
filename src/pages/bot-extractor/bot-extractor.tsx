@@ -2,6 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import localForage from 'localforage';
+import { isBuiltInBot, isBuiltInBotName, isBuiltInBotSource } from './bot-classification';
 import './bot-extractor.scss';
 
 interface ExtractedBot {
@@ -299,9 +300,10 @@ function registerCompatibilityBlocks(xml: string): string[] {
 }
 
 function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
-    const merged = [...existing];
-    const seen = new Set(existing.map(bot => bot.xml.trim() || `${bot.source}|${bot.name}`));
+    const merged = existing.filter(bot => !isBuiltInBot(bot));
+    const seen = new Set(merged.map(bot => bot.xml.trim() || `${bot.source}|${bot.name}`));
     for (const bot of incoming) {
+        if (isBuiltInBot(bot)) continue;
         const xml = bot.xml.trim();
         const catalogIndex = merged.findIndex(existingBot => existingBot.catalogOnly && existingBot.name.toLowerCase() === bot.name.toLowerCase() && xml);
         if (catalogIndex >= 0) {
@@ -424,16 +426,7 @@ function extractXmlDocuments(content: string): string[] {
 }
 
 function isBuiltInBotBundle(source: string): boolean {
-    const matchesStockTemplate = /(?:^|[\\/])(?:accumulators?|dalembert|martingale|max-stake|oscars?|reverse|1_3_2_6|dbot-collection)[^\\/]*?(?:-xml)?(?:\.[a-f0-9]{6,})?\.js$/i.test(source);
-    if (!matchesStockTemplate) return false;
-    try {
-        const host = new URL(source).hostname;
-        // Official Deriv hosts ship these as noise. White-label sites use the
-        // same stock templates as their public Free Bots library.
-        return /(^|\.)deriv\.com$/i.test(host) || /derivbot/i.test(host) || /blockly/i.test(host);
-    } catch {
-        return false;
-    }
+    return isBuiltInBotSource(source);
 }
 
 function normalizeBotName(name: string | null | undefined): string | null {
@@ -445,7 +438,7 @@ function normalizeBotName(name: string | null | undefined): string | null {
 }
 
 function hasCustomBotName(name: string | null | undefined): boolean {
-    return !!normalizeBotName(name);
+    return !!normalizeBotName(name) && !isBuiltInBotName(name);
 }
 
 function extractEmbeddedBotsFromJs(jsContent: string, jsSource: string, seenContent: Set<string>): { name: string; xml: string; source: string; size: number }[] {
@@ -606,7 +599,7 @@ const BotExtractor = () => {
         try {
             const saved = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
             const parsed = saved ? JSON.parse(saved) : [];
-            return Array.isArray(parsed) ? parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly)) : [];
+            return Array.isArray(parsed) ? parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly) && !isBuiltInBot(bot)) : [];
         } catch { return []; }
     });
     const [isLibraryHydrated, setIsLibraryHydrated] = useState(false);
@@ -623,12 +616,12 @@ const BotExtractor = () => {
         (async () => {
             try {
                 const saved = await localForage.getItem<ExtractedBot[]>(EXTRACTED_BOTS_DB_KEY);
-                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly)));
+                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly) && !isBuiltInBot(bot)));
                 else if (active) {
                     const legacy = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
                     const parsed = legacy ? JSON.parse(legacy) : [];
                     if (Array.isArray(parsed) && parsed.length) {
-                        const valid = parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly));
+                        const valid = parsed.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly) && !isBuiltInBot(bot));
                         setExtractedBots(valid);
                         await localForage.setItem(EXTRACTED_BOTS_DB_KEY, valid);
                     }
@@ -878,7 +871,7 @@ const BotExtractor = () => {
                             size: bot.size || bot.xml?.length || 0,
                             fromTab: 'Legacy Prime',
                         }));
-                        const valid = serverBots.filter(bot => bot.xml && isValidDerivBot(bot.xml));
+                        const valid = serverBots.filter(bot => bot.xml && isValidDerivBot(bot.xml) && !isBuiltInBot(bot));
                         if (valid.length) {
                             setExtractedBots(prev => mergeExtractedBots(prev, valid));
                             addLocalLog(`Server fallback extracted ${valid.length} bot(s)`);
@@ -1335,25 +1328,29 @@ const BotExtractor = () => {
             }
 
             const data = await res.json();
-            addLog(`Deep extract complete: ${data.count} bot(s) found`);
             if (data.spaShells > 0) {
                 addLog(`Note: ${data.spaShells} path(s) returned SPA HTML (bots may not exist as .xml files on server)`);
             }
 
-            const allBots: ExtractedBot[] = (Array.isArray(data.bots) ? data.bots : []).map((bot: any, i: number) => ({
+            const scannedBots: ExtractedBot[] = (Array.isArray(data.bots) ? data.bots : []).map((bot: any, i: number) => ({
                 name: bot.name || `Bot ${i + 1}`,
                 xml: bot.xml,
                 source: bot.source || targetUrl,
                 size: bot.size || bot.xml?.length || 0,
                 fromTab: 'Deep Extract',
             }));
+            const allBots = scannedBots.filter(bot => !isBuiltInBot(bot));
+            const skippedBuiltIns = scannedBots.length - allBots.length;
+            addLog(`Deep extract complete: ${allBots.length} custom bot(s) found${skippedBuiltIns ? `; filtered ${skippedBuiltIns} built-in bot(s)` : ''}`);
 
             setExtractedBots(prev => mergeExtractedBots(prev, allBots));
             setProgress('');
             addLog(`=== COMPLETE: ${allBots.length} bot(s) extracted ===`);
 
             if (allBots.length === 0) {
-                setError('No bots found. The site either does not serve .xml bot files, or uses a different storage method (database/localStorage). Only sites with actual .xml files in accessible paths can be extracted.');
+                setError(scannedBots.length
+                    ? 'Only built-in Deriv strategy templates (such as Reverse D’Alembert) were found; they are not custom bots and were filtered out.'
+                    : 'No custom bot XML was found. Built-in Deriv strategy templates are intentionally ignored; this site may store custom bots in a database or browser storage instead.');
             }
         } catch (err: any) {
             setError(`Deep extraction failed: ${err.message}`);
@@ -1424,7 +1421,7 @@ const BotExtractor = () => {
                 <div>
                     <h2 className='bot-extractor__title'>Bot Extractor</h2>
                     <p className='bot-extractor__subtitle'>
-                        Scan any Deriv site — finds bot filenames from JS bundles and .xml files
+                        Scan Deriv sites for custom bots; built-in templates such as Reverse D’Alembert are filtered out
                     </p>
                 </div>
                 <button
