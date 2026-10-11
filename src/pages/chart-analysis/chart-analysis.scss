@@ -66,7 +66,10 @@
 .chart-analysis__chart-shell > .dashboard__chart-wrapper { position: absolute; inset: 0; width: 100%; height: 100%; }
 .chart-analysis__overlay {
     position: absolute;
-    inset: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 80px;
     z-index: 20;
     pointer-events: none;
     overflow: hidden;
@@ -91,7 +94,7 @@
 .chart-analysis__range { left: 0; right: 0; }
 .chart-analysis__range-label {
     position: absolute;
-    top: 10px;
+    top: 40px;
     left: 50%;
     transform: translateX(-50%);
     padding: 5px 8px;
@@ -136,6 +139,25 @@
 }
 .chart-analysis__anchor--second b { background: #7c3aed; box-shadow: 0 3px 10px rgba(124, 58, 237, .3); }
 .chart-analysis__profile { position: absolute; top: 0; bottom: 0; pointer-events: none; }
+.chart-analysis__profile { top: 7%; bottom: 7%; }
+.chart-analysis__profile-summary {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    transform: translateX(-50%);
+    padding: 4px 6px;
+    border: 1px solid rgba(249, 115, 22, .35);
+    border-radius: 5px;
+    background: rgba(15, 23, 42, .9);
+    color: #bbf7d0;
+    font: 700 9px/1 monospace;
+    white-space: nowrap;
+}
+.chart-analysis__profile-summary b { color: #fed7aa; }
 .chart-analysis__bar {
     position: absolute;
     display: flex;

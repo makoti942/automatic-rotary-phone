@@ -92,7 +92,7 @@ const ChartAnalysis: React.FC = () => {
             const response: any = await sendViaNewSystemWithPromise({ ticks_history: symbol, style: 'ticks', count: 5000, end: 'latest' });
             const prices = response?.ticks_history?.prices || [];
             const epochs = response?.ticks_history?.epoch || [];
-            const next = prices.map((price: number, index: number) => ({ price: Number(Number(price).toFixed(pip)), epoch: Number(epochs[index]) })).filter((tick: TickPoint) => Number.isFinite(tick.epoch));
+            const next = prices.map((price: number, index: number) => ({ price: Number(price), epoch: Number(epochs[index]) })).filter((tick: TickPoint) => Number.isFinite(tick.price) && Number.isFinite(tick.epoch));
             cache.set(symbol, next);
             setTicks(next);
             setMessage(next.length ? 'Ready. Select a range on the chart.' : 'Historical tick data unavailable for this range.');
@@ -115,7 +115,7 @@ const ChartAnalysis: React.FC = () => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.tick?.symbol !== symbol) return;
-                const nextTick = { price: Number(Number(data.tick.quote).toFixed(pip)), epoch: Number(data.tick.epoch || Date.now() / 1000) };
+                const nextTick = { price: Number(data.tick.quote), epoch: Number(data.tick.epoch || Date.now() / 1000) };
                 const next = [...ticksRef.current.filter(tick => tick.epoch !== nextTick.epoch), nextTick].sort((a, b) => a.epoch - b.epoch).slice(-5000);
                 cache.set(symbol, next);
                 setTicks(next);
@@ -203,6 +203,11 @@ const ChartAnalysis: React.FC = () => {
                                     <span className='chart-analysis__range-label'>
                                         {profile.total.toLocaleString()} ticks · {new Date(profile.startEpoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })} → {new Date(profile.endEpoch * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                                     </span>
+                                </div>
+                                <div className='chart-analysis__profile-summary'>
+                                    <b>POC {profile.poc.toFixed(pip)}</b>
+                                    <span>VAH {profile.vah.toFixed(pip)}</span>
+                                    <span>VAL {profile.val.toFixed(pip)}</span>
                                 </div>
                                 {profile.buckets.map((bucket, index) => {
                                     const top = `${((maxPrice - bucket.price) / span) * 88 + 6}%`;
