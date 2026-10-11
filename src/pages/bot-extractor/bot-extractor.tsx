@@ -610,14 +610,15 @@ const BotExtractor = () => {
     const [isBotDrawerOpen, setIsBotDrawerOpen] = useState(false);
     const [botSearch, setBotSearch] = useState('');
     const drawerTouchStartX = React.useRef<number | null>(null);
+    const libraryClearRequested = React.useRef(false);
 
     useEffect(() => {
         let active = true;
         (async () => {
             try {
                 const saved = await localForage.getItem<ExtractedBot[]>(EXTRACTED_BOTS_DB_KEY);
-                if (active && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly) && !isBuiltInBot(bot)));
-                else if (active) {
+                if (active && !libraryClearRequested.current && Array.isArray(saved) && saved.length) setExtractedBots(saved.filter(bot => bot?.name && (bot?.xml || bot?.catalogOnly) && !isBuiltInBot(bot)));
+                else if (active && !libraryClearRequested.current) {
                     const legacy = window.localStorage.getItem(EXTRACTED_BOTS_STORAGE_KEY);
                     const parsed = legacy ? JSON.parse(legacy) : [];
                     if (Array.isArray(parsed) && parsed.length) {
@@ -643,6 +644,19 @@ const BotExtractor = () => {
     const addLog = useCallback((msg: string) => {
         setScanLog(prev => [...prev, msg]);
     }, []);
+
+    const clearExtractedBots = useCallback(async () => {
+        libraryClearRequested.current = true;
+        setExtractedBots([]);
+        setLoadedBots(new Set());
+        setBotSearch('');
+        setIsBotDrawerOpen(false);
+        setError('');
+        setProgress('');
+        try { window.localStorage.removeItem(EXTRACTED_BOTS_STORAGE_KEY); } catch {}
+        try { await localForage.removeItem(EXTRACTED_BOTS_DB_KEY); } catch {}
+        addLog('Extracted bot library cleared from this device.');
+    }, [addLog]);
 
     const fetchText = useCallback(async (targetUrl: string): Promise<string> => {
         for (const proxyFn of CORS_PROXIES) {
@@ -1427,16 +1441,21 @@ const BotExtractor = () => {
                         Scan Deriv sites for custom bots; built-in templates such as Reverse D’Alembert are filtered out
                     </p>
                 </div>
-                <button
-                    className='bot-extractor__library-button'
-                    onClick={() => setIsBotDrawerOpen(true)}
-                    type='button'
-                    aria-label={`Show all ${extractedBots.length} extracted bots`}
-                >
-                    <span className='bot-extractor__library-icon'>☰</span>
-                    <span>Show All Bots</span>
-                    <span className='bot-extractor__library-count'>{extractedBots.length}</span>
-                </button>
+                <div className='bot-extractor__header-actions'>
+                    <button
+                        className='bot-extractor__library-button'
+                        onClick={() => setIsBotDrawerOpen(true)}
+                        type='button'
+                        aria-label={`Show all ${extractedBots.length} extracted bots`}
+                    >
+                        <span className='bot-extractor__library-icon'>☰</span>
+                        <span>Show All Bots</span>
+                        <span className='bot-extractor__library-count'>{extractedBots.length}</span>
+                    </button>
+                    <button className='bot-extractor__clear-library-button' onClick={clearExtractedBots} type='button' disabled={!extractedBots.length}>
+                        Clear Extracted Bots
+                    </button>
+                </div>
             </div>
 
             <div className='bot-extractor__input-section'>
@@ -1566,6 +1585,7 @@ const BotExtractor = () => {
                                 <h3>All Extracted Bots</h3>
                                 <p>{extractedBots.length} bot{extractedBots.length === 1 ? '' : 's'} saved on this device</p>
                             </div>
+                            <button className='bot-extractor__clear-library-button' onClick={clearExtractedBots} type='button' disabled={!extractedBots.length}>Clear All</button>
                         </div>
                         <input
                             className='bot-extractor__drawer-search'
