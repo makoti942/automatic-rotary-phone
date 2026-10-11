@@ -78,6 +78,18 @@ export default Engine =>
             return this.realPurchase(contract_type);
         }
 
+        async hedgePurchase(contract_types) {
+            if (this.$scope?.paused_) return;
+
+            const types = [...new Set((Array.isArray(contract_types) ? contract_types : []).filter(Boolean))].slice(0, 2);
+            if (types.length < 2) return types.length === 1 ? this.purchase(types[0]) : undefined;
+
+            // Start both async purchase requests before awaiting either response.
+            // This keeps the two Deriv buy requests in the same execution window
+            // instead of waiting for the first contract to be acknowledged.
+            return Promise.all(types.map(contract_type => this.purchase(contract_type)));
+        }
+
         async virtualPurchase(contract_type) {
             this.applyAlternateMarketsToCurrentTradeOptions();
 

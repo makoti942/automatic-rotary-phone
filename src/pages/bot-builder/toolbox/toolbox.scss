@@ -204,6 +204,39 @@
     }
 }
 
+.db-toolbox--mobile {
+    position: fixed;
+    top: 4.8rem;
+    inset-inline-start: 0.8rem;
+    width: min(21rem, calc(100vw - 1.6rem));
+    height: auto;
+    max-height: 68vh;
+    padding: 0.6rem;
+    z-index: 1001;
+    border: 1px solid var(--general-section-1);
+    border-radius: 0.8rem;
+    box-shadow: 0 0.8rem 2.2rem rgba(0, 0, 0, 0.3);
+
+    .db-toolbox__content {
+        max-height: 68vh;
+    }
+
+    .db-toolbox__content-wrapper.active {
+        height: min(58vh, 34rem);
+    }
+
+    .db-toolbox__category-menu {
+        height: 100%;
+        max-height: calc(58vh - 7rem);
+    }
+
+    .db-toolbox__title {
+        height: 2.4rem;
+        line-height: 2.4rem;
+        font-size: 1.25rem;
+    }
+}
+
 .loader {
     border: 1px solid var(--general-active);
     border-top: 1px solid var(--brand-secondary);

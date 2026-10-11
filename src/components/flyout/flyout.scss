@@ -270,3 +270,17 @@
         margin: 0;
     }
 }
+
+@include mobile-or-tablet-screen {
+    .flyout {
+        inset-inline-start: 0.8rem;
+        top: 4.8rem;
+        width: calc(100vw - 1.6rem) !important;
+        min-width: 0;
+        max-width: calc(100vw - 1.6rem);
+        height: calc(100vh - 7rem);
+        max-height: calc(100vh - 7rem);
+        margin: 0;
+        z-index: 1003;
+    }
+}

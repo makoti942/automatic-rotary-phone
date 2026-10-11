@@ -41,9 +41,8 @@ const Toolbox = observer(() => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    if (isDesktop) {
-        return (
-            <div className='db-toolbox' data-testid='dashboard__toolbox'>
+    return (
+            <div className={classNames('db-toolbox', { 'db-toolbox--mobile': !isDesktop })} data-testid='dashboard__toolbox'>
                 <div id='gtm-toolbox' className='db-toolbox__content'>
                     <div className='db-toolbox__header'>
                         <div
@@ -158,8 +157,6 @@ const Toolbox = observer(() => {
                 </div>
             </div>
         );
-    }
-    return null;
 });
 
 export default Toolbox;
