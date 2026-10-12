@@ -5,12 +5,19 @@ import { localize } from '@deriv-com/translations';
 import { observer as globalObserver } from '../../../utils/observer';
 import { error as logError } from './broadcast';
 
+const toApiContractType = (contract_type, trade_option) => {
+    if (trade_option.tradeType !== 'higherlower') return contract_type;
+    if (contract_type === 'CALL') return 'HIGHER';
+    if (contract_type === 'PUT') return 'LOWER';
+    return contract_type;
+};
+
 export const tradeOptionToProposal = (trade_option, purchase_reference) =>
     trade_option.contractTypes.map(type => {
         const proposal = {
             amount: trade_option.amount,
             basis: trade_option.basis,
-            contract_type: type,
+            contract_type: toApiContractType(type, trade_option),
             currency: trade_option.currency,
             duration: trade_option.duration,
             duration_unit: trade_option.duration_unit,
@@ -50,7 +57,7 @@ export const tradeOptionToBuy = (contract_type, trade_option) => {
         parameters: {
             amount: trade_option.amount,
             basis: trade_option.basis,
-            contract_type,
+            contract_type: toApiContractType(contract_type, trade_option),
             currency: trade_option.currency,
             duration: trade_option.duration,
             duration_unit: trade_option.duration_unit,

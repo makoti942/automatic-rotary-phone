@@ -82,10 +82,12 @@ export default Engine =>
                             localizedError.code = error.error.code;
                             localizedError.details = error.error.details;
                             localizedError.message_to_client = error.error.message_to_client;
+                            const echo_req = error?.echo_req || error?.error?.echo_req || {};
+                            const passthrough = echo_req.passthrough || {};
 
                             this.data.proposals.push({
-                                ...error.error.echo_req,
-                                ...error.echo_req.passthrough,
+                                ...echo_req,
+                                ...passthrough,
                                 error: localizedError,
                             });
 
@@ -114,7 +116,10 @@ export default Engine =>
             if (!api_base.api) return;
             const subscription = api_base.api.onMessage().subscribe(response => {
                 if (response?.data?.msg_type === 'proposal') {
-                    const { passthrough, proposal, error } = response.data;
+                    const { proposal, error } = response.data;
+                    // The current Options API returns passthrough under echo_req.
+                    // Older WebSocket responses exposed it at the top level.
+                    const passthrough = response.data.passthrough || response.data.echo_req?.passthrough || {};
 
                     // Handle proposal errors with localized messages
                     if (error) {
@@ -151,7 +156,7 @@ export default Engine =>
                         proposals.findIndex(proposal => {
                             return (
                                 proposal.purchase_reference === template.passthrough.purchase_reference &&
-                                proposal.contract_type === template.contract_type
+                                proposal.contract_type === template.passthrough.contract_type
                             );
                         }) !== -1
                     );

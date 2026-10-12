@@ -6,6 +6,9 @@ export const getContractTypeName = contract => {
     const { opposites } = config();
     let name = localize('Unknown');
 
+    if (contract.contract_type === 'HIGHER') return localize('Higher');
+    if (contract.contract_type === 'LOWER') return localize('Lower');
+
     Object.keys(opposites).forEach(opposites_name => {
         const contract_type_objs = opposites[opposites_name];
 
