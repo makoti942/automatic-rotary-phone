@@ -46,7 +46,9 @@ export default class ToolboxStore {
         this.core = core;
     }
 
-    is_toolbox_open = true;
+    // The mobile toolbox is an on-demand drawer; keep the workspace clear on
+    // first load and let the compact header button open it.
+    is_toolbox_open = false;
     is_search_loading = false;
     is_search_focus = false;
     sub_category_index: number[] = [];
@@ -145,6 +147,16 @@ export default class ToolboxStore {
 
             setTimeout(() => {
                 const workspace = window.Blockly.derivWorkspace;
+                if (this.core.ui.is_mobile) {
+                    // The custom toolbox is an overlay drawer on phones, not
+                    // a reserved workspace column. The old RTL compensation
+                    // deliberately added a large horizontal scroll here,
+                    // leaving the first blocks slightly off-screen.
+                    workspace?.scrollbar?.set(0, 0);
+                    this.is_workspace_scroll_adjusted = false;
+                    this.is_adjusting_workspace = false;
+                    return;
+                }
                 const toolbox_width = document.getElementById('gtm-toolbox')?.getBoundingClientRect().width || 0;
                 const block_canvas_rect = workspace.svgBlockCanvas_?.getBoundingClientRect(); // eslint-disable-line
 

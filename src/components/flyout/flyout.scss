@@ -50,6 +50,15 @@
         overflow: auto;
         height: calc(100% - 64px);
 
+        &-scrollbar {
+            height: 100%;
+            min-height: 0;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-overflow-scrolling: touch;
+            touch-action: pan-y;
+        }
+
         .dc-themed-scrollbars {
             padding: 5px 25px;
         }
@@ -282,5 +291,10 @@
         max-height: calc(100vh - 7rem);
         margin: 0;
         z-index: 1003;
+
+        &__content {
+            height: 100%;
+            min-height: 0;
+        }
     }
 }
