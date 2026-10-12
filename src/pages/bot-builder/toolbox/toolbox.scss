@@ -213,9 +213,17 @@
     max-height: calc(100dvh - 6rem);
     padding: 0.6rem;
     z-index: 1001;
+    transform: translateX(-115%);
+    transition: transform 0.2s ease;
+    pointer-events: none;
     border: 1px solid var(--general-section-1);
     border-radius: 0.8rem;
     box-shadow: 0 0.8rem 2.2rem rgba(0, 0, 0, 0.3);
+
+    &.is-mobile-open {
+        transform: translateX(0);
+        pointer-events: auto;
+    }
 
     .db-toolbox__content {
         display: flex;
@@ -235,11 +243,12 @@
     }
 
     .db-toolbox__category-menu {
-        flex: 1 1 auto;
+        flex: 1 1 0;
         min-height: 0;
-        height: auto;
+        height: 0;
         max-height: none;
-        overflow-y: auto;
+        overflow-x: hidden;
+        overflow-y: scroll;
         overscroll-behavior: contain;
         -webkit-overflow-scrolling: touch;
         touch-action: pan-y;

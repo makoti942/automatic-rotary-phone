@@ -43,7 +43,13 @@ const Toolbox = observer(() => {
     }, []);
 
     return (
-            <div className={classNames('db-toolbox', { 'db-toolbox--mobile': !isDesktop })} data-testid='dashboard__toolbox'>
+            <div
+                className={classNames('db-toolbox', {
+                    'db-toolbox--mobile': !isDesktop,
+                    'is-mobile-open': !isDesktop && is_toolbox_open,
+                })}
+                data-testid='dashboard__toolbox'
+            >
                 <div id='gtm-toolbox' className='db-toolbox__content'>
                     <div className='db-toolbox__header'>
                         <div
