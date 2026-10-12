@@ -249,6 +249,33 @@
     border: 0 !important;
 }
 
+.dc-tabs--main__tabs .main__blocks-menu-button {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: center;
+    width: 2.55rem;
+    height: 2.55rem;
+    padding: 0;
+    border: 1px solid rgba(162, 184, 214, 0.14);
+    border-radius: 0.7rem;
+    color: #9eb0c8;
+    background: linear-gradient(155deg, rgba(20, 31, 49, 0.96), rgba(11, 17, 29, 0.98));
+    font: inherit;
+    cursor: pointer;
+}
+
+.dc-tabs--main__tabs .main__blocks-menu-button span { display: none; }
+
+.dc-tabs--main__tabs .main__blocks-menu-button:active,
+.dc-tabs--main__tabs .main__blocks-menu-button:hover {
+    color: #f8df9d;
+    border-color: rgba(248, 223, 157, 0.5);
+    background: linear-gradient(155deg, #1c2d45, #132033);
+}
+
+.dc-tabs--main__tabs .main__blocks-menu-button svg { fill: currentColor !important; }
+
 .dc-tabs--main__tabs .dc-themed-scrollbars-wrapper {
     width: 100%;
 }
@@ -323,6 +350,7 @@
     .dc-tabs--main__tabs .dc-tabs__list--main__tabs { gap: 0.4rem; min-height: 4.25rem; padding-top: 0.25rem; }
     .dc-tabs--main__tabs .dc-tabs__item { min-width: 7rem; height: 3.55rem; padding: 0 0.75rem; font-size: 0.78rem !important; }
     .dc-tabs--main__tabs .dc-tabs__item__icon { margin-right: 0.35rem; }
+    .dc-tabs--main__tabs .main__blocks-menu-button { width: 2.35rem; height: 2.35rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

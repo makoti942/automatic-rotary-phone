@@ -24,6 +24,7 @@ type TTabsProps = {
     fit_content?: boolean;
     has_active_line?: boolean;
     has_bottom_line?: boolean;
+    header_action?: React.ReactNode;
     header_fit_content?: boolean;
     history: History;
     icon_color?: string;
@@ -49,6 +50,7 @@ const Tabs = ({
     fit_content = false,
     has_active_line = true,
     has_bottom_line = true,
+    header_action = null,
     header_fit_content = false,
     history,
     icon_color = '',
@@ -241,6 +243,7 @@ const Tabs = ({
                         is_bypassed={!is_scrollable}
                         onScroll={is_scrollable ? handleTabStripScroll : undefined}
                     >
+                        {header_action}
                         {React.Children.map(children, (child, index) => {
                             if (!child) return null;
                             const { icon, label, id } = child.props;

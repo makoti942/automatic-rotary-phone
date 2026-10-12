@@ -209,8 +209,8 @@
     top: 4.8rem;
     inset-inline-start: 0.8rem;
     width: min(21rem, calc(100vw - 1.6rem));
-    height: auto;
-    max-height: 68vh;
+    height: min(68vh, calc(100dvh - 6rem));
+    max-height: calc(100dvh - 6rem);
     padding: 0.6rem;
     z-index: 1001;
     border: 1px solid var(--general-section-1);
@@ -218,16 +218,32 @@
     box-shadow: 0 0.8rem 2.2rem rgba(0, 0, 0, 0.3);
 
     .db-toolbox__content {
-        max-height: 68vh;
+        display: flex;
+        flex-direction: column;
+        height: 100%;
+        min-height: 0;
+        max-height: none;
     }
 
     .db-toolbox__content-wrapper.active {
-        height: min(58vh, 34rem);
+        display: flex;
+        flex: 1 1 auto;
+        flex-direction: column;
+        min-height: 0;
+        height: auto;
+        overflow: hidden;
     }
 
     .db-toolbox__category-menu {
-        height: 100%;
-        max-height: calc(58vh - 7rem);
+        flex: 1 1 auto;
+        min-height: 0;
+        height: auto;
+        max-height: none;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-y;
+        padding-bottom: 1rem;
     }
 
     .db-toolbox__title {

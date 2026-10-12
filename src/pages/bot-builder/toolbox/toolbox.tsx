@@ -25,6 +25,8 @@ const Toolbox = observer(() => {
         onToolboxItemClick,
         onToolboxItemExpand,
         onUnmount,
+        is_toolbox_open,
+        toggleDrawer,
         sub_category_index,
         toolbox_dom,
     } = toolbox;
@@ -32,7 +34,6 @@ const Toolbox = observer(() => {
     const { setVisibility, selected_category } = flyout;
 
     const toolbox_ref = React.useRef(ToolboxItems());
-    const [is_open, setOpen] = React.useState(true);
     const [pending_selection] = React.useState<string | null>(null);
 
     React.useEffect(() => {
@@ -49,14 +50,14 @@ const Toolbox = observer(() => {
                             className='db-toolbox__title'
                             data-testid='db-toolbox__title'
                             onClick={() => {
-                                setOpen(!is_open);
+                                toggleDrawer();
                                 setVisibility(false);
                             }}
                         >
                             {localize('Blocks menu')}
                             <span
                                 className={classNames('db-toolbox__title__chevron', {
-                                    'db-toolbox__title__chevron--active': is_open,
+                                    'db-toolbox__title__chevron--active': is_toolbox_open,
                                 })}
                             >
                                 <LabelPairedChevronDownMdFillIcon fill='var(--text-general)' />
@@ -64,7 +65,7 @@ const Toolbox = observer(() => {
                         </div>
                     </div>
                     <div
-                        className={classNames('db-toolbox__content-wrapper', { active: is_open })}
+                        className={classNames('db-toolbox__content-wrapper', { active: is_toolbox_open })}
                         data-testid='db-toolbox__content-wrapper'
                     >
                         <SearchBox

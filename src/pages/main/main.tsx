@@ -66,7 +66,7 @@ const BotExtractor = lazy(() => import('../bot-extractor/bot-extractor'));
 
 const AppWrapper = observer(() => {
     const { connectionStatus } = useApiBase();
-    const { dashboard, load_modal, run_panel, quick_strategy, summary_card, blockly_store } = useStore();
+    const { dashboard, load_modal, run_panel, quick_strategy, summary_card, blockly_store, toolbox } = useStore();
     const { is_loading } = blockly_store;
     const {
         active_tab,
@@ -382,7 +382,28 @@ const AppWrapper = observer(() => {
                 >
                     <div>
                         {!isDesktop && left_tab_shadow && <span className='tabs-shadow tabs-shadow--left' />}{' '}
-                        <Tabs active_index={active_tab} className='main__tabs' onTabItemClick={handleTabChange} top>
+                        <Tabs
+                            active_index={active_tab}
+                            className='main__tabs'
+                            onTabItemClick={handleTabChange}
+                            top
+                            header_action={
+                                !isDesktop ? (
+                                    <button
+                                        className='main__blocks-menu-button'
+                                        type='button'
+                                        aria-label={toolbox.is_toolbox_open ? localize('Close Blocks menu') : localize('Open Blocks menu')}
+                                        onClick={event => {
+                                            event.stopPropagation();
+                                            toolbox.toggleDrawer();
+                                        }}
+                                    >
+                                        <LabelPairedPuzzleCaptionRegularIcon height='20px' width='20px' fill='var(--text-general)' />
+                                        <span>{localize('Blocks')}</span>
+                                    </button>
+                                ) : null
+                            }
+                        >
                             <div
                                 label={
                                     <>
