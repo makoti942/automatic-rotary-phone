@@ -159,8 +159,6 @@ export const ToolboxItems = () =>
                 </Block>
             </Category>
             <Category id='purchase_conditions' name={localize('Purchase conditions')}>
-                <Block type='before_purchase' />
-                <Block type='purchase' />
                 <Block type='hedging'>
                     <Statement name='FIRST_PURCHASE'>
                         <Block type='purchase' />
@@ -169,6 +167,8 @@ export const ToolboxItems = () =>
                         <Block type='purchase' />
                     </Statement>
                 </Block>
+                <Block type='before_purchase' />
+                <Block type='purchase' />
             </Category>
             <Category id='sell_conditions' name={localize('Sell conditions (optional)')}>
                 <Block type='during_purchase' />

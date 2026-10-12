@@ -147,16 +147,6 @@ export default class ToolboxStore {
 
             setTimeout(() => {
                 const workspace = window.Blockly.derivWorkspace;
-                if (this.core.ui.is_mobile) {
-                    // The custom toolbox is an overlay drawer on phones, not
-                    // a reserved workspace column. The old RTL compensation
-                    // deliberately added a large horizontal scroll here,
-                    // leaving the first blocks slightly off-screen.
-                    workspace?.scrollbar?.set(0, 0);
-                    this.is_workspace_scroll_adjusted = false;
-                    this.is_adjusting_workspace = false;
-                    return;
-                }
                 const toolbox_width = document.getElementById('gtm-toolbox')?.getBoundingClientRect().width || 0;
                 const block_canvas_rect = workspace.svgBlockCanvas_?.getBoundingClientRect(); // eslint-disable-line
 
