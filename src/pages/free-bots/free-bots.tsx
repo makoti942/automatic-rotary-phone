@@ -228,22 +228,20 @@ const FreeBots = observer(() => {
                     const item = manifest[i];
                     try {
                         const xml = await fetchXmlWithCache(item.file);
-                        if (xml) {
-                            const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
-                            const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
-                            const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
-                            loadedBots.push({
-                                name: botName,
-                                description: getBotDescription(botName),
-                                difficulty: 'Intermediate',
-                                strategy: 'Multi-Strategy',
-                                features: DEFAULT_FEATURES,
-                                xml,
-                                badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
-                                badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
-                            });
-                            setAvailableBots([...loadedBots, ...skeletonBots.slice(loadedBots.length)]);
-                        }
+                        const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
+                        const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
+                        const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
+                        loadedBots.push({
+                            name: botName,
+                            description: getBotDescription(botName),
+                            difficulty: 'Intermediate',
+                            strategy: 'Multi-Strategy',
+                            features: DEFAULT_FEATURES,
+                            xml: xml || '',
+                            badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
+                            badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
+                        });
+                        setAvailableBots([...loadedBots, ...skeletonBots.slice(loadedBots.length)]);
                     } catch (err) {
                         console.warn(`Failed to load ${item.file}:`, err);
                     }
