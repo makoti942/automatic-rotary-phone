@@ -366,21 +366,31 @@ async function runtimeBrowserScan(startUrl) {
       const task = response.text().then(text => inspect(text, source)).catch(() => {}).finally(() => pending.delete(task));
       pending.add(task);
     });
-    const routes = ['', '/free-bots', '/trading-bots', '/browse-bots', '/bot-builder', '/dashboard'];
-    for (const route of routes) {
-      const target = new URL(route, startUrl).href;
+    const start = new URL(startUrl);
+    const routes = new Set([
+      start.href,
+      ...['/free-bots', '/freebots', '/bots', '/trading-bots', '/browse-bots', '/bot-library', '/strategies', '/library', '/marketplace', '/#freebots', '/#free-bots', '/#bots']
+        .map(route => new URL(route, start.origin).href),
+    ]);
+    const routeHints = /bot|strateg|free|library|marketplace/i;
+    const visitedRoutes = new Set();
+    while (routes.size && visitedRoutes.size < 16) {
+      const target = routes.values().next().value;
+      routes.delete(target);
+      if (visitedRoutes.has(target)) continue;
+      visitedRoutes.add(target);
       await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-      await new Promise(resolve => setTimeout(resolve, 700));
-      const labels = await page.evaluate(() => [...document.querySelectorAll('button,a,[role="tab"]')]
-        .map(element => (element.textContent || '').replace(/\s+/g, ' ').trim())
-        .filter(text => text && /bot|import|library|strategy|load|free|trading/i.test(text)).slice(0, 30));
-      for (const label of labels) {
-        await page.evaluate(targetLabel => [...document.querySelectorAll('button,a,[role="tab"]')]
-          .find(element => (element.textContent || '').replace(/\s+/g, ' ').trim() === targetLabel)?.click(), label).catch(() => {});
-        await new Promise(resolve => setTimeout(resolve, 250));
+      await new Promise(resolve => setTimeout(resolve, 900));
+      const links = await page.evaluate(() => [...document.querySelectorAll('a[href]')].map(anchor => anchor.href));
+      for (const link of links) {
+        try {
+          const parsed = new URL(link);
+          if (parsed.origin === start.origin && routeHints.test(`${parsed.pathname}${parsed.hash}`) && !visitedRoutes.has(parsed.href)) {
+            routes.add(parsed.href);
+          }
+        } catch {}
       }
     }
-    await new Promise(resolve => setTimeout(resolve, 700));
     await Promise.allSettled([...pending]);
     inspect(await page.content(), page.url());
     const browserState = await page.evaluate(async () => {
@@ -498,6 +508,60 @@ async function fastBundleScan(startUrl) {
   return found;
 }
 
+export async function extractSavewayFreeBots(start) {
+  const hostname = start.hostname.toLowerCase();
+  if (!['saveway.site', 'www.saveway.site'].includes(hostname)) return [];
+
+  const configUrl = 'https://dforge.site/api/sites/config?domain=saveway.site';
+  const configResponse = await fetchText(configUrl);
+  if (!configResponse || !/^\s*\{/.test(configResponse.text)) return [];
+
+  let siteConfig;
+  try { siteConfig = JSON.parse(configResponse.text)?.config; } catch { return []; }
+  const siteId = String(siteConfig?.siteId || '');
+  const botUserId = String(siteConfig?.botUserId || '');
+  if (!siteId || !botUserId) return [];
+
+  const catalogUrl = new URL('https://dforge.site/api/bots/proxy');
+  catalogUrl.searchParams.set('userId', botUserId);
+  catalogUrl.searchParams.set('siteId', siteId);
+  const catalogResponse = await fetchText(catalogUrl.href);
+  if (!catalogResponse || !/^\s*\{/.test(catalogResponse.text)) return [];
+
+  let catalog;
+  try { catalog = JSON.parse(catalogResponse.text); } catch { return []; }
+  if (!catalog?.success || !Array.isArray(catalog.bots)) return [];
+
+  const publicFreeBots = catalog.bots
+    .filter(bot => bot && bot.category === 'free'
+      && Array.isArray(bot.site_ids) && bot.site_ids.includes(siteId)
+      && (!Array.isArray(bot.access_keys) || bot.access_keys.length === 0)
+      && bot.file_id)
+    .slice(0, MAX_BOTS);
+  const results = await Promise.allSettled(publicFreeBots.map(async bot => {
+    const fileUrl = new URL('https://dforge.site/api/bots/proxy');
+    fileUrl.searchParams.set('action', 'file');
+    fileUrl.searchParams.set('fileId', String(bot.file_id));
+    const fileResponse = await fetchText(fileUrl.href);
+    if (!fileResponse || !isValidBotXml(fileResponse.text)) return null;
+
+    const xml = decodeMarkup(fileResponse.text).trim();
+    const name = normalizeName(String(bot.file_name || '')) || nameFromXml(xml);
+    if (!name || isBuiltInBotName(name)) return null;
+    return {
+      name,
+      xml,
+      source: fileUrl.href,
+      size: xml.length,
+      fromTab: 'Saveway Free Bots',
+    };
+  }));
+
+  return results
+    .filter(result => result.status === 'fulfilled' && result.value)
+    .map(result => result.value);
+}
+
 export async function extractBinaryLabFreeBots(start) {
   const hostname = start.hostname.toLowerCase();
   if (!['binarylab.site', 'www.binarylab.site', 'trade.binarylab.site'].includes(hostname)) return [];
@@ -535,32 +599,32 @@ export default async function handler(req, res) {
   const manifestPaths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
   for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
+  const strategiesTried = [];
+
+  strategiesTried.push('known public catalog adapters');
+  const savewayBots = await extractSavewayFreeBots(start);
+  for (const bot of savewayBots) {
+    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+  }
 
   const binaryLabBots = await extractBinaryLabFreeBots(start);
   for (const bot of binaryLabBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
   }
 
+  strategiesTried.push('JavaScript bundles and async XML chunks');
   const fastBots = await fastBundleScan(start.href);
   for (const bot of fastBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
   }
-  if (bots.length) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: binaryLabBots.length ? 'binarylab-public-catalog' : 'webpack-context' });
-  }
 
+  strategiesTried.push('standard JSON/XML manifests');
   const manifestBots = await extractManifestBots(start);
   for (const bot of manifestBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
   }
-  if (bots.length) {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Cache-Control', 'no-store');
-    return res.status(200).json({ count: bots.length, bots, pagesScanned: 1, spaShells: 0, mode: 'public-manifest' });
-  }
 
+  strategiesTried.push('site page/API/link crawl');
   while ((queue.size || priorityQueue.size) && visited.size < MAX_PAGES && bots.length < MAX_BOTS) {
     const batch = [...priorityQueue, ...queue].filter(url => !visited.has(url)).slice(0, 8);
     if (!batch.length) break;
@@ -602,7 +666,22 @@ export default async function handler(req, res) {
     }
   }
 
+  // Dynamic browser inspection is reserved for SPA domains where ordinary
+  // HTTP scans saw only app shells. It reads network responses and storage;
+  // it never clicks Run, Trade, Load, or other page controls.
+  if (!bots.length && spaShells > 0) {
+    strategiesTried.push('read-only SPA network/browser scan');
+    const browserBots = await runtimeBrowserScan(start.href);
+    for (const bot of browserBots) {
+      if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+    }
+  }
+
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
-  return res.status(200).json({ count: bots.length, bots, pagesScanned: visited.size, spaShells });
+  const mode = savewayBots.length ? 'saveway-public-catalog'
+    : binaryLabBots.length ? 'binarylab-public-catalog'
+      : fastBots.length ? 'webpack-context'
+        : manifestBots.length ? 'public-manifest' : 'multi-strategy';
+  return res.status(200).json({ count: bots.length, bots, pagesScanned: visited.size, spaShells, mode, strategiesTried });
 }

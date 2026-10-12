@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { extractBinaryLabFreeBots, extractXmlDocuments, isBuiltInBotName, isBuiltInBotSource } from './deep-extract.mjs';
+import deepExtractHandler, { extractBinaryLabFreeBots, extractSavewayFreeBots, extractXmlDocuments, isBuiltInBotName, isBuiltInBotSource } from './deep-extract.mjs';
 
 function makeBotXml(name) {
   return `<xml xmlns="https://developers.google.com/blockly/xml" is_dbot="true">
@@ -69,6 +69,83 @@ test('fetches BinaryLab’s public catalog and falls back from the trade host to
     ]);
     assert.equal(bots.length, 1);
     assert.equal(bots[0].name, 'Nova Switcher');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('fetches all publicly listed Saveway Free Bots and skips gated or unrelated entries', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const siteId = 'saveway-site-id';
+  const bots = [
+    { file_name: 'Public One', file_id: 'file-1', category: 'free', site_ids: [siteId], access_keys: [] },
+    { file_name: 'Public Two', file_id: 'file-2', category: 'free', site_ids: [siteId], access_keys: [] },
+    { file_name: 'Gated Bot', file_id: 'file-3', category: 'free', site_ids: [siteId], access_keys: ['secret'] },
+    { file_name: 'Other Site Bot', file_id: 'file-4', category: 'free', site_ids: ['another-site'], access_keys: [] },
+    { file_name: 'Premium Bot', file_id: 'file-5', category: 'premium', site_ids: [siteId], access_keys: [] },
+  ];
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url === 'https://dforge.site/api/sites/config?domain=saveway.site') {
+      return new Response(JSON.stringify({ config: { siteId, botUserId: 'saveway-user-id' } }), { status: 200 });
+    }
+    if (url.includes('/api/bots/proxy?userId=')) {
+      return new Response(JSON.stringify({ success: true, total: bots.length, bots }), { status: 200 });
+    }
+    const fileId = new URL(url).searchParams.get('fileId');
+    if (fileId === 'file-1' || fileId === 'file-2') {
+      return new Response(makeBotXml(fileId === 'file-1' ? 'Public One' : 'Public Two'), { status: 200 });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  try {
+    const extracted = await extractSavewayFreeBots(new URL('https://saveway.site/'));
+    assert.deepEqual(extracted.map(bot => bot.name), ['Public One', 'Public Two']);
+    assert.ok(extracted.every(bot => bot.fromTab === 'Saveway Free Bots'));
+    assert.ok(requests.some(url => url === 'https://dforge.site/api/sites/config?domain=saveway.site'));
+    assert.equal(requests.filter(url => new URL(url).searchParams.has('action')).length, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('continues generic manifest and page crawling after the bundle scan finds a bot', async () => {
+  const originalFetch = globalThis.fetch;
+  const bundledXml = makeBotXml('Bundle Bot');
+  const linkedXml = makeBotXml('Linked Download Bot');
+  globalThis.fetch = async input => {
+    const url = String(input);
+    if (url === 'https://example.test/') {
+      return new Response('<!doctype html><html><head><script src="/app.js"></script></head><body><a href="/downloads/linked.xml">Download</a></body></html>', {
+        status: 200, headers: { 'Content-Type': 'text/html' },
+      });
+    }
+    if (url === 'https://example.test/app.js') {
+      return new Response(`const bot = \`${bundledXml}\`;`, {
+        status: 200, headers: { 'Content-Type': 'application/javascript' },
+      });
+    }
+    if (url === 'https://example.test/downloads/linked.xml') {
+      return new Response(linkedXml, { status: 200, headers: { 'Content-Type': 'application/xml' } });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const response = {
+    statusCode: 200,
+    headers: {},
+    body: null,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; return this; },
+  };
+  try {
+    await deepExtractHandler({ method: 'POST', body: { url: 'https://example.test/' } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.deepEqual(response.body.bots.map(bot => bot.name).sort(), ['Bundle Bot', 'Linked Download Bot']);
+    assert.ok(response.body.strategiesTried.includes('standard JSON/XML manifests'));
+    assert.ok(response.body.strategiesTried.includes('site page/API/link crawl'));
   } finally {
     globalThis.fetch = originalFetch;
   }

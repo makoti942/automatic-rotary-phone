@@ -1342,6 +1342,12 @@ const BotExtractor = () => {
             }
 
             const data = await res.json();
+            if (Array.isArray(data.strategiesTried) && data.strategiesTried.length) {
+                addLog(`Strategies tried: ${data.strategiesTried.join(' → ')}`);
+            }
+            if (data.mode === 'saveway-public-catalog') {
+                addLog('Read Saveway’s public Free Bots catalog and fetched each publicly listed bot XML. Access-controlled bots were skipped.');
+            }
             if (data.mode === 'binarylab-public-catalog') {
                 addLog('Read the public BinaryLab Free Bots catalog and extracted its inline XML entries.');
             }
@@ -1367,7 +1373,7 @@ const BotExtractor = () => {
             if (allBots.length === 0) {
                 setError(scannedBots.length
                     ? 'Only built-in Deriv strategy templates (such as Reverse D’Alembert) were found; they are not custom bots and were filtered out.'
-                    : 'No custom bot XML was found. Built-in Deriv strategy templates are intentionally ignored; this site may store custom bots in a database or browser storage instead.');
+                    : `No public custom bot XML was found after trying ${Array.isArray(data.strategiesTried) ? data.strategiesTried.length : 'the available'} extraction strategies. This site may require sign-in, use a private API, or store bots in a format that needs a site-specific adapter. Deep Extract does not bypass access controls.`);
             }
         } catch (err: any) {
             setError(`Deep extraction failed: ${err.message}`);
