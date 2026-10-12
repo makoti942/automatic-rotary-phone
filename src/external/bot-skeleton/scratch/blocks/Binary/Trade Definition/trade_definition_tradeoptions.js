@@ -756,7 +756,7 @@ window.Blockly.JavaScript.javascriptGenerator.forBlock.trade_definition_tradeopt
         if (/^(\d+(\.\d+)?)$/.test(value)) {
             return barrier_offset_type === 'absolute' ? `'${value}'` : `'${barrier_offset_type}${value}'`;
         }
-        return barrier_offset_type === 'absolute' ? value : `'${barrier_offset_type}' + ${value}`;
+        return barrier_offset_type === 'absolute' ? value : `'${barrier_offset_type}' + (${value})`;
     };
 
     let prediction_value, barrier_offset_value, second_barrier_offset_value;

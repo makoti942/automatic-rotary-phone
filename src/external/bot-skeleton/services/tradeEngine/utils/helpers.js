@@ -26,12 +26,12 @@ export const tradeOptionToProposal = (trade_option, purchase_reference) =>
             proposal.selected_tick = trade_option.prediction;
         }
         if (!['TICKLOW', 'TICKHIGH'].includes(type) && trade_option.prediction !== undefined) {
-            proposal.barrier = trade_option.prediction;
+            proposal.barrier = String(trade_option.prediction);
         } else if (trade_option.barrierOffset !== undefined) {
-            proposal.barrier = trade_option.barrierOffset;
+            proposal.barrier = String(trade_option.barrierOffset);
         }
         if (trade_option.secondBarrierOffset !== undefined) {
-            proposal.barrier2 = trade_option.secondBarrierOffset;
+            proposal.barrier2 = String(trade_option.secondBarrierOffset);
         }
         if (['MULTUP', 'MULTDOWN'].includes(type)) {
             proposal.duration = undefined;
@@ -62,12 +62,12 @@ export const tradeOptionToBuy = (contract_type, trade_option) => {
         buy.parameters.selected_tick = trade_option.prediction;
     }
     if (!['TICKLOW', 'TICKHIGH'].includes(contract_type) && trade_option.prediction !== undefined) {
-        buy.parameters.barrier = trade_option.prediction;
+        buy.parameters.barrier = String(trade_option.prediction);
     } else if (trade_option.barrierOffset !== undefined) {
-        buy.parameters.barrier = trade_option.barrierOffset;
+        buy.parameters.barrier = String(trade_option.barrierOffset);
     }
     if (trade_option.secondBarrierOffset !== undefined) {
-        buy.parameters.barrier2 = trade_option.secondBarrierOffset;
+        buy.parameters.barrier2 = String(trade_option.secondBarrierOffset);
     }
     if (!isEmptyObject(trade_option.app_markup_percentage)) {
         buy.parameters.app_markup_percentage = trade_option.app_markup_percentage;
