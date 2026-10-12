@@ -33,6 +33,25 @@ export default Engine =>
                             contract,
                         });
 
+                        const hedgeIds = this.vh_state?.hedge_contract_ids;
+                        if (this.vh_state?.hedge_active && hedgeIds?.has(contract.contract_id)) {
+                            const settledIds = this.vh_state.hedge_settled_ids;
+                            settledIds.add(contract.contract_id);
+                            if (settledIds.size >= this.vh_state.hedge_expected_count) {
+                                this.vh_state.hedge_active = false;
+                                hedgeIds.clear();
+                                settledIds.clear();
+                                this.vh_state.hedge_expected_count = 0;
+                                this.contractId = '';
+                                if (this.afterPromise) this.afterPromise();
+                                this.onRealContractSettled?.(contract);
+                                this.store.dispatch(sell());
+                            } else {
+                                this.startSettlementPolling();
+                            }
+                            return;
+                        }
+
                         const bulkIds = this.vh_state?.bulkContractIds;
                         const isBulkActive = bulkIds && bulkIds.size > 0;
 
@@ -75,6 +94,19 @@ export default Engine =>
         startSettlementPolling() {
             this.stopSettlementPolling();
             this.settlement_poll_interval = setInterval(() => {
+                const hedgeIds = this.vh_state?.hedge_active ? this.vh_state.hedge_contract_ids : null;
+                if (hedgeIds?.size) {
+                    hedgeIds.forEach(contract_id => {
+                        if (!this.vh_state.hedge_settled_ids.has(contract_id)) {
+                            try {
+                                api_base.api.send({ proposal_open_contract: 1, contract_id });
+                            } catch (e) {
+                                /* noop */
+                            }
+                        }
+                    });
+                    return;
+                }
                 if (!this.contractId || this.isSold) {
                     this.stopSettlementPolling();
                     return;
@@ -110,6 +142,8 @@ export default Engine =>
         }
 
         expectedContractId(contractId) {
+            const hedgeIds = this.vh_state?.hedge_contract_ids;
+            if (this.vh_state?.hedge_active && hedgeIds?.has(contractId)) return true;
             const bulkIds = this.vh_state?.bulkContractIds;
             if (bulkIds && bulkIds.has(contractId)) return true;
             if (!this.contractId) return false;

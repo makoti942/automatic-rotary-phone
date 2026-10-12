@@ -84,6 +84,14 @@ export default Engine =>
             const types = [...new Set((Array.isArray(contract_types) ? contract_types : []).filter(Boolean))].slice(0, 2);
             if (types.length < 2) return types.length === 1 ? this.purchase(types[0]) : undefined;
 
+            // A hedge has multiple live contract IDs. Keep them separate from
+            // contractId (which is intentionally a single-contract field) so
+            // OpenContract can observe and settle every leg before continuing.
+            this.vh_state.hedge_active = true;
+            this.vh_state.hedge_contract_ids = new Set();
+            this.vh_state.hedge_settled_ids = new Set();
+            this.vh_state.hedge_expected_count = types.length;
+
             // Start both async purchase requests before awaiting either response.
             // This keeps the two Deriv buy requests in the same execution window
             // instead of waiting for the first contract to be acknowledged.
@@ -864,6 +872,9 @@ export default Engine =>
                 });
 
                 this.contractId = buy.contract_id;
+                if (this.vh_state?.hedge_active) {
+                    this.vh_state.hedge_contract_ids.add(buy.contract_id);
+                }
                 this.store.dispatch(purchaseSuccessful());
 
                 if (this.is_proposal_subscription_required) {

@@ -106,6 +106,10 @@ export default class TradeEngine extends Balance(Purchase(Sell(OpenContract(Prop
             bulk_enabled: false,
             bulk_count: 1,
             bulkContractIds: new Set(),
+            hedge_active: false,
+            hedge_contract_ids: new Set(),
+            hedge_settled_ids: new Set(),
+            hedge_expected_count: 0,
         };
     }
 
