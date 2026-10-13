@@ -1,5 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { onNewSystemMessage, sendViaNewSystem, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
+import {
+    nextNewSystemRequestId,
+    onNewSystemMessage,
+    sendViaNewSystem,
+    sendViaNewSystemWithPromise,
+} from '@/auth/NewDerivAuth';
 import { useSandbox } from '@/components/layout/header/sandbox-context';
 import { clearManualTradeDigitStats, publishManualTradeDigitStats } from '@/utils/manual-trade-digit-stats';
 import { calcPayout } from '@/utils/sandbox-payout';
@@ -224,7 +229,6 @@ export function useManualTrade() {
     const symbolRef = useRef(activeSymbol);
     const lastTickTimeRef = useRef(Date.now());
     const heartbeatRef = useRef<ReturnType<typeof setInterval> | null>(null);
-    const reqIdRef = useRef(0);
     const fetchReqIdRef = useRef(0);
     const subReqIdRef = useRef(0);
     const seenSoldRef = useRef<Set<string>>(new Set());
@@ -349,7 +353,10 @@ export function useManualTrade() {
                 if (data.msg_type === 'history' && data.history?.prices) {
                     // Only accept the bulk seed from our own plain history fetch
                     // (the subscribe request also answers with history — ignore it).
-                    if (data.echo_req?.req_id !== fetchReqIdRef.current) return;
+                    if (
+                        data.echo_req?.req_id !== fetchReqIdRef.current ||
+                        data.echo_req?.ticks_history !== symbolRef.current
+                    ) return;
                     const p = data.history.prices.map(Number).filter((v: number) => !isNaN(v));
                     if (p.length > 0) {
                         pricesRef.current = p;
@@ -520,7 +527,7 @@ export function useManualTrade() {
     // instant win/loss exit-digit flash; a one-shot fetch never pushes).
     useEffect(() => {
         sendViaNewSystem({ active_symbols: 'brief' });
-        const pocId = ++reqIdRef.current;
+        const pocId = nextNewSystemRequestId();
         pocSubReqIdRef.current = pocId;
         sendViaNewSystem({ proposal_open_contract: 1, subscribe: 1, req_id: pocId });
         const t = setTimeout(() => {
@@ -559,7 +566,7 @@ export function useManualTrade() {
 
         // 1) Bulk seed: plain history fetch (no subscribe) — can never collide
         //    with another component's subscription, so all ticks arrive at once.
-        const fetchId = ++reqIdRef.current;
+        const fetchId = nextNewSystemRequestId();
         fetchReqIdRef.current = fetchId;
         sendViaNewSystem({
             ticks_history: activeSymbol,
@@ -571,7 +578,7 @@ export function useManualTrade() {
 
         // 2) Own live stream; on AlreadySubscribed we passively share the
         //    existing one (ticks are accepted by symbol regardless of source).
-        const subId = ++reqIdRef.current;
+        const subId = nextNewSystemRequestId();
         subReqIdRef.current = subId;
         sendViaNewSystem({
             ticks_history: activeSymbol,
@@ -598,7 +605,7 @@ export function useManualTrade() {
             subIdRef.current = null;
         }
         subReqIdRef.current = 0;
-        const subId = ++reqIdRef.current;
+        const subId = nextNewSystemRequestId();
         subReqIdRef.current = subId;
         sendViaNewSystem({
             ticks_history: symbolRef.current,
@@ -693,7 +700,7 @@ export function useManualTrade() {
             }
             setIsProposalLoading(true);
             Promise.all(quoteModes.map(async mode => {
-                const requestId = ++reqIdRef.current;
+                const requestId = nextNewSystemRequestId();
                 const params: Record<string, unknown> = {
                     proposal: 1, amount, basis: 'stake', contract_type: mode,
                     currency: 'USD', duration, duration_unit: 't', symbol: activeSymbol, req_id: requestId,
@@ -809,7 +816,7 @@ export function useManualTrade() {
             };
             if (!['DIGITEVEN', 'DIGITODD', 'CALL', 'PUT'].includes(mode)) params.barrier = selectedDigit;
 
-            const buyReqId = ++reqIdRef.current;
+            const buyReqId = nextNewSystemRequestId();
             buyHandledByWsRef.current = false;
             pendingBuyModeRef.current = mode;
             const buyRes: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: params, req_id: buyReqId });

@@ -2,7 +2,7 @@ import * as sandboxEngine from '@/utils/sandbox-engine';
 
 let requestSequence = 0
 
-function nextRequestId() {
+export function nextNewSystemRequestId() {
     requestSequence = (requestSequence + 1) % 1000
     return Date.now() * 1000 + requestSequence
 }
@@ -111,7 +111,7 @@ export async function sendViaNewSystemWithPromise(msg) {
         // Date.now() alone collides when Higher and Lower are submitted in
         // the same tick. A collision makes each promise consume the other
         // contract's response (and can report the wrong barrier error).
-        const reqId = msg.req_id || nextRequestId();
+        const reqId = msg.req_id || nextNewSystemRequestId();
         const toSend = { ...convertToNewFormat(msg), req_id: reqId };
         const handler = (event) => {
             try {
