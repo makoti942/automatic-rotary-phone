@@ -141,6 +141,13 @@ export default class ToolboxStore {
 
     private performWorkspaceAdjustment() {
         // NOTE: added this load modal open check to prevent scroll when load modal is open
+        // On mobile/tablet the toolbox is an off-canvas overlay, not a sidebar
+        // that consumes workspace width. Measuring its hidden drawer width and
+        // scrolling around it pushes the blocks off the phone viewport.
+        const toolboxElement = document.getElementById('gtm-toolbox');
+        const toolboxIsOverlay = Boolean(toolboxElement?.closest('.db-toolbox--mobile'));
+        if (this.core.ui.is_mobile || toolboxIsOverlay) return;
+
         if (!this.is_workspace_scroll_adjusted && !this.root_store.load_modal.is_load_modal_open) {
             this.is_adjusting_workspace = true;
             this.is_workspace_scroll_adjusted = true;
@@ -151,20 +158,14 @@ export default class ToolboxStore {
                 const block_canvas_rect = workspace.svgBlockCanvas_?.getBoundingClientRect(); // eslint-disable-line
 
                 if (workspace.RTL && block_canvas_rect) {
-                    const is_mobile = this.core.ui.is_mobile;
-                    const block_canvas_space = is_mobile ? block_canvas_rect.right : block_canvas_rect.left;
+                    const block_canvas_space = block_canvas_rect.left;
+                    const scroll_distance = toolbox_width - block_canvas_space + 36;
 
-                    const scroll_distance_mobile = toolbox_width - block_canvas_space + 20;
-                    const scroll_distance_desktop = toolbox_width - block_canvas_space + 36;
-                    const scroll_distance = this.core.ui.is_mobile ? scroll_distance_mobile : scroll_distance_desktop;
-
-                    if (Math.round(block_canvas_space) <= toolbox_width || is_mobile) {
+                    if (Math.round(block_canvas_space) <= toolbox_width) {
                         scrollWorkspace(workspace, scroll_distance, true, false);
                     }
                 } else if (Math.round(block_canvas_rect?.left) <= toolbox_width) {
-                    const scroll_distance = this.core.ui.is_mobile
-                        ? toolbox_width - block_canvas_rect.left + 50
-                        : toolbox_width - block_canvas_rect.left + 36;
+                    const scroll_distance = toolbox_width - block_canvas_rect.left + 36;
                     scrollWorkspace(workspace, scroll_distance, true, false);
                 }
 
