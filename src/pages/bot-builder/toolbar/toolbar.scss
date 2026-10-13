@@ -84,6 +84,10 @@
         height: 1.2rem;
         width: 1.2rem;
         fill: var(--text-prominent);
+        // Android Chrome can leave a grey tap-highlight over clickable SVG
+        // toolbar icons. These icons are not buttons, so suppress that native
+        // highlight rather than showing a shadow below the reset control.
+        -webkit-tap-highlight-color: transparent;
 
         @include mobile-or-tablet-screen {
             margin: 1.2rem;
