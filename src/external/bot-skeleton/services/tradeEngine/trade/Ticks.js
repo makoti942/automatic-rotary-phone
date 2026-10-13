@@ -3,6 +3,7 @@ import debounce from 'lodash.debounce';
 import { getLocalizedErrorMessage } from '@/constants/backend-error-messages';
 import { localize } from '@deriv-com/translations';
 import { getLast } from '../../../utils/binary-utils';
+import { getManualTradeDigitPercentage } from '@/utils/manual-trade-digit-stats';
 import { observer as globalObserver } from '../../../utils/observer';
 import { api_base } from '../../api/api-base';
 import { getDirection, getLastDigit } from '../utils/helpers';
@@ -91,6 +92,11 @@ export default Engine =>
         getLastDigitList() {
             return new Promise(resolve => this.getTicks().then(ticks => resolve(this.getLastDigitsFromList(ticks))));
         }
+
+        async getDigitPercentage(digit) {
+            return getManualTradeDigitPercentage(Number(digit));
+        }
+
         getLastDigitsFromList(ticks) {
             const digits = ticks.map(tick => {
                 return getLastDigit(tick.toFixed(this.getPipSize()));

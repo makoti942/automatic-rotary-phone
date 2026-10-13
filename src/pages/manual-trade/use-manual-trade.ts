@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { onNewSystemMessage, sendViaNewSystem, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useSandbox } from '@/components/layout/header/sandbox-context';
+import { clearManualTradeDigitStats, publishManualTradeDigitStats } from '@/utils/manual-trade-digit-stats';
 import { calcPayout } from '@/utils/sandbox-payout';
 
 export interface SymbolInfo {
@@ -237,6 +238,7 @@ export function useManualTrade() {
     const trackedContractsRef = useRef<Set<string>>(new Set());
     const buyHandledByWsRef = useRef(false);
     const pendingBuyModeRef = useRef<ContractMode | null>(null);
+    useEffect(() => () => clearManualTradeDigitStats(), []);
 
     useEffect(() => {
         try { sessionStorage.setItem(SESSION_TRADES_KEY, JSON.stringify(tradeHistory)); } catch {}
@@ -336,6 +338,7 @@ export function useManualTrade() {
                         pricesRef.current = [...pricesRef.current.slice(-999), quote];
                         if (pricesRef.current.length > 0) {
                             const stats = computeDigitGrowth(pricesRef.current, pipRef.current);
+                            publishManualTradeDigitStats(symbolRef.current, stats.counts, stats.total);
                             setDigitCounts(stats.counts);
                             setDigitGrowth(stats.growth);
                             setDigitTotal(stats.total);
@@ -351,6 +354,7 @@ export function useManualTrade() {
                     if (p.length > 0) {
                         pricesRef.current = p;
                         const stats = computeDigitGrowth(p, pipRef.current);
+                        publishManualTradeDigitStats(symbolRef.current, stats.counts, stats.total);
                         setDigitCounts(stats.counts);
                         setDigitGrowth(stats.growth);
                         setDigitTotal(stats.total);
@@ -542,11 +546,13 @@ export function useManualTrade() {
         }
         subReqIdRef.current = 0;
 
+        pricesRef.current = [];
         setCurrentTick(null);
         setLastDigit(null);
         setDigitCounts(Array(10).fill(0));
         setDigitGrowth(Array(10).fill(0));
         setDigitTotal(0);
+        publishManualTradeDigitStats(activeSymbol, Array(10).fill(0), 0);
 
         const sym = symbols.find(s => s.symbol === activeSymbol);
         if (sym) setPipSize(sym.pip_size ?? 2);
@@ -636,6 +642,7 @@ export function useManualTrade() {
     useEffect(() => {
         if (pricesRef.current.length === 0) return;
         const stats = computeDigitGrowth(pricesRef.current, pipSize);
+        publishManualTradeDigitStats(symbolRef.current, stats.counts, stats.total);
         setDigitCounts(stats.counts);
         setDigitGrowth(stats.growth);
         setDigitTotal(stats.total);

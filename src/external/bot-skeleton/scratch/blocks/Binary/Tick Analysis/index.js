@@ -8,5 +8,6 @@ import './check_direction';
 import './tick_analysis';
 import './last_digit';
 import './lastDigitList';
+import './digit_percentage';
 import './stat';
 import './stat_list';
