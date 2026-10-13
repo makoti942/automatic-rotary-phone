@@ -57,19 +57,22 @@ export default class AppStore {
         if (!this.dbot_store) return;
 
         blockly_store.setLoading(true);
-        await DBot.initWorkspace('/', this.dbot_store, this.api_helpers_store, ui.is_mobile, false);
+        try {
+            await DBot.initWorkspace('/', this.dbot_store, this.api_helpers_store, ui.is_mobile, false);
 
-        blockly_store.setContainerSize();
-        blockly_store.setLoading(false);
+            blockly_store.setContainerSize();
+            this.registerCurrencyReaction.call(this);
+            this.registerOnAccountSwitch.call(this);
+            this.registerResidenceChangeReaction.call(this);
 
-        this.registerCurrencyReaction.call(this);
-        this.registerOnAccountSwitch.call(this);
+            window.addEventListener('click', this.onClickOutsideBlockly);
 
-        this.registerResidenceChangeReaction.call(this);
-
-        window.addEventListener('click', this.onClickOutsideBlockly);
-
-        blockly_store.getCachedActiveTab();
+            blockly_store.getCachedActiveTab();
+        } catch (error) {
+            console.error('Failed to initialize the Blockly workspace:', error);
+        } finally {
+            blockly_store.setLoading(false);
+        }
     };
 
     onUnmount = () => {

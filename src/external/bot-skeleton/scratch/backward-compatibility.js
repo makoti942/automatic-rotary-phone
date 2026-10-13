@@ -3,6 +3,23 @@ import { config } from '../constants/config';
 import ApiHelpers from '../services/api/api-helpers';
 import { convertStrategyToIsDbot } from '../utils';
 
+export const LEGACY_BLOCK_TYPES = [
+    'bb',
+    'bba',
+    'ema',
+    'emaa',
+    'lists_create_with',
+    'macda',
+    'market',
+    'rsi',
+    'rsia',
+    'sma',
+    'smaa',
+    'text_join',
+    'trade',
+    'tradeOptions',
+];
+
 /* eslint-disable no-underscore-dangle */
 export default class BlockConversion {
     constructor() {

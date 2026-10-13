@@ -10,7 +10,12 @@ import main_xml from './xml/main.xml';
 import { forgetAccumulatorsProposalRequest } from './accumulators-proposal-handler';
 import { loadBlockly } from './blockly';
 import DBotStore from './dbot-store';
-import { isAllRequiredBlocksEnabled, updateDisabledBlocks, validateErrorOnBlockDelete } from './utils';
+import {
+    isAllRequiredBlocksEnabled,
+    load as loadStrategy,
+    updateDisabledBlocks,
+    validateErrorOnBlockDelete,
+} from './utils';
 
 class DBot {
     constructor() {
@@ -111,7 +116,7 @@ class DBot {
             }
         };
 
-        return new Promise((resolve, reject) => {
+        return (async () => {
             __webpack_public_path__ = public_path; // eslint-disable-line no-global-assign
             ApiHelpers.setInstance(api_helpers_store);
             DBotStore.setInstance(store);
@@ -189,12 +194,41 @@ class DBot {
                     window.Blockly.getMainWorkspace().current_strategy_id = latest_file.id;
                 }
 
-                const event_group = `dbot-load${Date.now()}`;
-                window.Blockly.Events.setGroup(event_group);
-                window.Blockly.Xml.domToWorkspace(
-                    window.Blockly.utils.xml.textToDom(window.Blockly.derivWorkspace.strategy_to_load),
-                    this.workspace
-                );
+                if (recent_files && recent_files.length) {
+                    const latest_file = recent_files[0];
+                    const result = await loadStrategy({
+                        block_string: latest_file.xml,
+                        drop_event: null,
+                        file_name: latest_file.name,
+                        strategy_id: latest_file.id,
+                        from: latest_file.save_type,
+                        workspace: this.workspace,
+                        showIncompatibleStrategyDialog: false,
+                        show_snackbar: false,
+                    });
+                    if (result?.error) {
+                        // Keep the saved strategy intact; unsupported blocks must not prevent the
+                        // builder from opening or overwrite the user's original bot.
+                        await this.workspace.asyncClear();
+                        window.Blockly.derivWorkspace.strategy_to_load = main_xml;
+                        window.Blockly.getMainWorkspace().strategy_to_load = main_xml;
+                        const starter_strategy_id = window.Blockly.utils.idGenerator.genUid();
+                        window.Blockly.derivWorkspace.current_strategy_id = starter_strategy_id;
+                        window.Blockly.getMainWorkspace().current_strategy_id = starter_strategy_id;
+                        window.Blockly.Xml.domToWorkspace(
+                            window.Blockly.utils.xml.textToDom(main_xml),
+                            this.workspace
+                        );
+                        file_name = config().default_file_name;
+                    }
+                } else {
+                    const event_group = `dbot-load${Date.now()}`;
+                    window.Blockly.Events.setGroup(event_group);
+                    window.Blockly.Xml.domToWorkspace(
+                        window.Blockly.utils.xml.textToDom(window.Blockly.derivWorkspace.strategy_to_load),
+                        this.workspace
+                    );
+                }
                 const { save_modal } = DBotStore.instance;
 
                 save_modal.updateBotName(file_name);
@@ -206,13 +240,12 @@ class DBot {
                 window.addEventListener('drop', e => DBot.handleDropOver(e, handleFileChange));
                 // disable overflow
                 el_scratch_div.parentNode.style.overflow = 'hidden';
-                resolve();
+                return this.workspace;
             } catch (error) {
                 // TODO: Handle error.
-                reject(error);
                 throw error;
             }
-        });
+        })();
     }
 
     /** Compare stored strategy xml with currently running xml */

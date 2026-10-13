@@ -8,7 +8,7 @@ import { error_message_map } from '../../utils/error-config';
 import { saveWorkspaceToRecent } from '../../utils/local-storage';
 import { observer as globalObserver } from '../../utils/observer';
 import { isPurchaseBlock, removeLimitedBlocks } from '../../utils/workspace';
-import BlockConversion from '../backward-compatibility';
+import BlockConversion, { LEGACY_BLOCK_TYPES } from '../backward-compatibility';
 import DBotStore from '../dbot-store';
 import { saveAs } from '../shared';
 
@@ -187,6 +187,14 @@ export const load = async ({
     try {
         xml = window.Blockly.utils.xml.textToDom(block_string);
     } catch (e) {
+        return showInvalidStrategyError();
+    }
+    const registered_block_types = Object.keys(window.Blockly.Blocks);
+    const has_unsupported_source_blocks = Array.from(xml.querySelectorAll('block, shadow')).some(block => {
+        const block_type = block.getAttribute('type');
+        return !registered_block_types.includes(block_type) && !LEGACY_BLOCK_TYPES.includes(block_type);
+    });
+    if (has_unsupported_source_blocks) {
         return showInvalidStrategyError();
     }
     const blockConversion = new BlockConversion();
