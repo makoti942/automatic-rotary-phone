@@ -8,6 +8,15 @@
     background: var(--general-main-1);
     padding: 1rem 2rem;
 
+    @include mobile-or-tablet-screen {
+        // Main tab panels are auto-height on mobile, so a 100%-height child
+        // cannot constrain its inner scroll area. Give this subpage a definite
+        // viewport height so the Free Bots list can scroll past its first rows.
+        height: var(--tab-content-height-mobile, calc(100vh - 11.4rem));
+        min-height: 0;
+        overflow: hidden;
+    }
+
     &__cards-container {
         display: flex;
         gap: 1rem;
@@ -145,6 +154,7 @@
         position: relative;
         -webkit-overflow-scrolling: touch;
         padding-bottom: 3rem;
+        overscroll-behavior-y: contain;
     }
 }
 

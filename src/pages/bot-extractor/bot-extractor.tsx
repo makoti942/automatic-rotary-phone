@@ -3,6 +3,7 @@ import { useStore } from '@/hooks/useStore';
 import { DBOT_TABS } from '@/constants/bot-contents';
 import localForage from 'localforage';
 import { isBuiltInBot, isBuiltInBotName, isBuiltInBotSource } from './bot-classification';
+import { normalizeLegacyApolloPurchases } from './legacy-apollo-purchase.mjs';
 import './bot-extractor.scss';
 
 interface ExtractedBot {
@@ -1292,8 +1293,10 @@ const BotExtractor = () => {
         }
         const tempId = `extracted_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
         try {
-            const xml = decodeMarkup(bot.xml).trim();
-            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid');
+            const sourceXml = decodeMarkup(bot.xml).trim();
+            if (!isValidDerivBot(sourceXml)) throw new Error('The extracted XML is incomplete or invalid');
+            const { xml, convertedCount } = normalizeLegacyApolloPurchases(sourceXml);
+            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid after purchase-block conversion');
 
             // The extractor is a sub-tab, so Blockly may not be mounted yet.
             // Switch first, wait for the real workspace, then import. Importing
@@ -1314,9 +1317,14 @@ const BotExtractor = () => {
                 true
             );
             setLoadedBots(prev => new Set(prev).add(bot.source));
-            if (compatibilityBlocks.length) {
-                setError(`Loaded ${bot.name}. Preserved the original XML and added ${compatibilityBlocks.length} visual compatibility block(s): ${compatibilityBlocks.join(', ')}`);
+            const loadNotes: string[] = [];
+            if (convertedCount) {
+                loadNotes.push(`converted ${convertedCount} legacy Apollo purchase block(s) to native Purchase blocks`);
             }
+            if (compatibilityBlocks.length) {
+                loadNotes.push(`preserved ${compatibilityBlocks.length} other visual compatibility block(s): ${compatibilityBlocks.join(', ')}`);
+            }
+            if (loadNotes.length) setError(`Loaded ${bot.name}; ${loadNotes.join('; ')}.`);
         } catch (err: any) {
             setError(`Failed to load bot: ${err.message}`);
         }
