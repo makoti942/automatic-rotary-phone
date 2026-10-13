@@ -124,6 +124,52 @@ test('fetches all publicly listed Saveway Free Bots and skips gated or unrelated
   }
 });
 
+test('extracts uploaded XML catalogs from Profithub-style manifests on any host', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const firstXml = makeBotXml('Profithub Catalog Bot');
+  const secondXml = makeBotXml('Another Uploaded Bot');
+  const files = new Map([
+    ['Profithub Catalog Bot.xml', firstXml],
+    ['nested/Another Uploaded Bot.xml', secondXml],
+  ]);
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url === 'https://unlisted.example/xml-uploads/bots.json') {
+      return new Response(JSON.stringify([
+        { name: 'Profithub Catalog Bot', file: 'Profithub Catalog Bot.xml', description: 'Public strategy' },
+        { name: 'Another Uploaded Bot', file: 'nested/Another Uploaded Bot.xml', strategy: 'Custom' },
+      ]), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    const file = decodeURIComponent(new URL(url).pathname.replace('/xml-uploads/', ''));
+    if (url.startsWith('https://unlisted.example/xml-uploads/') && files.has(file)) {
+      return new Response(files.get(file), { status: 200, headers: { 'Content-Type': 'application/xml' } });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const response = {
+    statusCode: 200,
+    headers: {},
+    body: null,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; return this; },
+  };
+  try {
+    await deepExtractHandler({ method: 'POST', body: { url: 'https://unlisted.example/' } }, response);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.body.mode, 'uploaded-xml-catalog');
+    assert.deepEqual(response.body.bots.map(bot => bot.name).sort(), ['Another Uploaded Bot', 'Profithub Catalog Bot']);
+    assert.ok(requests.includes('https://unlisted.example/xml-uploads/bots.json'));
+    assert.ok(requests.includes('https://unlisted.example/xml-uploads/Profithub%20Catalog%20Bot.xml'));
+    assert.ok(requests.includes('https://unlisted.example/xml-uploads/nested/Another%20Uploaded%20Bot.xml'));
+    assert.ok(response.body.bots.every(bot => bot.source.startsWith('manifest:https://unlisted.example/xml-uploads/')));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('continues generic manifest and page crawling after the bundle scan finds a bot', async () => {
   const originalFetch = globalThis.fetch;
   const bundledXml = makeBotXml('Bundle Bot');
@@ -157,7 +203,7 @@ test('continues generic manifest and page crawling after the bundle scan finds a
     await deepExtractHandler({ method: 'POST', body: { url: 'https://example.test/' } }, response);
     assert.equal(response.statusCode, 200);
     assert.deepEqual(response.body.bots.map(bot => bot.name).sort(), ['Bundle Bot', 'Linked Download Bot']);
-    assert.ok(response.body.strategiesTried.includes('standard JSON/XML manifests'));
+    assert.ok(response.body.strategiesTried.includes('standard JSON/XML and uploaded-bot catalogs'));
     assert.ok(response.body.strategiesTried.includes('site page/API/link crawl'));
   } finally {
     globalThis.fetch = originalFetch;

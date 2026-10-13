@@ -312,7 +312,7 @@ function manifestBotEntries(value, output = []) {
   if (!value || output.length >= MAX_BOTS) return output;
   if (Array.isArray(value)) { for (const item of value) manifestBotEntries(item, output); return output; }
   if (typeof value !== 'object') return output;
-  const url = value.xml_url || value.xmlUrl || value.xml || value.download_url || value.downloadUrl;
+  const url = value.xml_url || value.xmlUrl || value.xml || value.download_url || value.downloadUrl || value.file;
   if (typeof url === 'string' && /(?:\.xml(?:[?#]|$)|\/api\/asset\/)/i.test(url)) {
     output.push({ url, name: value.name || value.title || value.label || null, category: value.category || value.tab || 'Custom Bots' });
   }
@@ -321,27 +321,41 @@ function manifestBotEntries(value, output = []) {
 }
 
 async function extractManifestBots(start) {
-  const paths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json'];
+  const paths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/xml-uploads/bots.json'];
   const found = [], seen = new Set();
   for (const path of paths) {
-    const manifest = await fetchText(new URL(path, start.origin).href);
+    const manifestUrl = new URL(path, start.origin).href;
+    const manifest = await fetchText(manifestUrl);
     if (!manifest || !/^\s*[\[{]/.test(manifest.text)) continue;
     let parsed;
     try { parsed = JSON.parse(manifest.text); } catch { continue; }
-    for (const entry of manifestBotEntries(parsed)) {
+    const entries = manifestBotEntries(parsed).flatMap(entry => {
       try {
-        const xmlUrl = new URL(entry.url, start.origin).href;
-        if (isBuiltInBotSource(xmlUrl) || isBuiltInBotName(entry.name)) continue;
-        if (seen.has(xmlUrl)) continue;
+        // Many public bot libraries (including Profithub) keep a bots.json
+        // catalog beside the XML files and list only the filename in `file`.
+        // Resolve relative entries against the manifest URL so this same
+        // strategy also works for other sites using /xml-uploads/ catalogs.
+        const xmlUrl = new URL(entry.url, manifestUrl).href;
+        if (isBuiltInBotSource(xmlUrl) || isBuiltInBotName(entry.name) || seen.has(xmlUrl)) return [];
         seen.add(xmlUrl);
+        return [{ entry, xmlUrl }];
+      } catch { return []; }
+    });
+    for (let offset = 0; offset < entries.length; offset += 24) {
+      const batch = entries.slice(offset, offset + 24);
+      const results = await Promise.allSettled(batch.map(async ({ entry, xmlUrl }) => {
         const result = await fetchText(xmlUrl);
-        if (!result || !isValidBotXml(result.text)) continue;
+        if (!result || !isValidBotXml(result.text)) return null;
         const fallback = decodeURIComponent(new URL(xmlUrl).pathname.split('/').pop() || 'Bot.xml').replace(/\.xml$/i, '');
         const name = normalizeName(entry.name) || nameFromXml(result.text) || normalizeName(fallback);
-        if (!name || isBuiltInBotName(name)) continue;
-        found.push({ name, xml: decodeMarkup(result.text).trim(), source: `manifest:${xmlUrl}`, size: result.text.length, fromTab: entry.category });
+        if (!name || isBuiltInBotName(name)) return null;
+        return { name, xml: decodeMarkup(result.text).trim(), source: `manifest:${xmlUrl}`, size: result.text.length, fromTab: entry.category };
+      }));
+      for (const result of results) {
+        if (result.status !== 'fulfilled' || !result.value) continue;
+        found.push(result.value);
         if (found.length >= MAX_BOTS) return found;
-      } catch {}
+      }
     }
   }
   return found;
@@ -623,8 +637,8 @@ export default async function handler(req, res) {
   const bots = [];
   const seenXml = new Set();
   const candidateFiles = new Set();
-  const candidateDirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
-  const manifestPaths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json'];
+  const candidateDirs = ['/xml/', '/bots/', '/public/xml/', '/assets/xml/', '/static/xml/', '/xml-uploads/', '/bot/', '/strategies/', '/files/', '/downloads/', '/'];
+  const manifestPaths = ['/config.json', '/bots.json', '/bot-manifest.json', '/xml/manifest.json', '/assets/bots.json', '/public/xml/manifest.json', '/xml-uploads/bots.json'];
   for (const path of manifestPaths) priorityQueue.add(new URL(path, start.origin).href);
   let spaShells = 0;
   const strategiesTried = [];
@@ -652,7 +666,7 @@ export default async function handler(req, res) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
   }
 
-  strategiesTried.push('standard JSON/XML manifests');
+  strategiesTried.push('standard JSON/XML and uploaded-bot catalogs');
   const manifestBots = await extractManifestBots(start);
   for (const bot of manifestBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
@@ -713,8 +727,13 @@ export default async function handler(req, res) {
 
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Cache-Control', 'no-store');
+  const hasUploadedXmlCatalog = manifestBots.some(bot => {
+    try { return new URL(bot.source.replace(/^manifest:/, '')).pathname.startsWith('/xml-uploads/'); }
+    catch { return false; }
+  });
   const mode = savewayBots.length ? 'saveway-public-catalog'
     : binaryLabBots.length ? 'binarylab-public-catalog'
+      : hasUploadedXmlCatalog ? 'uploaded-xml-catalog'
       : fastBots.length ? 'webpack-context'
         : manifestBots.length ? 'public-manifest' : 'multi-strategy';
   return res.status(200).json({ count: bots.length, bots, pagesScanned: visited.size, spaShells, mode, strategiesTried });
