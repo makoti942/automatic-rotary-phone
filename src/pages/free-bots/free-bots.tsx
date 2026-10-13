@@ -222,26 +222,15 @@ const FreeBots = observer(() => {
                 });
                 setAvailableBots(skeletonBots);
 
-                // 3) Load XMLs progressively in background
-                const loadedBots: BotData[] = [];
+                // 3) Load XMLs progressively in background without changing the
+                //    explicit card order if any individual request fails.
+                const displayedBots = [...skeletonBots];
                 for (let i = 0; i < manifest.length; i++) {
                     const item = manifest[i];
                     try {
                         const xml = await fetchXmlWithCache(item.file);
-                        const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
-                        const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
-                        const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
-                        loadedBots.push({
-                            name: botName,
-                            description: getBotDescription(botName),
-                            difficulty: 'Intermediate',
-                            strategy: 'Multi-Strategy',
-                            features: DEFAULT_FEATURES,
-                            xml: xml || '',
-                            badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
-                            badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
-                        });
-                        setAvailableBots([...loadedBots, ...skeletonBots.slice(loadedBots.length)]);
+                        displayedBots[i] = { ...displayedBots[i], xml: xml || '' };
+                        setAvailableBots([...displayedBots]);
                     } catch (err) {
                         console.warn(`Failed to load ${item.file}:`, err);
                     }

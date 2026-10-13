@@ -1,16 +1,12 @@
 .free-bots {
     width: 100%;
-    height: calc(100vh - 9rem);
+    min-height: 100%;
+    height: auto;
     padding: 16px;
     background: var(--general-main-1);
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: visible;
     box-sizing: border-box;
     -webkit-overflow-scrolling: touch;
-
-    @media (max-width: 768px) {
-        height: calc(100vh - 60px);
-    }
 
     &__container {
         max-width: 1400px;
@@ -374,7 +370,6 @@
 @media (max-width: 768px) {
     .free-bots {
         padding: 12px 10px 120px 10px;
-        height: calc(100vh - 60px);
     }
 
     .free-bot-card {
