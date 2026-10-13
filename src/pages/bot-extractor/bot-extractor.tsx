@@ -458,7 +458,7 @@ function guessNameFromChunkSource(source: string): string {
         const isXmlChunk = /-xml\.[a-f0-9]{6,}\.js$/i.test(filename);
         const chunk = filename.replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
         if (!isXmlChunk && !/(?:free|bot|strategy|scalper)/i.test(chunk)) return '';
-        return chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '')
+        return chunk.replace(/^(?:doll(?:ar|a)printer|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|m-?korean)-/i, '')
             .replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' ');
     } catch { return ''; }
 }

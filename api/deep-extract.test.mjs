@@ -32,6 +32,19 @@ test('keeps genuine custom bots, including custom bots whose names reference a s
   assert.equal(bots[0].name, 'My Reverse D’Alembert System');
 });
 
+test('recognizes named bot chunks from Dollaprinter, Money8gg, and MKorean families on arbitrary domains', () => {
+  const cases = [
+    ['https://unlisted.example/static/js/async/dollaprinter-Digits-Switcher-xml.a1b2c3d4.js', 'Digits Switcher'],
+    ['https://unlisted.example/static/js/async/money8gg-MKOREAN-SV6-xml.a1b2c3d4.js', 'MKOREAN SV6'],
+    ['https://unlisted.example/static/js/async/m-korean-Legoo-Sniper-xml.a1b2c3d4.js', 'Legoo Sniper'],
+  ];
+  for (const [source, expectedName] of cases) {
+    const bots = extractXmlDocuments(makeBotXml('Workspace'), source);
+    assert.equal(bots.length, 1, source);
+    assert.equal(bots[0].name, expectedName, source);
+  }
+});
+
 test('extracts named bots from BinaryLab-style JSON xmlContent fields', () => {
   const payload = {
     mode: 'filtered',
@@ -164,6 +177,9 @@ test('tries the known public extraction methods on an unlisted domain and extrac
     if (url === 'https://unlisted.example/xml/apex_ai_v3.xml') {
       return new Response(customXml, { status: 200, headers: { 'Content-Type': 'application/xml' } });
     }
+    if (url === 'https://unlisted.example/static/js/index.js') {
+      return new Response(`const bot = \`${makeBotXml('Bundle Family Bot')}\`;`, { status: 200, headers: { 'Content-Type': 'application/javascript' } });
+    }
     if (url === 'https://unlisted.example/') {
       return new Response('<!doctype html><html><body>Bot library</body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
     }
@@ -181,8 +197,11 @@ test('tries the known public extraction methods on an unlisted domain and extrac
     await deepExtractHandler({ method: 'POST', body: { url: 'https://unlisted.example/' } }, response);
     assert.ok(requests.includes('https://dforge.site/api/sites/config?domain=unlisted.example'));
     assert.ok(requests.includes('https://unlisted.example/api/free-bots'));
+    assert.ok(requests.includes('https://unlisted.example/api/membership/bots'));
     assert.ok(requests.includes('https://unlisted.example/xml/apex_ai_v3.xml'));
+    assert.ok(requests.includes('https://unlisted.example/static/js/index.js'));
     assert.ok(response.body.bots.some(bot => bot.name === 'Unlisted Site Bot'));
+    assert.ok(response.body.bots.some(bot => bot.name === 'Bundle Family Bot'));
     assert.ok(response.body.strategiesTried.includes('public catalog/API and product-path probes'));
   } finally {
     globalThis.fetch = originalFetch;

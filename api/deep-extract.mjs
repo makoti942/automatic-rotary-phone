@@ -119,14 +119,15 @@ function nameFromContext(content, position, source) {
   if (!/\.(?:xml|json)(?:[?#]|$)/i.test(source)) {
     const chunk = decodeURIComponent(new URL(source).pathname.split('/').pop() || '')
       .replace(/\.[a-f0-9]{6,}\.js$/i, '').replace(/-xml$/i, '');
+    const normalizedChunk = chunk.replace(/^(?:doll(?:ar|a)printer|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|m-?korean)-/i, '');
     // Custom XML context chunks are often named after the bot itself, but
     // names such as "Reborn-HnR" or "PATEL" do not contain bot/strategy.
     // The `-xml` suffix is the reliable signal that this is a bot payload.
     if (/-xml\./i.test(decodeURIComponent(new URL(source).pathname.split('/').pop() || ''))) {
-      return normalizeName(chunk);
+      return normalizeName(normalizedChunk);
     }
     if (chunk && /(?:free|bot|strategy|scalper)/i.test(chunk)) {
-      return normalizeName(chunk.replace(/^(?:dollarprinter|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|mkorean)-/i, '').replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' '));
+      return normalizeName(chunk.replace(/^(?:doll(?:ar|a)printer|dbotspace|dbtraders|traderkit|money8gg|exwager|osam|m-?korean)-/i, '').replace(/^(?:free|bots?|strateg(?:y|ies)|scalper)-/i, '').replace(/[-_]+/g, ' '));
     }
     return null;
   }
@@ -445,6 +446,12 @@ async function fastBundleScan(startUrl) {
     try { entryUrls.add(new URL(match[1], startUrl).href); } catch {}
   }
   for (const match of page.text.matchAll(/https?:\/\/[^\s"'<>]+\.js(?:[?#][^\s"'<>]*)?/gi)) entryUrls.add(match[0]);
+  // Some white-label bots sites omit script tags or use a minimal shell.
+  // The Legacy Prime adapter historically probed these entry points; make
+  // those same entry-bundle probes available for every unknown host.
+  for (const path of ['/static/js/index.js', '/static/js/main.js', '/assets/index.js', '/assets/main.js']) {
+    entryUrls.add(new URL(path, startUrl).href);
+  }
   const entries = [...entryUrls].slice(0, 12);
   const entryResults = await Promise.allSettled(
     entries.map(async url => ({ url, result: await fetchText(url, { maxBytes: MAX_SCRIPT_BYTES }) }))
@@ -582,6 +589,7 @@ async function extractKnownPublicPathBots(start) {
     '/api/free-bots',
     '/api/bots',
     '/api/bot-library',
+    '/api/membership/bots',
     '/api/premium-whitelist',
     '/api/tutorial-videos',
   ];
