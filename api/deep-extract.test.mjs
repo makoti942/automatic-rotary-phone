@@ -150,3 +150,41 @@ test('continues generic manifest and page crawling after the bundle scan finds a
     globalThis.fetch = originalFetch;
   }
 });
+
+test('tries the known public extraction methods on an unlisted domain and extracts a matching bot', async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const customXml = makeBotXml('Unlisted Site Bot');
+  globalThis.fetch = async input => {
+    const url = String(input);
+    requests.push(url);
+    if (url === 'https://dforge.site/api/sites/config?domain=unlisted.example') {
+      return new Response(JSON.stringify({ config: {} }), { status: 200 });
+    }
+    if (url === 'https://unlisted.example/xml/apex_ai_v3.xml') {
+      return new Response(customXml, { status: 200, headers: { 'Content-Type': 'application/xml' } });
+    }
+    if (url === 'https://unlisted.example/') {
+      return new Response('<!doctype html><html><body>Bot library</body></html>', { status: 200, headers: { 'Content-Type': 'text/html' } });
+    }
+    return new Response('not found', { status: 404 });
+  };
+  const response = {
+    statusCode: 200,
+    headers: {},
+    body: null,
+    setHeader(name, value) { this.headers[name] = value; },
+    status(code) { this.statusCode = code; return this; },
+    json(value) { this.body = value; return this; },
+  };
+  try {
+    await deepExtractHandler({ method: 'POST', body: { url: 'https://unlisted.example/' } }, response);
+    assert.ok(requests.includes('https://dforge.site/api/sites/config?domain=unlisted.example'));
+    assert.ok(requests.includes('https://unlisted.example/api/free-bots'));
+    assert.ok(requests.includes('https://unlisted.example/xml/apex_ai_v3.xml'));
+    assert.ok(response.body.bots.some(bot => bot.name === 'Unlisted Site Bot'));
+    assert.ok(response.body.strategiesTried.includes('public catalog/API and product-path probes'));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});

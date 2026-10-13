@@ -509,10 +509,10 @@ async function fastBundleScan(startUrl) {
 }
 
 export async function extractSavewayFreeBots(start) {
-  const hostname = start.hostname.toLowerCase();
-  if (!['saveway.site', 'www.saveway.site'].includes(hostname)) return [];
-
-  const configUrl = 'https://dforge.site/api/sites/config?domain=saveway.site';
+  // Saveway uses the shared DForge catalog service. Probe the submitted host
+  // so other domains using the same public integration are tried as well.
+  const domain = start.hostname.toLowerCase().replace(/^www\./, '');
+  const configUrl = `https://dforge.site/api/sites/config?domain=${encodeURIComponent(domain)}`;
   const configResponse = await fetchText(configUrl);
   if (!configResponse || !/^\s*\{/.test(configResponse.text)) return [];
 
@@ -564,10 +564,9 @@ export async function extractSavewayFreeBots(start) {
 
 export async function extractBinaryLabFreeBots(start) {
   const hostname = start.hostname.toLowerCase();
-  if (!['binarylab.site', 'www.binarylab.site', 'trade.binarylab.site'].includes(hostname)) return [];
 
   const origins = [start.origin];
-  if (hostname !== 'www.binarylab.site') origins.push('https://www.binarylab.site');
+  if (hostname === 'trade.binarylab.site') origins.push('https://www.binarylab.site');
   for (const origin of new Set(origins)) {
     const endpoint = new URL('/api/free-bots', origin).href;
     const response = await fetchText(endpoint);
@@ -576,6 +575,27 @@ export async function extractBinaryLabFreeBots(start) {
     if (bots.length) return bots;
   }
   return [];
+}
+
+async function extractKnownPublicPathBots(start) {
+  const candidates = [
+    '/api/free-bots',
+    '/api/bots',
+    '/api/bot-library',
+    '/api/premium-whitelist',
+    '/api/tutorial-videos',
+  ];
+  const products = ['apex_ai_v3', 'ai_version_two', 'novagrid2026', 'novagridElite', 'optima_ai', 'binarybeast_v2_pro', 'signals', 'the_anex'];
+  for (const product of products) {
+    candidates.push(`/xml/${product}.xml`, `/bots/${product}.xml`, `/api/premium/${product}.xml`);
+  }
+
+  const results = await Promise.allSettled(candidates.map(async path => {
+    const url = new URL(path, start.origin).href;
+    const response = await fetchText(url);
+    return response ? extractXmlDocuments(response.text, url) : [];
+  }));
+  return results.flatMap(result => result.status === 'fulfilled' ? result.value : []);
 }
 
 export default async function handler(req, res) {
@@ -609,6 +629,12 @@ export default async function handler(req, res) {
 
   const binaryLabBots = await extractBinaryLabFreeBots(start);
   for (const bot of binaryLabBots) {
+    if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
+  }
+
+  strategiesTried.push('public catalog/API and product-path probes');
+  const knownPathBots = await extractKnownPublicPathBots(start);
+  for (const bot of knownPathBots) {
     if (!seenXml.has(bot.xml)) { seenXml.add(bot.xml); bots.push(bot); }
   }
 

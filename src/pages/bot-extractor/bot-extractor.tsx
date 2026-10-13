@@ -1232,6 +1232,42 @@ const BotExtractor = () => {
                 }
             }
 
+            if (!allBots.length) {
+                addLog('\n--- Client scans found no bots; trying all public server extraction methods ---');
+                setProgress('Trying additional catalog, bundle, manifest, and page-crawl methods...');
+                try {
+                    const response = await fetch('/api/deep-extract', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: targetUrl }),
+                    });
+                    if (!response.ok) throw new Error(`Server extraction returned HTTP ${response.status}`);
+                    const data = await response.json();
+                    for (const method of Array.isArray(data.strategiesTried) ? data.strategiesTried : []) {
+                        addLog(`  Tried: ${method}`);
+                    }
+                    const serverBots: ExtractedBot[] = (Array.isArray(data.bots) ? data.bots : [])
+                        .filter((bot: any) => bot?.xml && isValidDerivBot(bot.xml))
+                        .filter((bot: any) => !isBuiltInBot({ name: bot.name, source: bot.source }))
+                        .map((bot: any, index: number) => ({
+                            name: bot.name || `Custom Bot ${index + 1}`,
+                            xml: bot.xml,
+                            source: bot.source || targetUrl,
+                            size: bot.size || bot.xml.length,
+                            fromTab: bot.fromTab || 'Deep Extract fallback',
+                        }));
+                    for (const bot of serverBots) {
+                        if (!seenContent.has(bot.xml)) {
+                            seenContent.add(bot.xml);
+                            allBots.push(bot);
+                        }
+                    }
+                    addLog(`Server methods found ${serverBots.length} valid custom bot(s)`);
+                } catch (fallbackError: any) {
+                    addLog(`Server extraction fallback failed: ${fallbackError.message}`);
+                }
+            }
+
             addLog(`\n=== COMPLETE ===`);
             addLog(`Total bots found: ${allBots.length}`);
 
