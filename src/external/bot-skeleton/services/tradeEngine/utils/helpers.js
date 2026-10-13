@@ -4,6 +4,7 @@ import { config } from '@/external/bot-skeleton/constants';
 import { localize } from '@deriv-com/translations';
 import { observer as globalObserver } from '../../../utils/observer';
 import { error as logError } from './broadcast';
+import { getRequestErrorDetails } from './request-error-details.mjs';
 
 const toApiContractType = (contract_type, trade_option) => {
     if (trade_option.tradeType !== 'higherlower') return contract_type;
@@ -145,7 +146,8 @@ const getBackoffDelayInMs = (error_obj, delay_index) => {
     const max_delay = 15;
     const next_delay_in_seconds = Math.min(base_delay * delay_index, max_delay);
 
-    const { error = {}, msg_type = '', echo_req = {} } = error_obj;
+    const { error = {}, msg_type = '' } = error_obj;
+    const { message_type, request } = getRequestErrorDetails(error_obj);
     const { code = '', message = '' } = error;
     let message_to_print = '';
     const trade_type_block = Blockly.derivWorkspace
@@ -156,9 +158,9 @@ const getBackoffDelayInMs = (error_obj, delay_index) => {
 
     if (code) {
         const error_details = {
-            message_type: error.msg_type,
+            message_type: message_type || msg_type || localize('unknown'),
             delay: next_delay_in_seconds,
-            request: echo_req?.req_id,
+            request: request ?? localize('unknown'),
             message: message || localize('The market is closed'),
             trade_type: TRADE_TYPE_CATEGORY_NAMES?.[selected_trade_type] ?? '',
         };

@@ -65,51 +65,62 @@ export default Engine =>
         }
 
         requestProposals() {
-            // Since there are two proposals (in most cases), an error may be logged twice, to avoid this
-            // flip this boolean on error.
+            const templates = [...(this.proposal_templates || [])];
+            if (!templates.length) return Promise.resolve();
+
+            // A bot can request a fresh proposal immediately after each buy. Queue
+            // those requests and send them one at a time instead of bursting all
+            // contract-type proposals at once and provoking more RateLimit errors.
             let has_informed_error = false;
+            const requestOne = async proposal => {
+                try {
+                    await doUntilDone(() => api_base.api.send(proposal));
+                } catch (error) {
+                    const apiError = error?.error || {};
+                    // We intercept ContractBuyValidationError as user may have specified
+                    // e.g. a DIGITUNDER 0 or DIGITOVER 9, while one proposal may be invalid
+                    // and another valid. We handle the error on Purchase rather than here.
+                    if (apiError.code === 'ContractBuyValidationError') {
+                        const localizedError = new Error(getLocalizedErrorMessage(apiError.code, apiError));
+                        localizedError.code = apiError.code;
+                        localizedError.details = apiError.details;
+                        localizedError.message_to_client = apiError.message_to_client;
+                        const echo_req = error?.echo_req || apiError.echo_req || {};
+                        const passthrough = echo_req.passthrough || {};
 
-            Promise.all(
-                this.proposal_templates.map(proposal => {
-                    doUntilDone(() => api_base.api.send(proposal)).catch(error => {
-                        // We intercept ContractBuyValidationError as user may have specified
-                        // e.g. a DIGITUNDER 0 or DIGITOVER 9, while one proposal may be invalid
-                        // the other is valid. We will error on Purchase rather than here.
+                        this.data.proposals.push({
+                            ...echo_req,
+                            ...passthrough,
+                            error: localizedError,
+                        });
+                        return;
+                    }
+                    if (!has_informed_error) {
+                        has_informed_error = true;
+                        const localizedErrorMessage = apiError.code
+                            ? getLocalizedErrorMessage(apiError.code, apiError)
+                            : apiError.message || error?.message || getLocalizedErrorMessage('GeneralError');
 
-                        if (error?.error?.code === 'ContractBuyValidationError') {
-                            // Create localized error message for validation errors
-                            const localizedError = new Error(getLocalizedErrorMessage(error.error.code, error.error));
-                            localizedError.code = error.error.code;
-                            localizedError.details = error.error.details;
-                            localizedError.message_to_client = error.error.message_to_client;
-                            const echo_req = error?.echo_req || error?.error?.echo_req || {};
-                            const passthrough = echo_req.passthrough || {};
+                        this.$scope.observer.emit('Error', {
+                            ...apiError,
+                            message: localizedErrorMessage,
+                        });
+                    }
+                }
+            };
 
-                            this.data.proposals.push({
-                                ...echo_req,
-                                ...passthrough,
-                                error: localizedError,
-                            });
-
-                            return null;
-                        }
-                        if (!has_informed_error) {
-                            has_informed_error = true;
-                            // Use localized error message for general errors
-                            const localizedErrorMessage = error.error.code
-                                ? getLocalizedErrorMessage(error.error.code, error.error)
-                                : error.error.message || getLocalizedErrorMessage('GeneralError');
-
-                            const localizedError = {
-                                ...error.error,
-                                message: localizedErrorMessage,
-                            };
-                            this.$scope.observer.emit('Error', localizedError);
-                        }
-                        return null;
-                    });
-                })
-            );
+            const previousQueue = this.proposalRequestQueue || Promise.resolve();
+            this.proposalRequestQueue = previousQueue
+                .catch(() => undefined)
+                .then(async () => {
+                    for (const proposal of templates) {
+                        // Do not send queued proposals after the strategy has moved
+                        // to a different purchase reference.
+                        if (proposal?.passthrough?.purchase_reference !== this.getPurchaseReference()) continue;
+                        await requestOne(proposal);
+                    }
+                });
+            return this.proposalRequestQueue;
         }
 
         observeProposals() {

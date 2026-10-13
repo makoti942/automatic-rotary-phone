@@ -95,7 +95,11 @@ export default Engine =>
             // Start both async purchase requests before awaiting either response.
             // This keeps the two Deriv buy requests in the same execution window
             // instead of waiting for the first contract to be acknowledged.
-            return Promise.all(types.map(contract_type => this.purchase(contract_type)));
+            const results = await Promise.all(types.map(contract_type => this.purchase(contract_type)));
+            if (this.is_proposal_subscription_required) {
+                this.renewProposalsOnPurchase();
+            }
+            return results;
         }
 
         async virtualPurchase(contract_type) {
@@ -877,7 +881,7 @@ export default Engine =>
                 }
                 this.store.dispatch(purchaseSuccessful());
 
-                if (this.is_proposal_subscription_required) {
+                if (this.is_proposal_subscription_required && !this.vh_state?.hedge_active) {
                     this.renewProposalsOnPurchase();
                 }
 
