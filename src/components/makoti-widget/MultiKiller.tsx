@@ -577,7 +577,7 @@ export const MultiKiller: React.FC = () => {
                 currency: 'USD',
                 duration: dur,
                 duration_unit: 't',
-                symbol: market,
+                underlying_symbol: market,
             };
             if (barrier !== undefined) baseParams.barrier = barrier;
 
@@ -631,7 +631,7 @@ export const MultiKiller: React.FC = () => {
             ws.send(JSON.stringify({
                 buy: '1',
                 price: stakeNum,
-                parameters: { ...baseParams, underlying_symbol: baseParams.symbol },
+                parameters: baseParams,
                 req_id: reqId,
             }));
 
