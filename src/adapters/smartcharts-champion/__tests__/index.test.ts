@@ -253,6 +253,23 @@ describe('SmartCharts Champion Adapter', () => {
 
             expect(mockTransport.unsubscribe).toHaveBeenCalledWith(mockSubscriptionId);
         });
+
+        it('keeps duplicate symbol/interval subscriptions independent', () => {
+            (mockTransport.subscribe as jest.Mock)
+                .mockReturnValueOnce('sub-first')
+                .mockReturnValueOnce('sub-second');
+
+            const adapter = buildSmartchartsChampionAdapter(mockTransport, mockServices);
+            const request: TGetQuotesRequest = { symbol: 'R_50', granularity: 60 };
+            const unsubscribeFirst = adapter.subscribeQuotes(request, jest.fn());
+            const unsubscribeSecond = adapter.subscribeQuotes(request, jest.fn());
+
+            unsubscribeFirst();
+            expect(mockTransport.unsubscribe).toHaveBeenLastCalledWith('sub-first');
+            unsubscribeSecond();
+            expect(mockTransport.unsubscribe).toHaveBeenLastCalledWith('sub-second');
+            expect(mockTransport.unsubscribe).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('unsubscribeQuotes', () => {

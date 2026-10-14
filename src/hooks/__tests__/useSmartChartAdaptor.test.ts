@@ -445,7 +445,7 @@ describe('useSmartChartAdaptor', () => {
 
             result.current.unsubscribeQuotes({});
 
-            expect(mockAdapter.transport.unsubscribeAll).toHaveBeenCalledWith('ticks');
+            expect(mockAdapter.transport.unsubscribeAll).toHaveBeenCalledWith();
         });
     });
 
@@ -499,9 +499,9 @@ describe('useSmartChartAdaptor', () => {
             // so they removed themselves from the cleanup array. Only the last two subscriptions
             // should be cleaned up automatically.
             // Since we already used mockReturnValueOnce twice, subsequent calls will return undefined
-            // Let's just verify the global cleanup methods were called
-            expect(chart_api.api?.forgetAll).toHaveBeenCalledWith('ticks');
-            expect(mockAdapter.transport.unsubscribeAll).toHaveBeenCalledWith('ticks');
+            // Cleanup is scoped to the adapter and must not reset shared chart feeds.
+            expect(chart_api.api?.forgetAll).not.toHaveBeenCalled();
+            expect(mockAdapter.transport.unsubscribeAll).toHaveBeenCalledWith();
         });
 
         it('should handle cleanup errors gracefully', async () => {

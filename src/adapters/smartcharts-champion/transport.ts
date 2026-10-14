@@ -20,6 +20,17 @@ const logger = {
 export function createTransport(): TTransport {
     const subscriptions = new Map<string, any>();
 
+    const unsubscribe = (subscriptionId: string) => {
+        const subscription = subscriptions.get(subscriptionId);
+        if (!subscription) return;
+
+        subscription.messageSubscription?.unsubscribe();
+        if (chart_api.api && subscription.realSubscriptionId) {
+            chart_api.api.forget(subscription.realSubscriptionId);
+        }
+        subscriptions.delete(subscriptionId);
+    };
+
     return {
         /**
          * Send one-shot API request
@@ -50,20 +61,11 @@ export function createTransport(): TTransport {
             // Set up global message listener first (before sending request)
             const messageSubscription = chart_api.api.onMessage()?.subscribe(({ data }: { data: any }) => {
                 const subscriptionId = data?.subscription?.id;
-
-                // Check if this message belongs to our subscription
                 const storedSub = subscriptions.get(tempId);
-                if (storedSub && subscriptionId) {
-                    // Update the subscription with the real ID
-                    if (!storedSub.realSubscriptionId) {
-                        storedSub.realSubscriptionId = subscriptionId;
-                        subscriptions.set(tempId, storedSub);
-                    }
-
-                    // Forward the message if it matches our subscription
-                    if (subscriptionId === storedSub.realSubscriptionId) {
-                        callback(data);
-                    }
+                // Do not claim an ID from an unrelated socket message. The
+                // subscription ID is assigned only from this request's send result.
+                if (storedSub?.realSubscriptionId && subscriptionId === storedSub.realSubscriptionId) {
+                    callback(data);
                 }
             });
 
@@ -80,20 +82,24 @@ export function createTransport(): TTransport {
                 .send(subscribeRequest)
                 .then((response: any) => {
                     const subscriptionId = response?.subscription?.id;
+                    const storedSub = subscriptions.get(tempId);
 
-                    if (subscriptionId) {
-                        // Update stored subscription with real ID
-                        const storedSub = subscriptions.get(tempId);
-                        if (storedSub) {
-                            storedSub.realSubscriptionId = subscriptionId;
-                            subscriptions.set(tempId, storedSub);
-                        }
-
-                        // Call callback with initial response
-                        callback(response);
-                    } else {
+                    if (!subscriptionId) {
                         logger.error('No subscription ID in response:', response);
+                        storedSub?.messageSubscription?.unsubscribe();
+                        subscriptions.delete(tempId);
+                        return;
                     }
+
+                    // The view may have unmounted before the server acknowledged
+                    // this request. Forget the late subscription instead of leaking it.
+                    if (!storedSub) {
+                        chart_api.api?.forget(subscriptionId);
+                        return;
+                    }
+
+                    storedSub.realSubscriptionId = subscriptionId;
+                    callback(response);
                 })
                 .catch((error: any) => {
                     logger.error('Subscription failed:', error);
@@ -113,24 +119,8 @@ export function createTransport(): TTransport {
          * @param subscriptionId - Subscription ID to cancel (temp ID)
          */
         unsubscribe(subscriptionId: string): void {
-            const subscription = subscriptions.get(subscriptionId);
-
-            if (subscription) {
-                // Cancel RxJS subscription
-                if (subscription.messageSubscription) {
-                    subscription.messageSubscription.unsubscribe();
-                }
-
-                // Send forget request to server using the real subscription ID
-                if (chart_api.api && subscription.realSubscriptionId) {
-                    chart_api.api.forget(subscription.realSubscriptionId);
-                }
-
-                // Clean up local storage
-                subscriptions.delete(subscriptionId);
-            } else {
-                logger.warn('No subscription found for ID:', subscriptionId);
-            }
+            if (!subscriptions.has(subscriptionId)) logger.warn('No subscription found for ID:', subscriptionId);
+            unsubscribe(subscriptionId);
         },
 
         /**
@@ -138,17 +128,14 @@ export function createTransport(): TTransport {
          * @param msgType - Message type to unsubscribe from (optional)
          */
         unsubscribeAll(msgType?: string): void {
-            if (chart_api.api) {
-                if (msgType) {
-                    chart_api.api.forgetAll(msgType);
-                } else {
-                    // Forget all ticks by default
-                    chart_api.api.forgetAll('ticks');
-                }
-            }
-
-            // Clean up local subscriptions
-            subscriptions.clear();
+            const subscriptionIds = Array.from(subscriptions.entries())
+                .filter(([, subscription]) => {
+                    if (!msgType) return true;
+                    const style = subscription.request?.style;
+                    return style === msgType || (msgType === 'ticks' && !style);
+                })
+                .map(([subscriptionId]) => subscriptionId);
+            subscriptionIds.forEach(unsubscribe);
         },
     };
 }

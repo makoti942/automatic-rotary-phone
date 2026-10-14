@@ -280,7 +280,7 @@ export const useSmartChartAdaptor = (): UseSmartChartAdaptorReturn => {
                     });
                 } else {
                     // Fallback: unsubscribe all via transport
-                    adapter.transport.unsubscribeAll('ticks');
+                    adapter.transport.unsubscribeAll();
                 }
             }
         },
@@ -300,17 +300,11 @@ export const useSmartChartAdaptor = (): UseSmartChartAdaptorReturn => {
             });
             cleanupFunctionsRef.current = [];
 
-            // Unsubscribe from all ticks
-            try {
-                chart_api.api?.forgetAll('ticks');
-            } catch (err) {
-                logger.error('Error forgetting ticks:', err);
-            }
-
-            // Clean up adapter subscriptions
+            // Clean up only subscriptions owned by this adapter. A global
+            // forgetAll('ticks') can silently stop another mounted chart.
             if (adapter?.transport) {
                 try {
-                    adapter.transport.unsubscribeAll('ticks');
+                    adapter.transport.unsubscribeAll();
                 } catch (err) {
                     logger.error('Error unsubscribing from adapter:', err);
                 }

@@ -177,6 +177,37 @@ describe('Transport Layer', () => {
             }, 100);
         });
 
+        it('does not claim another stream ID before its own request is acknowledged', async () => {
+            const messageCallbacks: Array<(message: any) => void> = [];
+            const resolveRequests: Array<(response: any) => void> = [];
+            mockApi.onMessage.mockImplementation(() => ({
+                subscribe: (callback: (message: any) => void) => {
+                    messageCallbacks.push(callback);
+                    return { unsubscribe: jest.fn() };
+                },
+            }));
+            mockApi.send.mockImplementation(
+                () => new Promise(resolve => resolveRequests.push(resolve))
+            );
+
+            const transport = createTransport();
+            const firstCallback = jest.fn();
+            const secondCallback = jest.fn();
+            transport.subscribe({ ticks_history: 'R_50', style: 'ticks' }, firstCallback);
+            transport.subscribe({ ticks_history: 'R_100', style: 'ticks' }, secondCallback);
+
+            messageCallbacks[0]({ data: { subscription: { id: 'sub-second' }, tick: { quote: 99 } } });
+            expect(firstCallback).not.toHaveBeenCalled();
+
+            resolveRequests[0]({ subscription: { id: 'sub-first' }, tick: { quote: 100 } });
+            resolveRequests[1]({ subscription: { id: 'sub-second' }, tick: { quote: 99 } });
+            await Promise.resolve();
+            await Promise.resolve();
+
+            expect(firstCallback).toHaveBeenCalledWith({ subscription: { id: 'sub-first' }, tick: { quote: 100 } });
+            expect(secondCallback).toHaveBeenCalledWith({ subscription: { id: 'sub-second' }, tick: { quote: 99 } });
+        });
+
         it('should handle subscription errors', done => {
             const mockSubscription = {
                 unsubscribe: jest.fn(),
@@ -244,20 +275,42 @@ describe('Transport Layer', () => {
     });
 
     describe('unsubscribeAll', () => {
-        it('should unsubscribe from all ticks by default', () => {
+        it('should forget only subscriptions owned by this transport', async () => {
+            const mockSubscription = { unsubscribe: jest.fn() };
+            mockApi.onMessage.mockReturnValue({ subscribe: jest.fn().mockReturnValue(mockSubscription) });
+            mockApi.send.mockResolvedValue({ subscription: { id: 'owned-sub' } });
             const transport = createTransport();
+            const otherTransport = createTransport();
 
+            transport.subscribe({ ticks_history: 'R_50', style: 'ticks' }, jest.fn());
+            otherTransport.subscribe({ ticks_history: 'R_100', style: 'ticks' }, jest.fn());
+            await Promise.resolve();
+            await Promise.resolve();
             transport.unsubscribeAll();
 
-            expect(mockApi.forgetAll).toHaveBeenCalledWith('ticks');
+            expect(mockApi.forget).toHaveBeenCalledTimes(1);
+            expect(mockApi.forget).toHaveBeenCalledWith('owned-sub');
+            expect(mockApi.forgetAll).not.toHaveBeenCalled();
+            expect(mockSubscription.unsubscribe).toHaveBeenCalledTimes(1);
         });
 
-        it('should unsubscribe from specific message type', () => {
+        it('should unsubscribe only the requested quote style', async () => {
+            const mockSubscription = { unsubscribe: jest.fn() };
+            mockApi.onMessage.mockReturnValue({ subscribe: jest.fn().mockReturnValue(mockSubscription) });
+            mockApi.send
+                .mockResolvedValueOnce({ subscription: { id: 'tick-sub' } })
+                .mockResolvedValueOnce({ subscription: { id: 'candle-sub' } });
             const transport = createTransport();
+            transport.subscribe({ ticks_history: 'R_50', style: 'ticks' }, jest.fn());
+            transport.subscribe({ ticks_history: 'R_50', style: 'candles', granularity: 60 }, jest.fn());
+            await Promise.resolve();
+            await Promise.resolve();
 
             transport.unsubscribeAll('candles');
 
-            expect(mockApi.forgetAll).toHaveBeenCalledWith('candles');
+            expect(mockApi.forget).toHaveBeenCalledTimes(1);
+            expect(mockApi.forget).toHaveBeenCalledWith('candle-sub');
+            expect(mockApi.forgetAll).not.toHaveBeenCalled();
         });
 
         it('should handle unsubscribeAll when API not available', () => {

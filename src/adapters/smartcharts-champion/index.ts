@@ -215,7 +215,7 @@ export function buildSmartchartsChampionAdapter(
     config: AdapterConfig = {}
 ): SmartchartsChampionAdapter {
     // Subscription management
-    const subscriptions = new Map<string, () => void>();
+    const subscriptions = new Map<string, Set<() => void>>();
     const debug = config.debug || false;
 
     // Create logger utility
@@ -304,14 +304,23 @@ export function buildSmartchartsChampionAdapter(
                     }
                 });
 
-                // Create unsubscribe function
+                // Keep each stream independently addressable. SmartChart can
+                // briefly request the same symbol/interval more than once while
+                // refreshing studies or changing chart state.
+                let isUnsubscribed = false;
                 const unsubscribe = () => {
+                    if (isUnsubscribed) return;
+                    isUnsubscribed = true;
                     transport.unsubscribe(subscriptionId);
-                    subscriptions.delete(subscriptionKey);
+                    const keySubscriptions = subscriptions.get(subscriptionKey);
+                    keySubscriptions?.delete(unsubscribe);
+                    if (keySubscriptions?.size === 0) subscriptions.delete(subscriptionKey);
                 };
 
                 // Store subscription for cleanup
-                subscriptions.set(subscriptionKey, unsubscribe);
+                const keySubscriptions = subscriptions.get(subscriptionKey) ?? new Set<() => void>();
+                keySubscriptions.add(unsubscribe);
+                subscriptions.set(subscriptionKey, keySubscriptions);
 
                 return unsubscribe;
             } catch (error) {
@@ -325,10 +334,10 @@ export function buildSmartchartsChampionAdapter(
          */
         unsubscribeQuotes(request: TGetQuotesRequest): void {
             const subscriptionKey = `${request.symbol}-${request.granularity}`;
-            const unsubscribe = subscriptions.get(subscriptionKey);
+            const keySubscriptions = subscriptions.get(subscriptionKey);
 
-            if (unsubscribe) {
-                unsubscribe();
+            if (keySubscriptions) {
+                Array.from(keySubscriptions).forEach(unsubscribe => unsubscribe());
             } else {
                 logger.warn('No active subscription found for:', subscriptionKey);
             }

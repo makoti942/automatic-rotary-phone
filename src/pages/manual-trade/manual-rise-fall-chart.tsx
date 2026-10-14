@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 import { SmartChart, TGranularity, TStateChangeListener } from '@deriv-com/smartcharts-champion';
 import { useDevice } from '@deriv-com/ui';
@@ -31,10 +31,6 @@ const ManualRiseFallChart = observer(({ symbol }: ManualRiseFallChartProps) => {
             ),
         [macdOnly, hasMacd]
     );
-
-    useEffect(() => () => {
-        chart_api.api?.forgetAll('ticks');
-    }, []);
 
     // SmartCharts reports indicator add/remove events with the study's actual ID.
     const handleStateChange: TStateChangeListener = (state, option) => {
