@@ -619,6 +619,11 @@
 .ct__account-identity span { overflow: hidden; margin-top: 2px; color: var(--text-less-prominent); font-family: monospace; font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
 .ct__account-remove { width: 24px; height: 24px; padding: 0; border: 1px solid transparent; border-radius: 5px; background: transparent; color: var(--text-less-prominent); font-size: 18px; line-height: 1; cursor: pointer; }
 .ct__account-remove:hover { border-color: rgba(248,113,113,0.3); background: rgba(248,113,113,0.1); color: #f87171; }
+.ct__account-target { display: grid; gap: 5px; margin-top: 9px; }
+.ct__account-target label { color: var(--text-less-prominent); font-size: 8px; font-weight: 700; letter-spacing: 0.45px; }
+.ct__account-target select { width: 100%; padding: 7px 8px; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; background: var(--general-section-1); color: var(--text-prominent); font: inherit; font-size: 10px; }
+.ct__account-target select:disabled { opacity: 0.6; }
+.ct__account-live-note { color: #fbbf24; font-size: 9px; line-height: 1.3; }
 .ct__account-details { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); }
 .ct__account-details div { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
 .ct__account-details small { color: var(--text-less-prominent); font-size: 7px; letter-spacing: 0.45px; }

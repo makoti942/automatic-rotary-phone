@@ -4,6 +4,7 @@ import {
     initializeCopyAccounts,
     removeCopyToken,
     subscribeCopyAccounts,
+    switchCopyAccount,
     type CopyAccount,
 } from './copy-trade-executor';
 import './copy-trading.scss';
@@ -39,6 +40,16 @@ const CopyTrading: React.FC = () => {
             setStatusMsg(error?.message || 'Could not authorize this token.');
         } finally {
             setIsAdding(false);
+        }
+    };
+
+    const handleSwitchAccount = async (copyAccountId: string, loginid: string) => {
+        setStatusMsg('Switching the copy destination…');
+        try {
+            await switchCopyAccount(copyAccountId, loginid);
+            setStatusMsg('Copy destination switched. New trades will use the selected account.');
+        } catch (error: any) {
+            setStatusMsg(error?.message || 'Could not switch the copy destination.');
         }
     };
 
@@ -81,6 +92,24 @@ const CopyTrading: React.FC = () => {
                                             </div>
                                             <button className='ct__account-remove' type='button' onClick={() => removeCopyToken(account.id)} aria-label={`Remove ${account.name}`}>×</button>
                                         </div>
+                                        {account.availableAccounts.length > 1 && (
+                                            <div className='ct__account-target'>
+                                                <label htmlFor={`copy-target-${account.id}`}>COPY DESTINATION</label>
+                                                <select
+                                                    id={`copy-target-${account.id}`}
+                                                    value={account.loginid}
+                                                    disabled={account.status === 'connecting'}
+                                                    onChange={event => handleSwitchAccount(account.id, event.currentTarget.value)}
+                                                >
+                                                    {account.availableAccounts.map(option => (
+                                                        <option key={option.loginid} value={option.loginid}>
+                                                            {option.accountType === 'demo' ? 'Demo' : 'Real'} · {option.loginid} · {option.currency}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                {!account.isDemo && <small className='ct__account-live-note'>Real account selected: copied trades use real funds.</small>}
+                                            </div>
+                                        )}
                                         <div className='ct__account-details'>
                                             <div><small>ACCOUNT</small><b className={account.isDemo ? 'ct__demo' : 'ct__real'}>{account.isDemo ? 'DEMO' : 'REAL'}</b></div>
                                             <div><small>BALANCE</small><b>{account.balance == null ? '—' : `${account.currency} ${account.balance.toFixed(2)}`}</b></div>
@@ -96,7 +125,7 @@ const CopyTrading: React.FC = () => {
                         <span className='ct__execution-note-icon'>↗</span>
                         <div>
                             <strong>Copy execution is active</strong>
-                            <span>Connected accounts receive the same contract parameters and stake when you execute a trade. Demo and real accounts can be used together.</span>
+                            <span>Each token sends trades to its selected account. New tokens choose demo when available; select a real account only when you intend to copy trades with real funds.</span>
                         </div>
                     </div>
                 </section>
@@ -105,7 +134,7 @@ const CopyTrading: React.FC = () => {
                     <div className='ct__token-panel-heading'>
                         <span className='ct__eyebrow'>ACCOUNT CONNECTION</span>
                         <h4>Add API token</h4>
-                        <p>Connect another Deriv account for automatic trade execution.</p>
+                        <p>A token may include both demo and real accounts. Each card selects one destination; new tokens choose demo when available.</p>
                     </div>
                     <form className='ct__token-form' onSubmit={handleAddToken}>
                         <label htmlFor='copy-api-token'>Deriv API token</label>

@@ -18,6 +18,11 @@ export interface CopyAccount {
     balance: number | null;
     currency: string;
     isDemo: boolean;
+    availableAccounts: Array<{
+        loginid: string;
+        accountType: 'demo' | 'real';
+        currency: string;
+    }>;
     status: AccountStatus;
     tokenHint: string;
     error?: string;
@@ -45,14 +50,19 @@ interface AccountSession extends StoredAccount {
     error?: string;
     pending: Map<number, PendingRequest>;
     nextReqId: number;
+    availableAccounts?: DerivAccount[];
+    connectionId: number;
 }
 
-async function resolveTokenAccount(token: string, previousLoginId?: string): Promise<{ account: DerivAccount; websocketUrl: string }> {
+async function resolveTokenAccount(token: string, previousLoginId?: string): Promise<{ account: DerivAccount; accounts: DerivAccount[]; websocketUrl: string }> {
     const accounts = await DerivWSAccountsService.fetchAccountsList(token, false);
-    const account = (previousLoginId && accounts.find(item => item.account_id === previousLoginId)) || accounts[0];
+    const account =
+        (previousLoginId && accounts.find(item => item.account_id === previousLoginId)) ||
+        accounts.find(item => item.account_type === 'demo') ||
+        accounts[0];
     if (!account) throw new Error('No Deriv account is available for this token.');
     const websocketUrl = await DerivWSAccountsService.fetchOTPWebSocketURL(token, account.account_id);
-    return { account, websocketUrl };
+    return { account, accounts, websocketUrl };
 }
 
 const sessions = new Map<string, AccountSession>();
@@ -74,7 +84,7 @@ function readStored(): StoredAccount[] {
 
 function persist() {
     try {
-        const records = Array.from(sessions.values()).map(({ ws, pending, nextReqId, status, error, ...record }) => record);
+        const records = Array.from(sessions.values()).map(({ ws, pending, nextReqId, status, error, availableAccounts, connectionId, ...record }) => record);
         localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
     } catch {}
 }
@@ -87,6 +97,11 @@ function accountView(session: AccountSession): CopyAccount {
         balance: session.balance ?? null,
         currency: session.currency || 'USD',
         isDemo: !!session.isDemo,
+        availableAccounts: (session.availableAccounts || []).map(account => ({
+            loginid: account.account_id,
+            accountType: account.account_type,
+            currency: account.currency,
+        })),
         status: session.status,
         tokenHint: `••••${session.token.slice(-4)}`,
         error: session.error,
@@ -129,6 +144,7 @@ function request(session: AccountSession, message: Record<string, unknown>): Pro
 function handleSessionMessage(session: AccountSession, data: any) {
     if (data.error) {
         const error = new Error(data.error.message || data.error.code || 'Deriv account request failed');
+        console.warn('[CopyTrading] Deriv response error for', session.loginid, data.error, data.echo_req || '');
         if (session.status !== 'connected') {
             session.status = 'error';
             session.error = error.message;
@@ -144,20 +160,22 @@ function handleSessionMessage(session: AccountSession, data: any) {
     }
     if (data.authorize) {
         const auth = data.authorize;
-        session.loginid = String(auth.loginid || '');
+        session.loginid = String(auth.loginid || session.loginid || '');
         session.name = parseName(auth);
         session.currency = String(auth.currency || 'USD');
-        session.isDemo = Boolean(auth.is_virtual || String(auth.loginid || '').startsWith('VRTC'));
+        session.isDemo = auth.is_virtual != null
+            ? Boolean(auth.is_virtual)
+            : Boolean(session.isDemo || String(auth.loginid || session.loginid).startsWith('VRTC'));
         session.balance = auth.balance != null ? Number(auth.balance) : session.balance ?? null;
         session.status = 'connected';
         session.error = undefined;
         persist();
         notify();
-        request(session, { balance: 1, subscribe: 1 }).catch(() => {});
         return;
     }
     if (data.balance) {
-        session.balance = Number(data.balance.balance);
+        const balance = Number(data.balance.balance);
+        if (Number.isFinite(balance)) session.balance = balance;
         session.currency = String(data.balance.currency || session.currency || 'USD');
         persist();
         notify();
@@ -172,16 +190,28 @@ function handleSessionMessage(session: AccountSession, data: any) {
 
 function connect(session: AccountSession): Promise<CopyAccount> {
     return new Promise(async (resolve, reject) => {
+        const connectionId = ++session.connectionId;
         let settled = false;
         let account: DerivAccount;
+        let accounts: DerivAccount[];
         let websocketUrl: string;
         try {
-            ({ account, websocketUrl } = await resolveTokenAccount(session.token, session.loginid));
+            ({ account, accounts, websocketUrl } = await resolveTokenAccount(session.token, session.loginid));
+            if (connectionId !== session.connectionId) {
+                reject(new Error('Account connection was replaced.'));
+                return;
+            }
+            session.availableAccounts = accounts;
             session.loginid = account.account_id;
             session.currency = account.currency || 'USD';
-            session.balance = Number(account.balance);
+            const balance = Number(account.balance);
+            session.balance = Number.isFinite(balance) ? balance : null;
             session.isDemo = account.account_type === 'demo';
         } catch (error: any) {
+            if (connectionId !== session.connectionId) {
+                reject(new Error('Account connection was replaced.'));
+                return;
+            }
             session.status = 'error';
             session.error = error?.message || 'Unable to validate API token';
             notify();
@@ -189,8 +219,9 @@ function connect(session: AccountSession): Promise<CopyAccount> {
             return;
         }
         try {
-            session.ws = new WebSocket(websocketUrl);
-            managedSockets.add(session.ws);
+            const ws = new WebSocket(websocketUrl);
+            session.ws = ws;
+            managedSockets.add(ws);
         }
         catch (error: any) {
             session.status = 'error';
@@ -203,7 +234,7 @@ function connect(session: AccountSession): Promise<CopyAccount> {
         session.error = undefined;
         notify();
         const timeout = setTimeout(() => {
-            if (!settled) {
+            if (!settled && connectionId === session.connectionId) {
                 settled = true;
                 session.status = 'error';
                 session.error = 'Authorization timed out';
@@ -212,7 +243,9 @@ function connect(session: AccountSession): Promise<CopyAccount> {
                 reject(new Error(session.error));
             }
         }, 30000);
-        session.ws.onopen = () => {
+        const ws = session.ws!;
+        ws.onopen = () => {
+            if (connectionId !== session.connectionId || session.ws !== ws) return;
             // The OTP in websocketUrl already authenticates this socket.
             session.status = 'connected';
             session.name = session.name || 'Deriv account';
@@ -228,7 +261,8 @@ function connect(session: AccountSession): Promise<CopyAccount> {
                 resolve(accountView(session));
             }
         };
-        session.ws.onmessage = event => {
+        ws.onmessage = event => {
+            if (connectionId !== session.connectionId || session.ws !== ws) return;
             try {
                 const data = JSON.parse(event.data);
                 const wasAuthorized = session.status === 'connected';
@@ -254,7 +288,8 @@ function connect(session: AccountSession): Promise<CopyAccount> {
                 }
             }
         };
-        session.onerror = () => {
+        ws.onerror = () => {
+            if (connectionId !== session.connectionId || session.ws !== ws) return;
             if (!settled) {
                 settled = true;
                 clearTimeout(timeout);
@@ -264,7 +299,8 @@ function connect(session: AccountSession): Promise<CopyAccount> {
                 reject(new Error(session.error));
             }
         };
-        session.onclose = () => {
+        ws.onclose = () => {
+            if (connectionId !== session.connectionId || session.ws !== ws) return;
             failPending(session, new Error('Account connection closed'));
             if (session.status === 'connected') {
                 session.status = 'error';
@@ -281,7 +317,7 @@ function connect(session: AccountSession): Promise<CopyAccount> {
 }
 
 function createSession(record: StoredAccount): AccountSession {
-    return { ...record, ws: null, status: 'connecting', pending: new Map(), nextReqId: 0 };
+    return { ...record, ws: null, status: 'connecting', pending: new Map(), nextReqId: 0, connectionId: 0 };
 }
 
 export async function initializeCopyAccounts(): Promise<void> {
@@ -326,11 +362,59 @@ export async function addCopyToken(token: string): Promise<CopyAccount> {
 export function removeCopyToken(id: string) {
     const session = sessions.get(id);
     if (!session) return;
+    session.connectionId += 1;
     failPending(session, new Error('Account removed'));
-    try { session.ws?.close(); } catch {}
+    const ws = session.ws;
+    session.ws = null;
+    if (ws) {
+        ws.onopen = null;
+        ws.onmessage = null;
+        ws.onerror = null;
+        ws.onclose = null;
+        try { ws.close(); } catch {}
+    }
     sessions.delete(id);
     persist();
     notify();
+}
+
+export async function switchCopyAccount(id: string, loginid: string): Promise<CopyAccount> {
+    const session = sessions.get(id);
+    if (!session) throw new Error('Connected account was not found.');
+    const selected = session.availableAccounts?.find(account => account.account_id === loginid);
+    if (!selected) throw new Error('That account is not available for this API token.');
+    if (session.loginid === selected.account_id && session.status === 'connected') return accountView(session);
+
+    session.connectionId += 1;
+    failPending(session, new Error('Switching the selected account.'));
+    const previousWs = session.ws;
+    session.ws = null;
+    if (previousWs) {
+        previousWs.onopen = null;
+        previousWs.onmessage = null;
+        previousWs.onerror = null;
+        previousWs.onclose = null;
+        try { previousWs.close(); } catch {}
+    }
+
+    session.loginid = selected.account_id;
+    session.currency = selected.currency || 'USD';
+    const balance = Number(selected.balance);
+    session.balance = Number.isFinite(balance) ? balance : null;
+    session.isDemo = selected.account_type === 'demo';
+    session.status = 'connecting';
+    session.error = undefined;
+    persist();
+    notify();
+
+    try {
+        return await connect(session);
+    } catch (error: any) {
+        session.status = 'error';
+        session.error = error?.message || 'Could not switch the target account.';
+        notify();
+        throw error;
+    }
 }
 
 function convertProposalParams(message: any): Record<string, unknown> | null {
@@ -349,29 +433,41 @@ function convertProposalParams(message: any): Record<string, unknown> | null {
 }
 
 async function executeOnAccount(session: AccountSession, params: Record<string, unknown>, stake: number) {
-    if (session.status !== 'connected' || !session.ws || session.ws.readyState !== WebSocket.OPEN) return;
+    if (session.status !== 'connected' || !session.ws || session.ws.readyState !== WebSocket.OPEN) {
+        throw new Error('Target account connection is not ready.');
+    }
     // Use Deriv's direct-buy form. A proposal round-trip per account adds
     // visible latency and makes the copied contracts enter at different ticks.
     const buy = await request(session, {
-        buy: 1,
+        buy: '1',
         price: stake,
-        parameters: { ...params, amount: stake, basis: 'stake' },
+        parameters: { ...params, currency: session.currency || params.currency, amount: stake, basis: 'stake' },
     });
     if (!buy?.buy) throw new Error(buy?.error?.message || 'Buy was rejected');
-    // The socket is subscribed, but request a balance immediately as well so
-    // the account card reflects the debit without waiting for the next push.
-    await request(session, { balance: 1, subscribe: 1 });
+    // Keep the single balance stream established at connect; request a one-shot
+    // snapshot after each purchase instead of creating duplicate subscriptions.
+    try {
+        await request(session, { balance: 1 });
+    } catch (error) {
+        console.warn('[CopyTrading] Buy succeeded but balance refresh failed for', session.loginid, error);
+    }
+    return String(buy.buy.contract_id || '');
 }
 function copyCurrentTrade(stake: number, sourceParams?: Record<string, unknown> | null) {
     const params = sourceParams ? { ...sourceParams } : proposalParams ? { ...proposalParams } : null;
     if (!params || !Number.isFinite(stake) || stake <= 0) return;
     const activeLoginId = (() => { try { return localStorage.getItem('active_loginid') || ''; } catch { return ''; } })();
     const targets = Array.from(sessions.values()).filter(session => session.status === 'connected' && session.loginid !== activeLoginId);
-    if (!targets.length) return;
+    if (!targets.length) {
+        console.info('[CopyTrading] No eligible follower accounts; connected targets may match the active source account.');
+        return;
+    }
     Promise.allSettled(targets.map(async session => {
         try {
-            await executeOnAccount(session, params, stake);
-            console.info('[CopyTrading] Trade copied to', session.loginid);
+            const contractId = await executeOnAccount(session, params, stake);
+            session.error = undefined;
+            notify();
+            console.info('[CopyTrading] Trade copied to', session.loginid, contractId ? `contract ${contractId}` : '');
         } catch (error) {
             console.error('[CopyTrading] Trade copy failed for', session.loginid, error);
             session.error = error instanceof Error ? error.message : 'Trade copy failed';
