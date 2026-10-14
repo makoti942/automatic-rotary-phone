@@ -171,6 +171,7 @@ const Tabs = ({
     });
 
     const [active_tab_index, setActiveTabIndex] = React.useState(initial_index_to_show);
+    const valid_children = children.filter(child => child);
 
     React.useEffect(() => {
         if (active_tab_index >= 0 && active_index !== active_tab_index) {
@@ -187,6 +188,31 @@ const Tabs = ({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active_index]);
 
+    React.useLayoutEffect(() => {
+        // On the main mobile navigation, keep the selected tab in the center of
+        // the horizontally scrollable strip. Leave the final two tabs at the
+        // end of the strip rather than pulling them toward the center.
+        if (className !== 'main__tabs' || active_tab_index >= valid_children.length - 2) return;
+
+        const tab = active_tab_ref.current;
+        const tab_strip = tabs_wrapper_ref.current;
+        if (!tab || !tab_strip || tab_strip.scrollWidth <= tab_strip.clientWidth) return;
+
+        const tab_bounds = tab.getBoundingClientRect();
+        const strip_bounds = tab_strip.getBoundingClientRect();
+        const offset_to_center = tab_bounds.left + tab_bounds.width / 2 - (strip_bounds.left + strip_bounds.width / 2);
+        if (Math.abs(offset_to_center) < 1) return;
+
+        const behavior: ScrollBehavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+            ? 'auto'
+            : 'smooth';
+        try {
+            tab_strip.scrollTo({ left: tab_strip.scrollLeft + offset_to_center, behavior });
+        } catch {
+            tab_strip.scrollLeft += offset_to_center;
+        }
+    }, [active_tab_index, className, valid_children.length]);
+
     const onClickTabItem = (index: number) => {
         playTabScrollChime();
         if (should_update_hash) {
@@ -196,8 +222,6 @@ const Tabs = ({
         setActiveTabIndex(index);
         setActiveLineStyle();
     };
-
-    const valid_children = children.filter(child => child);
 
     if (is_scrollable) {
         tab_width = 'unset';
