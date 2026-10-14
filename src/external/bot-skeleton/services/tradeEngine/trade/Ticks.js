@@ -7,6 +7,7 @@ import { getManualTradeDigitPercentage } from '@/utils/manual-trade-digit-stats'
 import { observer as globalObserver } from '../../../utils/observer';
 import { api_base } from '../../api/api-base';
 import { getDirection, getLastDigit } from '../utils/helpers';
+import { isLastDigitsConditionMet } from '../utils/last-digits-condition.mjs';
 import { expectPositiveInteger } from '../utils/sanitize';
 import * as constants from './state/constants';
 
@@ -91,6 +92,11 @@ export default Engine =>
 
         getLastDigitList() {
             return new Promise(resolve => this.getTicks().then(ticks => resolve(this.getLastDigitsFromList(ticks))));
+        }
+
+        async checkLastDigits(condition, count) {
+            const digits = await this.getLastDigitList();
+            return isLastDigitsConditionMet(digits, condition, count);
         }
 
         async getDigitPercentage(digit) {

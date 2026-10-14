@@ -4,6 +4,7 @@ import { DBOT_TABS } from '@/constants/bot-contents';
 import localForage from 'localforage';
 import { isBuiltInBot, isBuiltInBotName, isBuiltInBotSource } from './bot-classification';
 import { normalizeLegacyApolloPurchases } from './legacy-apollo-purchase.mjs';
+import { adaptForeignBlocks, analyzeBotCompatibility, registerCompatibilityBlocks } from './bot-compatibility.mjs';
 import './bot-extractor.scss';
 
 interface ExtractedBot {
@@ -226,78 +227,6 @@ function extractLegacyPrimeProductFlags(jsContent: string): string[] {
     let match: RegExpExecArray | null;
     while ((match = flagRe.exec(jsContent))) flags.add(match[0]);
     return [...flags].sort();
-}
-
-/**
- * Foreign bot sites can ship newer/custom Blockly block types. Register a
- * visual compatibility block instead of deleting or rewriting those blocks.
- * The original XML stays untouched; this only supplies Blockly with a shape
- * so it can render and edit the imported document.
- */
-function registerCompatibilityBlocks(xml: string): string[] {
-    if (typeof window === 'undefined' || !window.Blockly) return [];
-    const Blockly = window.Blockly as any;
-    const registered: string[] = [];
-    try {
-        const doc = new DOMParser().parseFromString(xml, 'application/xml');
-        const types = new Set(Array.from(doc.querySelectorAll('block, shadow'))
-            .map(node => node.getAttribute('type'))
-            .filter(Boolean) as string[]);
-        types.forEach(type => {
-            if (Blockly.Blocks[type]) return;
-            Blockly.Blocks[type] = {
-                init(this: any) {
-                    this.appendDummyInput('__compatibility_header').appendField(`Imported: ${type}`);
-                    const source = Array.from(doc.querySelectorAll('block, shadow'))
-                        .find(node => node.getAttribute('type') === type) as Element | undefined;
-                    source?.querySelectorAll(':scope > field').forEach((field: Element) => {
-                        const name = field.getAttribute('name');
-                        if (name) this.appendDummyInput(`__field_${name}`).appendField(field.textContent || '', name);
-                    });
-                    source?.querySelectorAll(':scope > value').forEach((value: Element) => {
-                        const name = value.getAttribute('name');
-                        if (name) this.appendValueInput(name).setCheck(null).appendField(name);
-                    });
-                    source?.querySelectorAll(':scope > statement').forEach((statement: Element) => {
-                        const name = statement.getAttribute('name');
-                        if (name) this.appendStatementInput(name).setCheck(null).appendField(name);
-                    });
-                    const isValueBlock = source?.parentElement?.tagName.toLowerCase() === 'value';
-                    if (isValueBlock) this.setOutput(true, null);
-                    else {
-                        this.setPreviousStatement(true, null);
-                        this.setNextStatement(true, null);
-                    }
-                    this.setColour(210);
-                    this.setTooltip('Imported compatibility block. Original XML preserved.');
-                },
-            };
-            Blockly.JavaScript.javascriptGenerator.forBlock[type] = (block: any) => {
-                const generator = Blockly.JavaScript.javascriptGenerator;
-                const purchase = block.getFieldValue?.('PURCHASE_LIST');
-                if (purchase) {
-                    const prediction = generator.valueToCode(block, 'PREDICTION', generator.ORDER_ATOMIC);
-                    return `Bot.purchase(${JSON.stringify(purchase)}${prediction ? `, ${prediction}` : ''});\n`;
-                }
-                const option = block.getFieldValue?.('OPTION');
-                const variableId = block.getFieldValue?.('VAR');
-                if (option !== null && option !== undefined && variableId) {
-                    const variable = generator.variableDB_?.getName(variableId, Blockly.Variables.CATEGORY_NAME) || JSON.stringify(variableId);
-                    if (block.outputConnection && !block.previousConnection) {
-                        return [`${variable} === ${JSON.stringify(option)}`, generator.ORDER_EQUALITY];
-                    }
-                    return `${variable} = ${JSON.stringify(option)};\n`;
-                }
-                const isValueBlock = block.outputConnection && !block.previousConnection;
-                if (isValueBlock) return ['0', generator.ORDER_ATOMIC];
-                return '';
-            };
-            registered.push(type);
-        });
-    } catch {
-        // Let the official loader report malformed XML; do not mutate it.
-    }
-    return registered;
 }
 
 function mergeExtractedBots(existing: ExtractedBot[], incoming: ExtractedBot[]): ExtractedBot[] {
@@ -1295,8 +1224,34 @@ const BotExtractor = () => {
         try {
             const sourceXml = decodeMarkup(bot.xml).trim();
             if (!isValidDerivBot(sourceXml)) throw new Error('The extracted XML is incomplete or invalid');
-            const { xml, convertedCount } = normalizeLegacyApolloPurchases(sourceXml);
-            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid after purchase-block conversion');
+            const { xml: apolloNormalizedXml, convertedCount } = normalizeLegacyApolloPurchases(sourceXml);
+            if (!isValidDerivBot(apolloNormalizedXml)) throw new Error('The extracted XML is incomplete or invalid after purchase-block conversion');
+
+            // Never invent behavior for a foreign block. A guessed generator can
+            // silently change predictions or submit the wrong contract.
+            let Blockly = window.Blockly as any;
+            const isBlocklyReady = (instance: any) => Boolean(instance?.Blocks && instance?.JavaScript?.javascriptGenerator);
+            if (!isBlocklyReady(Blockly)) {
+                setActiveTab(DBOT_TABS.BOT_BUILDER);
+                for (let attempt = 0; !isBlocklyReady(Blockly) && attempt < 30; attempt++) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    Blockly = window.Blockly as any;
+                }
+            }
+            if (!isBlocklyReady(Blockly)) throw new Error('Blockly block definitions are not ready. Please reopen Bot Builder and try again.');
+            registerCompatibilityBlocks(Blockly);
+            const adapted = adaptForeignBlocks(apolloNormalizedXml);
+            const xml = adapted.xml;
+            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid after compatibility adaptation');
+            const compatibility = analyzeBotCompatibility(xml, Object.keys(Blockly.Blocks));
+            if (!compatibility.canLoadSafely) {
+                const unsupported = [...new Set([...compatibility.unsupported, ...adapted.rejectedAdapters])];
+                throw new Error(
+                    `This bot contains unsupported custom block(s): ${unsupported.join(', ')}. ` +
+                    'They were not loaded because their original site-specific logic is not available in this app. ' +
+                    'The bot needs a verified local adapter before it can run safely.'
+                );
+            }
 
             // The extractor is a sub-tab, so Blockly may not be mounted yet.
             // Switch first, wait for the real workspace, then import. Importing
@@ -1308,10 +1263,6 @@ const BotExtractor = () => {
                 workspace = window.Blockly?.derivWorkspace;
             }
             if (!workspace) throw new Error('Bot Builder workspace is still loading. Please try Load to Builder again.');
-            // Register foreign block definitions only after the real Blockly
-            // runtime is mounted. This is the temporary compatibility bridge
-            // for site-specific blocks not shipped by this app.
-            const compatibilityBlocks = registerCompatibilityBlocks(xml);
             await load_modal.loadStrategyToBuilder(
                 { id: tempId, xml, name: bot.name, save_type: 'pending' },
                 true
@@ -1321,9 +1272,12 @@ const BotExtractor = () => {
             if (convertedCount) {
                 loadNotes.push(`converted ${convertedCount} legacy Apollo purchase block(s) to native Purchase blocks`);
             }
-            if (compatibilityBlocks.length) {
-                loadNotes.push(`preserved ${compatibilityBlocks.length} other visual compatibility block(s): ${compatibilityBlocks.join(', ')}`);
+            if (adapted.adaptations.length) {
+                const counts = new Map();
+                adapted.adaptations.forEach(({ from }) => counts.set(from, (counts.get(from) || 0) + 1));
+                loadNotes.push(`adapted ${[...counts].map(([type, count]) => `${count} ${type}`).join(', ')}`);
             }
+            loadNotes.push(`verified ${compatibility.supported.length} local block type(s)`);
             if (loadNotes.length) setError(`Loaded ${bot.name}; ${loadNotes.join('; ')}.`);
         } catch (err: any) {
             setError(`Failed to load bot: ${err.message}`);
