@@ -514,7 +514,9 @@
     }
 
     @include mobile-or-tablet-screen {
-        top: 5.6rem;
+        // The responsive main-tab header is 62px tall (8px shell padding + 54px tab strip).
+        // Keep the absolutely positioned Blockly workspace below it.
+        top: 62px;
         inset-inline-start: 0;
         width: 100vw;
         height: var(--tab-content-height-mobile);
