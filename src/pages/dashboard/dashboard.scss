@@ -1,6 +1,7 @@
 @use 'components/shared/styles/mixins' as *;
 
 .bot-dashboard {
+    --main-tabs-header-height-mobile: 48px;
     --translate-panel-rtl: -367px;
     --translate-panel-ltr: 367px;
     --translate-panel-reset: 0px;

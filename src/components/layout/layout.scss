@@ -248,6 +248,7 @@
 
 @media (max-width: 900px) {
     .layout--makoti {
+        .deriv-header { min-height: 4.6rem; }
         .main__container { border-radius: 0; border-inline: 0; }
         .analysis__card,
         .analysis__controls { border-left-width: 1px !important; }

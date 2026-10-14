@@ -514,9 +514,8 @@
     }
 
     @include mobile-or-tablet-screen {
-        // The responsive main-tab header is 62px tall (8px shell padding + 54px tab strip).
-        // Keep the absolutely positioned Blockly workspace below it.
-        top: 62px;
+        // Keep the absolutely positioned Blockly workspace below the compact mobile tab strip.
+        top: var(--main-tabs-header-height-mobile, 48px);
         inset-inline-start: 0;
         width: 100vw;
         height: var(--tab-content-height-mobile);
@@ -887,7 +886,7 @@
 }
 
 @include mobile-or-tablet-screen {
-    .trading-view-persistent { top: 4.15rem; }
+    .trading-view-persistent { top: var(--main-tabs-header-height-mobile, 48px); }
 }
 
 // ── Professional, theme-aware tab strip + 3D colored icons (mirrors marketfliper) ──
@@ -1073,5 +1072,21 @@
     .main__container .dc-tabs__list {
         -webkit-overflow-scrolling: touch;
         touch-action: pan-x;
+    }
+    // Keep the mobile tab cards flush under the app header and at one shared height.
+    .main__container .dc-tabs--main__tabs {
+        padding: 0 6px;
+    }
+    .main__container .dc-tabs--main__tabs .dc-tabs__list--main__tabs {
+        align-items: center;
+        gap: 6px;
+        min-height: var(--main-tabs-header-height-mobile, 48px);
+        padding: 0 6px;
+    }
+    .main__container .dc-tabs--main__tabs .dc-tabs__item {
+        min-width: 120px;
+        height: var(--main-tabs-header-height-mobile, 48px);
+        padding: 0 10px;
+        font-size: 13px !important;
     }
 }
