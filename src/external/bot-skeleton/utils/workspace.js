@@ -2,6 +2,7 @@ import { config } from '../constants/config';
 
 export const isPurchaseBlock = block =>
     block?.type === 'purchase' ||
+    block?.type === 'directional_contract_automation' ||
     block?.type === 'apollo_purchase2' ||
     block?.getField?.('PURCHASE_LIST');
 
