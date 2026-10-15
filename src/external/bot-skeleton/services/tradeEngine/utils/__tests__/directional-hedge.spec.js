@@ -139,6 +139,7 @@ describe('getDirectionalSpotOutcome', () => {
 
     it('returns null until both spot values are usable', () => {
         expect(getDirectionalSpotOutcome('CALL', 100, undefined)).toBeNull();
+        expect(getDirectionalSpotOutcome('CALL', '', 99)).toBeNull();
         expect(getDirectionalSpotOutcome('RUNLOW', 100, 99)).toBeNull();
     });
 });

@@ -274,6 +274,10 @@ export const MultiKiller: React.FC = () => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.msg_type !== 'tick') return;
+                const tickSymbol = data.tick?.symbol ?? data.tick?.underlying_symbol;
+                // The shared WebSocket carries ticks from other symbols too;
+                // those must not consume this bot's wait/delay counters.
+                if (tickSymbol && tickSymbol !== market) return;
                 const price = parseFloat(data.tick?.quote ?? data.tick?.bid ?? data.tick?.ask);
                 if (isNaN(price)) return;
 
@@ -413,7 +417,7 @@ export const MultiKiller: React.FC = () => {
             } catch {}
         });
         return unsub;
-    }, [running, log]);
+    }, [running, log, market]);
 
     // Wait for N ticks in same direction — returns true if matched, false if cancelled
     const waitForTickDirection = useCallback((target: number, gen: number): Promise<boolean> => {

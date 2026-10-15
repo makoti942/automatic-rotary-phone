@@ -160,7 +160,11 @@ export default Engine =>
             let retrySubscription;
 
             const handleInitialRetrySettlement = async (contract, locallyDeterminedLoss) => {
-                if (retryDecisionMade || contract.contract_id !== retryContractId) return;
+                if (
+                    retryDecisionMade ||
+                    String(contract.contract_id) !== String(retryContractId)
+                )
+                    return;
                 retryDecisionMade = true;
                 lastRetrySettlement = contract;
                 retrySubscription?.unsubscribe();
@@ -224,14 +228,15 @@ export default Engine =>
             };
 
             const setLocalRetryEntry = (entryQuoteValue, entryEpochValue) => {
-                const entryQuote = Number(entryQuoteValue);
+                const latestTick = retryTicks[retryTicks.length - 1];
+                const entryQuote = Number(entryQuoteValue ?? latestTick?.quote);
                 let entryEpoch = Number(entryEpochValue);
                 if (!Number.isFinite(entryQuote)) return;
                 if (!Number.isFinite(entryEpoch)) {
                     const matchingEntryTick = [...retryTicks]
                         .reverse()
                         .find(tick => Number(tick.quote) === entryQuote);
-                    entryEpoch = Number(matchingEntryTick?.epoch);
+                    entryEpoch = Number(matchingEntryTick?.epoch ?? latestTick?.epoch);
                 }
                 if (!Number.isFinite(entryEpoch)) return;
                 retryEntryQuote = entryQuote;
@@ -240,7 +245,7 @@ export default Engine =>
             };
 
             const processRetryContractMessage = contract => {
-                if (!retryContractId || contract.contract_id !== retryContractId) return;
+                if (!retryContractId || String(contract.contract_id) !== String(retryContractId)) return;
                 // Deriv can publish entry_spot and exit_spot before it sends
                 // the final is_sold/status message. Decide from those local
                 // values immediately so a loss can submit the retry without
@@ -281,12 +286,25 @@ export default Engine =>
                                 retryTicks.push({ ...data.tick, epoch, quote });
                                 if (retryTicks.length > 16) retryTicks.shift();
                             }
+                            // Some buy responses omit entry_tick/time. Use
+                            // the first buffered market tick as the local
+                            // entry reference, then compare the next tick
+                            // without waiting for Deriv settlement.
+                            if (retryContractId && !Number.isFinite(retryEntryEpoch)) {
+                                setLocalRetryEntry(quote, epoch);
+                            }
                             checkLocalRetryOutcome(retryTicks);
                         }
                         return;
                     }
                     const contract = data?.proposal_open_contract;
-                    if (!contract || contract.contract_type !== retryPlan.contract_type) return;
+                    if (
+                        !contract ||
+                        (retryContractId
+                            ? String(contract.contract_id) !== String(retryContractId)
+                            : contract.contract_type !== retryPlan.contract_type)
+                    )
+                        return;
                     if (retryContractId) {
                         processRetryContractMessage(contract);
                     } else {
