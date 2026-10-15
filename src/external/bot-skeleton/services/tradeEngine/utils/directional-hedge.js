@@ -56,6 +56,11 @@ export const isDirectionalTickLoss = (contractType, entryQuote, exitQuote) => {
     return null;
 };
 
+export const getDirectionalSpotOutcome = (contractType, entrySpot, exitSpot) => {
+    const isLoss = isDirectionalTickLoss(contractType, entrySpot, exitSpot);
+    return isLoss === null ? null : { isLoss, entrySpot: Number(entrySpot), exitSpot: Number(exitSpot) };
+};
+
 export const getDirectionalOneTickOutcome = (contractType, entryQuote, entryEpoch, ticks) => {
     const entry = Number(entryQuote);
     const entryTime = Number(entryEpoch);

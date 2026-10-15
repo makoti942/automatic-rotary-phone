@@ -1,5 +1,6 @@
 import {
     createDirectionalHedgePlan,
+    getDirectionalSpotOutcome,
     getDirectionalOneTickOutcome,
     getConfirmedTickDirection,
     isDirectionalTickLoss,
@@ -116,5 +117,28 @@ describe('getDirectionalOneTickOutcome', () => {
     it('waits for a tick after entry and rejects unsupported contracts', () => {
         expect(getDirectionalOneTickOutcome('CALL', 100, 10, [{ epoch: 10, quote: 101 }])).toBeNull();
         expect(getDirectionalOneTickOutcome('RUNLOW', 100, 10, [{ epoch: 11, quote: 101 }])).toBeNull();
+    });
+});
+
+describe('getDirectionalSpotOutcome', () => {
+    it('decides a CALL loss directly from entry and exit spots', () => {
+        expect(getDirectionalSpotOutcome('CALL', 100, 99)).toEqual({
+            isLoss: true,
+            entrySpot: 100,
+            exitSpot: 99,
+        });
+    });
+
+    it('decides a PUT win directly from entry and exit spots', () => {
+        expect(getDirectionalSpotOutcome('PUT', 100, 99)).toEqual({
+            isLoss: false,
+            entrySpot: 100,
+            exitSpot: 99,
+        });
+    });
+
+    it('returns null until both spot values are usable', () => {
+        expect(getDirectionalSpotOutcome('CALL', 100, undefined)).toBeNull();
+        expect(getDirectionalSpotOutcome('RUNLOW', 100, 99)).toBeNull();
     });
 });

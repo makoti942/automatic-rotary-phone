@@ -6,6 +6,7 @@ import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
 import {
     createDirectionalHedgePlan,
+    getDirectionalSpotOutcome,
     getDirectionalOneTickOutcome,
     getConfirmedTickDirection,
 } from '../utils/directional-hedge';
@@ -115,8 +116,9 @@ export default Engine =>
                 );
             }
 
-            const quotes = await this.getTicks();
-            const lastTick = await this.getLastTick(true);
+            // These requests are independent; do not make the signal wait for
+            // two sequential history round trips before submitting the pair.
+            const [quotes, lastTick] = await Promise.all([this.getTicks(), this.getLastTick(true)]);
             if (!lastTick || lastTick === 'MarketIsClosed') return;
             if (lastTick.epoch === this._directionalAutomationLastEpoch) return;
             this._directionalAutomationLastEpoch = lastTick.epoch;
@@ -239,6 +241,26 @@ export default Engine =>
 
             const processRetryContractMessage = contract => {
                 if (!retryContractId || contract.contract_id !== retryContractId) return;
+                // Deriv can publish entry_spot and exit_spot before it sends
+                // the final is_sold/status message. Decide from those local
+                // values immediately so a loss can submit the retry without
+                // waiting for settlement polling or a settlement event.
+                const localOutcome = getDirectionalSpotOutcome(
+                    retryPlan.contract_type,
+                    contract.entry_spot ?? contract.entry_tick,
+                    contract.exit_spot ?? contract.exit_tick
+                );
+                if (localOutcome) {
+                    void handleInitialRetrySettlement(
+                        {
+                            ...contract,
+                            profit: localOutcome.isLoss ? -1 : 1,
+                            status: localOutcome.isLoss ? 'lost' : 'won',
+                        },
+                        localOutcome.isLoss
+                    );
+                    return;
+                }
                 if (contract.is_sold) {
                     void handleInitialRetrySettlement(contract);
                     return;
