@@ -4,7 +4,7 @@ import { api_base } from '../../api/api-base';
 import ApiHelpers from '../../api/api-helpers';
 import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
-import { getConfirmedTickDirection } from '../utils/directional-hedge';
+import { createDirectionalHedgePlan, getConfirmedTickDirection } from '../utils/directional-hedge';
 import { openContractReceived, purchaseSuccessful, sell, start } from './state/actions';
 import { BEFORE_PURCHASE } from './state/constants';
 import { observer as globalObserver } from '../../../utils/observer';
@@ -125,54 +125,41 @@ export default Engine =>
             if (direction === this._directionalAutomationLastSignal) return;
             this._directionalAutomationLastSignal = direction;
 
-            const stake = key => {
-                const value = Number(settings[key]);
-                return Number.isFinite(value) && value > 0 ? value : 1;
-            };
-            const legs =
-                direction === 'rise'
-                    ? [
-                          { contract_type: 'PUT', duration: 2, stake: stake('riseToFallStake') },
-                          { contract_type: 'RUNLOW', duration: 2, stake: stake('riseToOnlyDownsStake') },
-                      ]
-                    : [
-                          { contract_type: 'RUNHIGH', duration: 2, stake: stake('fallToOnlyUpsStake') },
-                          { contract_type: 'CALL', duration: 1, stake: stake('fallToRiseStake') },
-                      ];
-
-            return this.executeDirectionalHedge(legs, direction === 'fall', stake('riseRetryStake'));
+            const plan = createDirectionalHedgePlan(direction, settings);
+            if (!plan) return;
+            return this.executeDirectionalHedge(plan.legs, plan.retry);
         }
 
-        async executeDirectionalHedge(legs, retryRiseOnLoss, retryStake) {
+        async executeDirectionalHedge(legs, retryPlan) {
             if (this.$scope?.paused_ || !Array.isArray(legs) || legs.length === 0) return;
             this.applyAlternateMarketsToCurrentTradeOptions();
             const baseOptions = { ...this.tradeOptions };
             this.vh_state.hedge_active = true;
             this.vh_state.hedge_contract_ids = new Set();
             this.vh_state.hedge_settled_ids = new Set();
-            this.vh_state.hedge_expected_count = legs.length + (retryRiseOnLoss ? 1 : 0);
+            this.vh_state.hedge_expected_count = legs.length + (retryPlan ? 1 : 0);
             this.isSold = false;
 
-            let initialRiseId;
+            let retryContractId;
             let successfulCount = 0;
             let retryDecisionMade = false;
             const earlySettlements = new Map();
             const retrySubscription =
-                retryRiseOnLoss && api_base.api
+                retryPlan && api_base.api
                     ? api_base.api.onMessage().subscribe(({ data }) => {
                           const contract = data?.proposal_open_contract;
                           if (!contract?.is_sold) return;
-                          if (initialRiseId && contract.contract_id === initialRiseId) {
-                              void handleInitialRiseSettlement(contract);
-                          } else if (!initialRiseId) {
+                          if (retryContractId && contract.contract_id === retryContractId) {
+                              void handleInitialRetrySettlement(contract);
+                          } else if (!retryContractId) {
                               earlySettlements.set(contract.contract_id, contract);
                           }
                       })
                     : null;
             if (retrySubscription) api_base.pushSubscription(retrySubscription);
 
-            const handleInitialRiseSettlement = async contract => {
-                if (retryDecisionMade || contract.contract_id !== initialRiseId) return;
+            const handleInitialRetrySettlement = async contract => {
+                if (retryDecisionMade || contract.contract_id !== retryContractId) return;
                 retryDecisionMade = true;
                 retrySubscription?.unsubscribe();
 
@@ -185,10 +172,7 @@ export default Engine =>
                 }
 
                 try {
-                    await this.buyDirectionalContract(
-                        { contract_type: 'CALL', duration: 1, stake: retryStake },
-                        baseOptions
-                    );
+                    await this.buyDirectionalContract(retryPlan, baseOptions);
                 } catch (error) {
                     this.vh_state.hedge_expected_count = Math.max(0, this.vh_state.hedge_expected_count - 1);
                     globalObserver.emit('Error', error);
@@ -206,9 +190,11 @@ export default Engine =>
                 .filter(({ outcome }) => outcome.status === 'fulfilled');
             successfulCount = successfulBuys.length;
             successfulBuys.forEach(({ outcome, leg }) => {
-                if (leg.contract_type === 'CALL') initialRiseId = outcome.value.contract_id;
+                if (retryPlan && leg.contract_type === retryPlan.contract_type) {
+                    retryContractId = outcome.value.contract_id;
+                }
             });
-            this.vh_state.hedge_expected_count = successfulCount + (initialRiseId ? 1 : 0);
+            this.vh_state.hedge_expected_count = successfulCount + (retryContractId ? 1 : 0);
 
             outcomes
                 .filter(outcome => outcome.status === 'rejected')
@@ -222,9 +208,9 @@ export default Engine =>
             }
 
             this.store.dispatch(purchaseSuccessful());
-            if (initialRiseId) {
-                const earlySettlement = earlySettlements.get(initialRiseId);
-                if (earlySettlement) void handleInitialRiseSettlement(earlySettlement);
+            if (retryContractId) {
+                const earlySettlement = earlySettlements.get(retryContractId);
+                if (earlySettlement) void handleInitialRetrySettlement(earlySettlement);
             } else {
                 retrySubscription?.unsubscribe();
             }

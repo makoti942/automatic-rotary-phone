@@ -71,10 +71,11 @@
     <statement name="BEFOREPURCHASE_STACK">
       <block type="directional_contract_automation">
         <field name="RISE_TO_FALL_STAKE">1</field>
-        <field name="RISE_TO_ONLY_DOWNS_STAKE">1</field>
-        <field name="FALL_TO_ONLY_UPS_STAKE">1</field>
+        <field name="RISE_TO_ONLY_UPS_STAKE">1</field>
+        <field name="RISE_FALL_RETRY_STAKE">1</field>
+        <field name="FALL_TO_ONLY_DOWNS_STAKE">1</field>
         <field name="FALL_TO_RISE_STAKE">1</field>
-        <field name="RISE_RETRY_STAKE">1</field>
+        <field name="FALL_RISE_RETRY_STAKE">1</field>
       </block>
     </statement>
   </block>
