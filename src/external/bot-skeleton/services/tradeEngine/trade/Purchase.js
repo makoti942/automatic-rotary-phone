@@ -6,8 +6,8 @@ import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
 import {
     createDirectionalHedgePlan,
+    getDirectionalOneTickOutcome,
     getConfirmedTickDirection,
-    isDirectionalTickLoss,
 } from '../utils/directional-hedge';
 import { openContractReceived, purchaseSuccessful, sell, start } from './state/actions';
 import { BEFORE_PURCHASE } from './state/constants';
@@ -121,7 +121,7 @@ export default Engine =>
             if (lastTick.epoch === this._directionalAutomationLastEpoch) return;
             this._directionalAutomationLastEpoch = lastTick.epoch;
 
-            const direction = getConfirmedTickDirection(quotes, 3);
+            const direction = getConfirmedTickDirection(quotes, 2);
             if (!direction) {
                 this._directionalAutomationLastSignal = '';
                 return;
@@ -154,6 +154,7 @@ export default Engine =>
             let retryEntryQuote;
             let retryEntryEpoch;
             const earlySettlements = new Map();
+            const retryTicks = [];
             let retrySubscription;
 
             const handleInitialRetrySettlement = async (contract, locallyDeterminedLoss) => {
@@ -199,39 +200,41 @@ export default Engine =>
                 if (
                     retryDecisionMade ||
                     !retryContractId ||
-                    !Number.isFinite(retryEntryEpoch) ||
-                    !Array.isArray(ticks)
+                    !Number.isFinite(retryEntryEpoch)
                 )
                     return;
-                const exitTick = ticks.find(tick => Number(tick.epoch) > retryEntryEpoch);
-                if (!exitTick) return;
-                const isLoss = isDirectionalTickLoss(
+                const outcome = getDirectionalOneTickOutcome(
                     retryPlan.contract_type,
                     retryEntryQuote,
-                    exitTick.quote
+                    retryEntryEpoch,
+                    ticks
                 );
-                if (isLoss === null) return;
+                if (!outcome) return;
                 void handleInitialRetrySettlement(
                     {
                         contract_id: retryContractId,
                         contract_type: retryPlan.contract_type,
-                        profit: isLoss ? -1 : 1,
-                        status: isLoss ? 'lost' : 'won',
+                        profit: outcome.isLoss ? -1 : 1,
+                        status: outcome.isLoss ? 'lost' : 'won',
                     },
-                    isLoss
+                    outcome.isLoss
                 );
             };
 
             const setLocalRetryEntry = (entryQuoteValue, entryEpochValue) => {
                 const entryQuote = Number(entryQuoteValue);
-                const entryEpoch = Number(entryEpochValue);
-                if (!Number.isFinite(entryQuote) || !Number.isFinite(entryEpoch)) return;
+                let entryEpoch = Number(entryEpochValue);
+                if (!Number.isFinite(entryQuote)) return;
+                if (!Number.isFinite(entryEpoch)) {
+                    const matchingEntryTick = [...retryTicks]
+                        .reverse()
+                        .find(tick => Number(tick.quote) === entryQuote);
+                    entryEpoch = Number(matchingEntryTick?.epoch);
+                }
+                if (!Number.isFinite(entryEpoch)) return;
                 retryEntryQuote = entryQuote;
                 retryEntryEpoch = entryEpoch;
-                this.$scope.ticksService
-                    .request({ symbol: baseOptions.symbol })
-                    .then(checkLocalRetryOutcome)
-                    .catch(() => {});
+                checkLocalRetryOutcome(retryTicks);
             };
 
             const processRetryContractMessage = contract => {
@@ -246,7 +249,18 @@ export default Engine =>
             if (retryPlan && api_base.api) {
                 retrySubscription = api_base.api.onMessage().subscribe(({ data }) => {
                     if (data?.msg_type === 'tick' && data.tick?.symbol === baseOptions.symbol) {
-                        checkLocalRetryOutcome([data.tick]);
+                        const epoch = Number(data.tick.epoch);
+                        const quote = Number(data.tick.quote);
+                        if (Number.isFinite(epoch) && Number.isFinite(quote)) {
+                            const duplicate = retryTicks.some(
+                                tick => Number(tick.epoch) === epoch && Number(tick.quote) === quote
+                            );
+                            if (!duplicate) {
+                                retryTicks.push({ ...data.tick, epoch, quote });
+                                if (retryTicks.length > 16) retryTicks.shift();
+                            }
+                            checkLocalRetryOutcome(retryTicks);
+                        }
                         return;
                     }
                     const contract = data?.proposal_open_contract;

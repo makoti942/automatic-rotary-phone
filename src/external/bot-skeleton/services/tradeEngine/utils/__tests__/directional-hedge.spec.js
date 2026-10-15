@@ -1,32 +1,37 @@
 import {
     createDirectionalHedgePlan,
+    getDirectionalOneTickOutcome,
     getConfirmedTickDirection,
     isDirectionalTickLoss,
 } from '../directional-hedge';
 
 describe('getConfirmedTickDirection', () => {
-    it('requires three consecutive upward movements', () => {
-        expect(getConfirmedTickDirection([100, 101, 102, 103])).toBe('rise');
+    it('confirms two consecutive upward movements', () => {
+        expect(getConfirmedTickDirection([100, 101, 102])).toBe('rise');
     });
 
-    it('requires three consecutive downward movements', () => {
-        expect(getConfirmedTickDirection([103, 102, 101, 100])).toBe('fall');
+    it('confirms two consecutive downward movements', () => {
+        expect(getConfirmedTickDirection([103, 102, 101])).toBe('fall');
     });
 
     it('does not confirm a mixed-direction sequence', () => {
-        expect(getConfirmedTickDirection([100, 101, 100, 102])).toBe('');
+        expect(getConfirmedTickDirection([100, 101, 100])).toBe('');
     });
 
     it('does not confirm an equal-price movement', () => {
-        expect(getConfirmedTickDirection([100, 101, 101, 102])).toBe('');
+        expect(getConfirmedTickDirection([100, 101, 101])).toBe('');
     });
 
-    it('requires at least four quotes for three movements', () => {
-        expect(getConfirmedTickDirection([100, 101, 102])).toBe('');
+    it('requires at least three quotes for two movements', () => {
+        expect(getConfirmedTickDirection([100, 101])).toBe('');
     });
 
     it('rejects non-numeric quotes', () => {
-        expect(getConfirmedTickDirection([100, 101, 'bad', 103])).toBe('');
+        expect(getConfirmedTickDirection([100, 101, 'bad'])).toBe('');
+    });
+
+    it('still supports an explicitly requested three-movement threshold', () => {
+        expect(getConfirmedTickDirection([100, 101, 102, 103], 3)).toBe('rise');
     });
 });
 
@@ -85,5 +90,31 @@ describe('isDirectionalTickLoss', () => {
     it('returns null for unsupported contracts or invalid tick quotes', () => {
         expect(isDirectionalTickLoss('RUNLOW', 100, 101)).toBeNull();
         expect(isDirectionalTickLoss('CALL', 100, 'invalid')).toBeNull();
+    });
+});
+
+describe('getDirectionalOneTickOutcome', () => {
+    it('uses the first tick after entry as the local expiry result', () => {
+        const outcome = getDirectionalOneTickOutcome('CALL', 100, 10, [
+            { epoch: 10, quote: 100 },
+            { epoch: 11, quote: 99 },
+            { epoch: 12, quote: 103 },
+        ]);
+
+        expect(outcome).toEqual({ exitTick: { epoch: 11, quote: 99 }, isLoss: true });
+    });
+
+    it('finds the first post-entry tick even when the entry tick is absent from the buffer', () => {
+        const outcome = getDirectionalOneTickOutcome('PUT', 100, 10, [
+            { epoch: 11, quote: 101 },
+            { epoch: 12, quote: 99 },
+        ]);
+
+        expect(outcome).toEqual({ exitTick: { epoch: 11, quote: 101 }, isLoss: true });
+    });
+
+    it('waits for a tick after entry and rejects unsupported contracts', () => {
+        expect(getDirectionalOneTickOutcome('CALL', 100, 10, [{ epoch: 10, quote: 101 }])).toBeNull();
+        expect(getDirectionalOneTickOutcome('RUNLOW', 100, 10, [{ epoch: 11, quote: 101 }])).toBeNull();
     });
 });

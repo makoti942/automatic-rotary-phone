@@ -62,7 +62,7 @@ const FreeBots = observer(() => {
             'FREE BOT WITH MARTINGALE':
                 'Simple and effective martingale bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts, doubles the stake after each loss and resets to the initial stake after a win.',
             'ONLY DOWNS FALL AUTOMATION':
-                'Directional bot that pairs 1-tick Fall with 2-tick Only Ups after three rising ticks, and 2-tick Only Downs with 1-tick Rise after three falling ticks. Each stake is configurable; retry decisions use the local tick stream for speed.',
+                'Directional bot that pairs 1-tick Fall with 2-tick Only Ups after two rising movements, and 2-tick Only Downs with 1-tick Rise after two falling movements. Each stake is configurable; retry decisions use the next live tick and are submitted immediately.',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY':
                 'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
             'NEW BOT WITH ENTRY POINT':
