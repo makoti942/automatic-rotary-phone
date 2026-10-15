@@ -4,7 +4,11 @@ import { api_base } from '../../api/api-base';
 import ApiHelpers from '../../api/api-helpers';
 import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
-import { createDirectionalHedgePlan, getConfirmedTickDirection } from '../utils/directional-hedge';
+import {
+    createDirectionalHedgePlan,
+    getConfirmedTickDirection,
+    isDirectionalTickLoss,
+} from '../utils/directional-hedge';
 import { openContractReceived, purchaseSuccessful, sell, start } from './state/actions';
 import { BEFORE_PURCHASE } from './state/constants';
 import { observer as globalObserver } from '../../../utils/observer';
@@ -142,59 +146,142 @@ export default Engine =>
 
             let retryContractId;
             let successfulCount = 0;
+            let initialPurchasesComplete = false;
+            let retryWasRequested = false;
+            let retryPurchaseFailed = false;
+            let lastRetrySettlement;
             let retryDecisionMade = false;
+            let retryEntryQuote;
+            let retryEntryEpoch;
             const earlySettlements = new Map();
-            const retrySubscription =
-                retryPlan && api_base.api
-                    ? api_base.api.onMessage().subscribe(({ data }) => {
-                          const contract = data?.proposal_open_contract;
-                          if (!contract?.is_sold) return;
-                          if (retryContractId && contract.contract_id === retryContractId) {
-                              void handleInitialRetrySettlement(contract);
-                          } else if (!retryContractId) {
-                              earlySettlements.set(contract.contract_id, contract);
-                          }
-                      })
-                    : null;
-            if (retrySubscription) api_base.pushSubscription(retrySubscription);
+            let retrySubscription;
 
-            const handleInitialRetrySettlement = async contract => {
+            const handleInitialRetrySettlement = async (contract, locallyDeterminedLoss) => {
                 if (retryDecisionMade || contract.contract_id !== retryContractId) return;
                 retryDecisionMade = true;
+                lastRetrySettlement = contract;
                 retrySubscription?.unsubscribe();
 
-                if (!(Number(contract.profit) < 0 || contract.status === 'lost')) {
-                    this.vh_state.hedge_expected_count = successfulCount;
-                    if (this.vh_state.hedge_settled_ids.size >= successfulCount) {
+                const isLoss =
+                    typeof locallyDeterminedLoss === 'boolean'
+                        ? locallyDeterminedLoss
+                        : Number(contract.profit) < 0 || contract.status === 'lost';
+                if (!isLoss) {
+                    this.vh_state.hedge_expected_count = initialPurchasesComplete ? successfulCount : legs.length;
+                    if (
+                        initialPurchasesComplete &&
+                        this.vh_state.hedge_settled_ids.size >= successfulCount
+                    ) {
                         this.completeHedge?.(contract);
                     }
                     return;
                 }
 
+                retryWasRequested = true;
                 try {
                     await this.buyDirectionalContract(retryPlan, baseOptions);
                 } catch (error) {
-                    this.vh_state.hedge_expected_count = Math.max(0, this.vh_state.hedge_expected_count - 1);
+                    retryPurchaseFailed = true;
+                    if (initialPurchasesComplete) {
+                        this.vh_state.hedge_expected_count = Math.max(0, this.vh_state.hedge_expected_count - 1);
+                    }
                     globalObserver.emit('Error', error);
-                    if (this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count) {
+                    if (
+                        initialPurchasesComplete &&
+                        this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count
+                    ) {
                         this.completeHedge?.(contract);
                     }
                 }
             };
 
+            const checkLocalRetryOutcome = ticks => {
+                if (
+                    retryDecisionMade ||
+                    !retryContractId ||
+                    !Number.isFinite(retryEntryEpoch) ||
+                    !Array.isArray(ticks)
+                )
+                    return;
+                const exitTick = ticks.find(tick => Number(tick.epoch) > retryEntryEpoch);
+                if (!exitTick) return;
+                const isLoss = isDirectionalTickLoss(
+                    retryPlan.contract_type,
+                    retryEntryQuote,
+                    exitTick.quote
+                );
+                if (isLoss === null) return;
+                void handleInitialRetrySettlement(
+                    {
+                        contract_id: retryContractId,
+                        contract_type: retryPlan.contract_type,
+                        profit: isLoss ? -1 : 1,
+                        status: isLoss ? 'lost' : 'won',
+                    },
+                    isLoss
+                );
+            };
+
+            const setLocalRetryEntry = (entryQuoteValue, entryEpochValue) => {
+                const entryQuote = Number(entryQuoteValue);
+                const entryEpoch = Number(entryEpochValue);
+                if (!Number.isFinite(entryQuote) || !Number.isFinite(entryEpoch)) return;
+                retryEntryQuote = entryQuote;
+                retryEntryEpoch = entryEpoch;
+                this.$scope.ticksService
+                    .request({ symbol: baseOptions.symbol })
+                    .then(checkLocalRetryOutcome)
+                    .catch(() => {});
+            };
+
+            const processRetryContractMessage = contract => {
+                if (!retryContractId || contract.contract_id !== retryContractId) return;
+                if (contract.is_sold) {
+                    void handleInitialRetrySettlement(contract);
+                    return;
+                }
+                setLocalRetryEntry(contract.entry_tick, contract.entry_tick_time);
+            };
+
+            if (retryPlan && api_base.api) {
+                retrySubscription = api_base.api.onMessage().subscribe(({ data }) => {
+                    if (data?.msg_type === 'tick' && data.tick?.symbol === baseOptions.symbol) {
+                        checkLocalRetryOutcome([data.tick]);
+                        return;
+                    }
+                    const contract = data?.proposal_open_contract;
+                    if (!contract || contract.contract_type !== retryPlan.contract_type) return;
+                    if (retryContractId) {
+                        processRetryContractMessage(contract);
+                    } else {
+                        earlySettlements.set(contract.contract_id, contract);
+                    }
+                });
+                api_base.pushSubscription(retrySubscription);
+            }
+
             const outcomes = await Promise.allSettled(
-                legs.map(leg => this.buyDirectionalContract(leg, baseOptions))
+                legs.map(leg =>
+                    this.buyDirectionalContract(leg, baseOptions).then(buy => {
+                        if (retryPlan && leg.contract_type === retryPlan.contract_type) {
+                            retryContractId = buy.contract_id;
+                            setLocalRetryEntry(buy.entry_tick, buy.entry_tick_time);
+                            const earlySettlement = earlySettlements.get(retryContractId);
+                            if (earlySettlement) {
+                                earlySettlements.delete(retryContractId);
+                                processRetryContractMessage(earlySettlement);
+                            }
+                        }
+                        return buy;
+                    })
+                )
             );
             const successfulBuys = outcomes
                 .map((outcome, index) => ({ outcome, leg: legs[index] }))
                 .filter(({ outcome }) => outcome.status === 'fulfilled');
             successfulCount = successfulBuys.length;
-            successfulBuys.forEach(({ outcome, leg }) => {
-                if (retryPlan && leg.contract_type === retryPlan.contract_type) {
-                    retryContractId = outcome.value.contract_id;
-                }
-            });
-            this.vh_state.hedge_expected_count = successfulCount + (retryContractId ? 1 : 0);
+            initialPurchasesComplete = true;
+            this.vh_state.hedge_expected_count = successfulCount + (retryWasRequested && !retryPurchaseFailed ? 1 : 0);
 
             outcomes
                 .filter(outcome => outcome.status === 'rejected')
@@ -208,11 +295,11 @@ export default Engine =>
             }
 
             this.store.dispatch(purchaseSuccessful());
-            if (retryContractId) {
-                const earlySettlement = earlySettlements.get(retryContractId);
-                if (earlySettlement) void handleInitialRetrySettlement(earlySettlement);
-            } else {
+            if (!retryContractId) {
                 retrySubscription?.unsubscribe();
+            }
+            if (this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count) {
+                this.completeHedge?.(lastRetrySettlement || this.data.contract);
             }
         }
 
@@ -234,6 +321,7 @@ export default Engine =>
 
             this.vh_state.hedge_contract_ids.add(buy.contract_id);
             this.contractId = buy.contract_id;
+            api_base.api.send({ proposal_open_contract: 1, contract_id: buy.contract_id }).catch(() => {});
             contractStatus({
                 id: 'contract.purchase_received',
                 data: buy.transaction_id,

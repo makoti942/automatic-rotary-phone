@@ -61,6 +61,8 @@ const FreeBots = observer(() => {
                 'Simple and effective Only Ups and Downs bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts with a 2x martingale on losses and stake reset on wins.',
             'FREE BOT WITH MARTINGALE':
                 'Simple and effective martingale bot on Volatility 100 (1s). Trades 1-tick RISE/FALL contracts, doubles the stake after each loss and resets to the initial stake after a win.',
+            'ONLY DOWNS FALL AUTOMATION':
+                'Directional bot that pairs 1-tick Fall with 2-tick Only Ups after three rising ticks, and 2-tick Only Downs with 1-tick Rise after three falling ticks. Each stake is configurable; retry decisions use the local tick stream for speed.',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY':
                 'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
             'NEW BOT WITH ENTRY POINT':
@@ -101,6 +103,7 @@ const FreeBots = observer(() => {
             'MAKOTIV3RISE FALL': '/robot-images/bot14.png',
             'MAKOTI RISE/FALL V4': '/robot-images/bot15.png',
             'FREE BOT WITH MARTINGALE': '/robot-images/bot7.png',
+            'ONLY DOWNS FALL AUTOMATION': '/robot-images/bot10.png',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/bot9.png',
             'NEW BOT WITH ENTRY POINT': '/robot-images/bot13.png',
             'SPLIT MARTINGALE BOT PREMIUM': '/robot-images/bot15.png',
@@ -137,6 +140,7 @@ const FreeBots = observer(() => {
             'MAKOTIV3RISE_FALL.xml',
             'MAKOTIRISE_FALLV4.xml',
             'FREE BOT WITH MARTINGALE.xml',
+            'ONLY_DOWNS_FALL_AUTOMATION.xml',
             'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
             'NEW_BOT_WITH_ENTRY_POINT.xml',
             'SPLIT_MARTINGALE_BOT_PREMIUM.xml',
@@ -209,6 +213,7 @@ const FreeBots = observer(() => {
                     const botName = (item.name || item.file.replace('.xml', '')).replace(/[_-]/g, ' ').replace('MAKOTIRISE FALLV4', 'MAKOTI RISE/FALL V4');
                     const isSuperPremium = botName.includes('POVERTY KILLER') || botName.includes('SPLIT MARTINGALE');
                     const isPremiumPlus = botName.includes('MAKOTI RISE/FALL V4');
+                    const isOnlyDownsFallAutomation = botName === 'ONLY DOWNS FALL AUTOMATION';
                     return {
                         name: botName,
                         description: getBotDescription(botName),
@@ -216,8 +221,20 @@ const FreeBots = observer(() => {
                         strategy: 'Multi-Strategy',
                         features: DEFAULT_FEATURES,
                         xml: '',
-                        badge_text: isSuperPremium ? 'SUPER PREMIUM BOT' : isPremiumPlus ? 'PREMIUM PLUS' : 'PREMIUM',
-                        badge_class: isSuperPremium ? 'super-premium' : isPremiumPlus ? 'premium-plus' : 'premium',
+                        badge_text: isOnlyDownsFallAutomation
+                            ? 'FREE BOT'
+                            : isSuperPremium
+                              ? 'SUPER PREMIUM BOT'
+                              : isPremiumPlus
+                                ? 'PREMIUM PLUS'
+                                : 'PREMIUM',
+                        badge_class: isOnlyDownsFallAutomation
+                            ? 'free'
+                            : isSuperPremium
+                              ? 'super-premium'
+                              : isPremiumPlus
+                                ? 'premium-plus'
+                                : 'premium',
                     };
                 });
                 setAvailableBots(skeletonBots);

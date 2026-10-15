@@ -1,4 +1,8 @@
-import { createDirectionalHedgePlan, getConfirmedTickDirection } from '../directional-hedge';
+import {
+    createDirectionalHedgePlan,
+    getConfirmedTickDirection,
+    isDirectionalTickLoss,
+} from '../directional-hedge';
 
 describe('getConfirmedTickDirection', () => {
     it('requires three consecutive upward movements', () => {
@@ -62,5 +66,24 @@ describe('createDirectionalHedgePlan', () => {
     it('defaults invalid stakes safely and rejects unknown directions', () => {
         expect(createDirectionalHedgePlan('rise', { riseToFallStake: 0 }).legs[0].stake).toBe(1);
         expect(createDirectionalHedgePlan('sideways')).toBeNull();
+    });
+});
+
+describe('isDirectionalTickLoss', () => {
+    it('recognizes a CALL loss when the exit tick is not higher than the entry', () => {
+        expect(isDirectionalTickLoss('CALL', 100, 99)).toBe(true);
+        expect(isDirectionalTickLoss('CALL', 100, 100)).toBe(true);
+        expect(isDirectionalTickLoss('CALL', 100, 101)).toBe(false);
+    });
+
+    it('recognizes a PUT loss when the exit tick is not lower than the entry', () => {
+        expect(isDirectionalTickLoss('PUT', 100, 101)).toBe(true);
+        expect(isDirectionalTickLoss('PUT', 100, 100)).toBe(true);
+        expect(isDirectionalTickLoss('PUT', 100, 99)).toBe(false);
+    });
+
+    it('returns null for unsupported contracts or invalid tick quotes', () => {
+        expect(isDirectionalTickLoss('RUNLOW', 100, 101)).toBeNull();
+        expect(isDirectionalTickLoss('CALL', 100, 'invalid')).toBeNull();
     });
 });

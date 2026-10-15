@@ -121,7 +121,7 @@ export default Engine =>
                 } catch (e) {
                     /* noop */
                 }
-            }, 5000);
+            }, this.vh_state?.hedge_active ? 500 : 5000);
         }
 
         stopSettlementPolling() {

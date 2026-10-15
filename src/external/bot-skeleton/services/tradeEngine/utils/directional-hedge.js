@@ -46,3 +46,12 @@ export const createDirectionalHedgePlan = (direction, stakes = {}) => {
 
     return null;
 };
+
+export const isDirectionalTickLoss = (contractType, entryQuote, exitQuote) => {
+    const entry = Number(entryQuote);
+    const exit = Number(exitQuote);
+    if (!Number.isFinite(entry) || !Number.isFinite(exit)) return null;
+    if (contractType === 'CALL') return exit <= entry;
+    if (contractType === 'PUT') return exit >= entry;
+    return null;
+};
