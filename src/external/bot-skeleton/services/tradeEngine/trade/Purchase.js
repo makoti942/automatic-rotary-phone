@@ -4,6 +4,7 @@ import { api_base } from '../../api/api-base';
 import ApiHelpers from '../../api/api-helpers';
 import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
+import { getConfirmedTickDirection } from '../utils/directional-hedge';
 import { openContractReceived, purchaseSuccessful, sell, start } from './state/actions';
 import { BEFORE_PURCHASE } from './state/constants';
 import { observer as globalObserver } from '../../../utils/observer';
@@ -100,6 +101,167 @@ export default Engine =>
                 this.renewProposalsOnPurchase();
             }
             return results;
+        }
+
+        async directionalHedgePurchase(settings = {}) {
+            if (this.$scope?.paused_ || this.store.getState().scope !== BEFORE_PURCHASE) return;
+            if (this.vh_state?.enabled && this.vh_state?.is_virtual) {
+                throw new Error(
+                    'Directional paired-contract automation requires live purchase mode. Disable virtual trading or use a demo account.'
+                );
+            }
+
+            const quotes = await this.getTicks();
+            const lastTick = await this.getLastTick(true);
+            if (!lastTick || lastTick === 'MarketIsClosed') return;
+            if (lastTick.epoch === this._directionalAutomationLastEpoch) return;
+            this._directionalAutomationLastEpoch = lastTick.epoch;
+
+            const direction = getConfirmedTickDirection(quotes, 3);
+            if (!direction) {
+                this._directionalAutomationLastSignal = '';
+                return;
+            }
+            if (direction === this._directionalAutomationLastSignal) return;
+            this._directionalAutomationLastSignal = direction;
+
+            const stake = key => {
+                const value = Number(settings[key]);
+                return Number.isFinite(value) && value > 0 ? value : 1;
+            };
+            const legs =
+                direction === 'rise'
+                    ? [
+                          { contract_type: 'PUT', duration: 2, stake: stake('riseToFallStake') },
+                          { contract_type: 'RUNLOW', duration: 2, stake: stake('riseToOnlyDownsStake') },
+                      ]
+                    : [
+                          { contract_type: 'RUNHIGH', duration: 2, stake: stake('fallToOnlyUpsStake') },
+                          { contract_type: 'CALL', duration: 1, stake: stake('fallToRiseStake') },
+                      ];
+
+            return this.executeDirectionalHedge(legs, direction === 'fall', stake('riseRetryStake'));
+        }
+
+        async executeDirectionalHedge(legs, retryRiseOnLoss, retryStake) {
+            if (this.$scope?.paused_ || !Array.isArray(legs) || legs.length === 0) return;
+            this.applyAlternateMarketsToCurrentTradeOptions();
+            const baseOptions = { ...this.tradeOptions };
+            this.vh_state.hedge_active = true;
+            this.vh_state.hedge_contract_ids = new Set();
+            this.vh_state.hedge_settled_ids = new Set();
+            this.vh_state.hedge_expected_count = legs.length + (retryRiseOnLoss ? 1 : 0);
+            this.isSold = false;
+
+            let initialRiseId;
+            let successfulCount = 0;
+            let retryDecisionMade = false;
+            const earlySettlements = new Map();
+            const retrySubscription =
+                retryRiseOnLoss && api_base.api
+                    ? api_base.api.onMessage().subscribe(({ data }) => {
+                          const contract = data?.proposal_open_contract;
+                          if (!contract?.is_sold) return;
+                          if (initialRiseId && contract.contract_id === initialRiseId) {
+                              void handleInitialRiseSettlement(contract);
+                          } else if (!initialRiseId) {
+                              earlySettlements.set(contract.contract_id, contract);
+                          }
+                      })
+                    : null;
+            if (retrySubscription) api_base.pushSubscription(retrySubscription);
+
+            const handleInitialRiseSettlement = async contract => {
+                if (retryDecisionMade || contract.contract_id !== initialRiseId) return;
+                retryDecisionMade = true;
+                retrySubscription?.unsubscribe();
+
+                if (!(Number(contract.profit) < 0 || contract.status === 'lost')) {
+                    this.vh_state.hedge_expected_count = successfulCount;
+                    if (this.vh_state.hedge_settled_ids.size >= successfulCount) {
+                        this.completeHedge?.(contract);
+                    }
+                    return;
+                }
+
+                try {
+                    await this.buyDirectionalContract(
+                        { contract_type: 'CALL', duration: 1, stake: retryStake },
+                        baseOptions
+                    );
+                } catch (error) {
+                    this.vh_state.hedge_expected_count = Math.max(0, this.vh_state.hedge_expected_count - 1);
+                    globalObserver.emit('Error', error);
+                    if (this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count) {
+                        this.completeHedge?.(contract);
+                    }
+                }
+            };
+
+            const outcomes = await Promise.allSettled(
+                legs.map(leg => this.buyDirectionalContract(leg, baseOptions))
+            );
+            const successfulBuys = outcomes
+                .map((outcome, index) => ({ outcome, leg: legs[index] }))
+                .filter(({ outcome }) => outcome.status === 'fulfilled');
+            successfulCount = successfulBuys.length;
+            successfulBuys.forEach(({ outcome, leg }) => {
+                if (leg.contract_type === 'CALL') initialRiseId = outcome.value.contract_id;
+            });
+            this.vh_state.hedge_expected_count = successfulCount + (initialRiseId ? 1 : 0);
+
+            outcomes
+                .filter(outcome => outcome.status === 'rejected')
+                .forEach(outcome => globalObserver.emit('Error', outcome.reason));
+
+            if (successfulCount === 0) {
+                this.vh_state.hedge_active = false;
+                this.vh_state.hedge_expected_count = 0;
+                retrySubscription?.unsubscribe();
+                throw new Error('Neither contract in the directional pair could be purchased.');
+            }
+
+            this.store.dispatch(purchaseSuccessful());
+            if (initialRiseId) {
+                const earlySettlement = earlySettlements.get(initialRiseId);
+                if (earlySettlement) void handleInitialRiseSettlement(earlySettlement);
+            } else {
+                retrySubscription?.unsubscribe();
+            }
+        }
+
+        async buyDirectionalContract(leg, baseOptions) {
+            if (this.$scope?.paused_) throw new Error('Bot stopped before the directional contract was purchased.');
+            const options = {
+                ...baseOptions,
+                amount: leg.stake,
+                basis: 'stake',
+                tradeType: 'risefall',
+                duration: leg.duration,
+                duration_unit: 't',
+            };
+            const tradeOption = tradeOptionToBuy(leg.contract_type, options);
+            contractStatus({ id: 'contract.purchase_sent', data: options.amount });
+            const response = await doUntilDone(() => api_base.api.send(tradeOption));
+            const { buy } = response;
+            if (!buy?.contract_id) throw new Error(`The ${leg.contract_type} contract purchase was not confirmed.`);
+
+            this.vh_state.hedge_contract_ids.add(buy.contract_id);
+            this.contractId = buy.contract_id;
+            contractStatus({
+                id: 'contract.purchase_received',
+                data: buy.transaction_id,
+                buy,
+            });
+            log(LogTypes.PURCHASE, { transaction_id: buy.transaction_id });
+            info({
+                accountID: this.accountInfo.loginid,
+                totalRuns: this.updateAndReturnTotalRuns(),
+                transaction_ids: { buy: buy.transaction_id },
+                contract_type: leg.contract_type,
+                buy_price: buy.buy_price,
+            });
+            return buy;
         }
 
         async virtualPurchase(contract_type) {
