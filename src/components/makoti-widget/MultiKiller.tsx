@@ -57,6 +57,11 @@ let _buySeq = 0;
 
 type MultiKillerMode = 'standard' | 'bot15';
 type MarketTick = { quote: number; epoch: number };
+type Bot15RiskConfig = {
+    maxRoundStake: number;
+    maxSessionLoss: number;
+    cooldownTicks: number;
+};
 
 const higherLowerBarrierCache = new Map<string, Promise<number | null>>();
 
@@ -127,6 +132,11 @@ export const MultiKiller: React.FC = () => {
         fallToRise: 1,
         fallRiseRetry: 1,
     });
+    const [bot15Risk, setBot15Risk] = useState<Bot15RiskConfig>(cfg.bot15Risk || {
+        maxRoundStake: 3,
+        maxSessionLoss: 10,
+        cooldownTicks: 3,
+    });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
     const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
@@ -140,9 +150,9 @@ export const MultiKiller: React.FC = () => {
     // Persist config to localStorage
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes,
+            mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes, bot15Risk,
         }));
-    }, [mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes]);
+    }, [mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes, bot15Risk]);
 
     // Auto-sync paired contracts: rise↔fall share delays, ups↔downs share stakes
     useEffect(() => {
@@ -196,6 +206,10 @@ export const MultiKiller: React.FC = () => {
     const bot15ActiveRef = useRef(false);
     const bot15SignalResolveRef = useRef<((direction: Bot15Direction | null) => void) | null>(null);
     const bot15TickHandlerRef = useRef<((tick: MarketTick) => void) | null>(null);
+    const bot15RiskRef = useRef<Bot15RiskConfig>(bot15Risk);
+    const bot15CooldownRef = useRef(0);
+    const bot15SessionProfitRef = useRef(0);
+    const bot15RiskStopRef = useRef(false);
 
     // Round lifecycle
     const expectedSettlementsRef = useRef(0);
@@ -217,6 +231,7 @@ export const MultiKiller: React.FC = () => {
     useEffect(() => { hlOffsetRef.current = hlOffset; }, [hlOffset]);
     useEffect(() => { tickDirModeRef.current = tickDirMode; }, [tickDirMode]);
     useEffect(() => { accuracyRef.current = accuracy; }, [accuracy]);
+    useEffect(() => { bot15RiskRef.current = bot15Risk; }, [bot15Risk]);
 
     const showTickDir = selected.some(s => USES_TICK_DIR[s]);
     const hasDirectional = selected.some(s => ['rise', 'fall', 'higher', 'lower', 'ups', 'downs'].includes(s));
@@ -313,7 +328,8 @@ export const MultiKiller: React.FC = () => {
 
                 // Bot 15 uses the same two-consecutive-movement signal as the
                 // original bot, but keeps the decision inside this widget.
-                if (bot15ActiveRef.current && bot15SignalResolveRef.current) {
+                if (bot15CooldownRef.current > 0) bot15CooldownRef.current--;
+                if (bot15ActiveRef.current && bot15CooldownRef.current === 0 && bot15SignalResolveRef.current) {
                     const direction = detectBot15Direction(recentPricesRef.current);
                     if (direction) {
                         const resolve = bot15SignalResolveRef.current;
@@ -484,7 +500,7 @@ export const MultiKiller: React.FC = () => {
     }, []);
 
     // Buy a single contract
-    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy; entryQuote?: number; entryEpoch?: number } | null> => {
+    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number, roundId: number, captureEntry = false): Promise<{ cid: string; strategy: MultiKillerStrategy; entryQuote?: number; entryEpoch?: number } | null> => {
         const ws = window._newSystemWS;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             log('❌ WS not open');
@@ -574,7 +590,20 @@ export const MultiKiller: React.FC = () => {
                     log(`⚠️ ${LABELS[strategy]}: no contract_id`);
                     return null;
                 }
-                ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+                ws.send(JSON.stringify({ proposal_open_contract: 1, contract_id: cid, subscribe: 1 }));
+                let actualEntryQuote = Number(buyResp?.buy?.entry_tick);
+                let actualEntryEpoch = Number(buyResp?.buy?.entry_tick_time);
+                if (captureEntry) {
+                    try {
+                        const pocResponse: any = await Promise.race([
+                            sendViaNewSystemWithPromise({ proposal_open_contract: 1, contract_id: cid }),
+                            new Promise(resolve => setTimeout(() => resolve(null), 500)),
+                        ]);
+                        const poc = pocResponse?.proposal_open_contract;
+                        if (Number.isFinite(Number(poc?.entry_tick))) actualEntryQuote = Number(poc.entry_tick);
+                        if (Number.isFinite(Number(poc?.entry_tick_time))) actualEntryEpoch = Number(poc.entry_tick_time);
+                    } catch {}
+                }
                 try {
                     transactions.onBotContractEvent({
                         contract_id: Number(cid),
@@ -596,11 +625,11 @@ export const MultiKiller: React.FC = () => {
                 return {
                     cid,
                     strategy,
-                    entryQuote: Number.isFinite(Number(buyResp?.buy?.entry_tick))
-                        ? Number(buyResp?.buy?.entry_tick)
+                    entryQuote: Number.isFinite(actualEntryQuote)
+                        ? actualEntryQuote
                         : fallbackEntryTick?.quote,
-                    entryEpoch: Number.isFinite(Number(buyResp?.buy?.entry_tick_time))
-                        ? Number(buyResp?.buy?.entry_tick_time)
+                    entryEpoch: Number.isFinite(actualEntryEpoch)
+                        ? actualEntryEpoch
                         : fallbackEntryTick?.epoch,
                 };
             } catch (e: any) {
@@ -636,7 +665,7 @@ export const MultiKiller: React.FC = () => {
                 if (idx !== -1) buyListenersRef.current.splice(idx, 1);
             };
 
-            const handler = (event: any) => {
+            const handler = async (event: any) => {
                 try {
                     const data = JSON.parse(event.detail?.data ?? event.data);
                     if (data.req_id !== reqId) return;
@@ -650,7 +679,20 @@ export const MultiKiller: React.FC = () => {
 
                     const cid = String(data.buy?.contract_id ?? data.contract_id);
                     if (cid && cid !== 'undefined') {
-                        ws.send(JSON.stringify({ proposal_open_contract: 1, subscribe: 1 }));
+                        ws.send(JSON.stringify({ proposal_open_contract: 1, contract_id: cid, subscribe: 1 }));
+                        let actualEntryQuote = Number(data.buy?.entry_tick);
+                        let actualEntryEpoch = Number(data.buy?.entry_tick_time);
+                        if (captureEntry) {
+                            try {
+                                const pocResponse: any = await Promise.race([
+                                    sendViaNewSystemWithPromise({ proposal_open_contract: 1, contract_id: cid }),
+                                    new Promise(resolve => setTimeout(() => resolve(null), 500)),
+                                ]);
+                                const poc = pocResponse?.proposal_open_contract;
+                                if (Number.isFinite(Number(poc?.entry_tick))) actualEntryQuote = Number(poc.entry_tick);
+                                if (Number.isFinite(Number(poc?.entry_tick_time))) actualEntryEpoch = Number(poc.entry_tick_time);
+                            } catch {}
+                        }
                         try {
                             transactions.onBotContractEvent({
                                 contract_id: Number(cid),
@@ -670,11 +712,11 @@ export const MultiKiller: React.FC = () => {
                         resolve({
                             cid,
                             strategy,
-                            entryQuote: Number.isFinite(Number(data.buy?.entry_tick))
-                                ? Number(data.buy?.entry_tick)
+                            entryQuote: Number.isFinite(actualEntryQuote)
+                                ? actualEntryQuote
                                 : fallbackEntryTick?.quote,
-                            entryEpoch: Number.isFinite(Number(data.buy?.entry_tick_time))
-                                ? Number(data.buy?.entry_tick_time)
+                            entryEpoch: Number.isFinite(actualEntryEpoch)
+                                ? actualEntryEpoch
                                 : fallbackEntryTick?.epoch,
                         });
                     } else {
@@ -716,9 +758,23 @@ export const MultiKiller: React.FC = () => {
             bot15SignalResolveRef.current = resolve;
         });
         if (genRef.current !== gen || !runningRef.current || !direction) return;
+        if (bot15RiskStopRef.current) {
+            runningRef.current = false;
+            setRunning(false);
+            setRunPhase('idle');
+            return;
+        }
 
         const plan = createBot15Plan(direction, bot15Stakes);
-        const totalCost = plan.legs.reduce((sum, leg) => sum + leg.stake, 0);
+        const totalCost = plan.legs.reduce((sum, leg) => sum + leg.stake, 0) + plan.retry.stake;
+        const maxRoundStake = Number(bot15RiskRef.current.maxRoundStake);
+        if (Number.isFinite(maxRoundStake) && maxRoundStake > 0 && totalCost > maxRoundStake) {
+            log(`⏭️ Bot 15 ${direction.toUpperCase()} skipped: worst-case stake $${totalCost.toFixed(2)} exceeds round cap $${maxRoundStake.toFixed(2)}`);
+            bot15CooldownRef.current = Math.max(0, Math.floor(Number(bot15RiskRef.current.cooldownTicks) || 0));
+            await new Promise<void>(resolve => setTimeout(resolve, 1000));
+            if (genRef.current === gen && runningRef.current) bot15RoundRef.current?.();
+            return;
+        }
         log(`🤖 Bot 15 ${direction.toUpperCase()}: sending Fall/Rise pair = $${totalCost.toFixed(2)}`);
         buyPhaseDoneRef.current = false;
         expectedSettlementsRef.current = 0;
@@ -728,7 +784,7 @@ export const MultiKiller: React.FC = () => {
         setSettleProgress({ done: 0, total: 0 });
 
         const results = await Promise.all(plan.legs.map(async (leg, index) => {
-            const result = await buyOne(leg.strategy, leg.stake, myRound);
+            const result = await buyOne(leg.strategy, leg.stake, myRound, true);
             setBuyProgress(prev => ({ ...prev, done: prev.done + 1 }));
             return { leg, result, index };
         }));
@@ -822,6 +878,7 @@ export const MultiKiller: React.FC = () => {
         });
         bot15TickHandlerRef.current = null;
         if (genRef.current !== gen || !runningRef.current) return;
+        bot15CooldownRef.current = Math.max(0, Math.floor(Number(bot15RiskRef.current.cooldownTicks) || 0));
         log('🔄 Bot 15 round complete — next signal in 5s');
         await new Promise<void>(resolve => setTimeout(resolve, 5000));
         if (genRef.current === gen && runningRef.current) bot15RoundRef.current?.();
@@ -845,6 +902,14 @@ export const MultiKiller: React.FC = () => {
 
                 const icon = profit >= 0 ? '✅' : '❌';
                 log(`${icon} ${LABELS[t.strategy]}: ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} (${t.stake}$ bet)`);
+                if (mode === 'bot15') {
+                    bot15SessionProfitRef.current += profit;
+                    const maxSessionLoss = Number(bot15RiskRef.current.maxSessionLoss);
+                    if (Number.isFinite(maxSessionLoss) && maxSessionLoss > 0 && bot15SessionProfitRef.current <= -maxSessionLoss) {
+                        bot15RiskStopRef.current = true;
+                        log(`🛑 Bot 15 stopped: session loss limit reached ($${bot15SessionProfitRef.current.toFixed(2)})`);
+                    }
+                }
                 tradesRef.current.splice(idx, 1);
                 settledCountRef.current++;
                 setSettleProgress({ done: settledCountRef.current, total: expectedSettlementsRef.current });
@@ -875,7 +940,7 @@ export const MultiKiller: React.FC = () => {
             } catch {}
         });
         return unsub;
-    }, [log, transactions, market]);
+    }, [log, mode, transactions, market]);
 
     const runRoundRef = useRef<() => Promise<void>>();
 
@@ -1007,6 +1072,9 @@ export const MultiKiller: React.FC = () => {
         genRef.current++;
         bot15ActiveRef.current = false;
         bot15TickHandlerRef.current = null;
+        bot15CooldownRef.current = 0;
+        bot15SessionProfitRef.current = 0;
+        bot15RiskStopRef.current = false;
         recentTicksRef.current = [];
         tradesRef.current = [];
         pendingDelaysRef.current = [];
@@ -1568,6 +1636,21 @@ Two falling ticks → Only Downs 2t + Rise 1t; a local Rise loss sends an immedi
                                 <input className='mw-input' type='number' min='0.35' step='0.01'
                                     value={bot15Stakes[key]}
                                     onChange={e => setBot15Stakes(p => ({ ...p, [key]: Number(e.target.value) }))} />
+                            </div>
+                        ))}
+                    </div>
+                    <div className='mw-killer__fields'>
+                        {([
+                            ['maxRoundStake', 'Max Round Exposure'],
+                            ['maxSessionLoss', 'Session Loss Stop'],
+                            ['cooldownTicks', 'Cooldown Ticks'],
+                        ] as const).map(([key, label]) => (
+                            <div key={key} className='mw-field mw-field--grow'>
+                                <label className='mw-label'>{label}</label>
+                                <input className='mw-input' type='number' min='0' step={key === 'cooldownTicks' ? '1' : '0.01'}
+                                    value={bot15Risk[key]}
+                                    onChange={e => setBot15Risk(p => ({ ...p, [key]: Number(e.target.value) }))} />
+                                <span className='mw-hint'>{key === 'cooldownTicks' ? 'ticks between rounds' : '$0 = off'}</span>
                             </div>
                         ))}
                     </div>
