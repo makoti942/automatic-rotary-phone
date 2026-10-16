@@ -2,6 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES } from '@/components/makoti-widget/makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
+import { createBot15Plan, detectBot15Direction, isBot15DirectionalLoss, type Bot15Direction, type Bot15StakeConfig } from './bot15-strategy';
 import './makoti-widget.scss';
 
 type MultiKillerStrategy =
@@ -54,6 +55,9 @@ const USES_TICK_DIR: Record<MultiKillerStrategy, boolean> = {
 
 let _buySeq = 0;
 
+type MultiKillerMode = 'standard' | 'bot15';
+type MarketTick = { quote: number; epoch: number };
+
 const higherLowerBarrierCache = new Map<string, Promise<number | null>>();
 
 async function getHigherLowerBarrierFloor(symbol: string): Promise<number | null> {
@@ -100,6 +104,7 @@ export const MultiKiller: React.FC = () => {
     };
     const cfg = loadConfig();
 
+    const [mode, setMode] = useState<MultiKillerMode>(cfg.mode || 'standard');
     const [market, setMarket] = useState(cfg.market || 'R_100');
     const [selected, setSelected] = useState<MultiKillerStrategy[]>(cfg.selected || []);
     const [stakes, setStakes] = useState<Record<string, string>>(cfg.stakes || {});
@@ -114,6 +119,14 @@ export const MultiKiller: React.FC = () => {
     const [tickDirection, setTickDirection] = useState(cfg.tickDirection || '0');
     const [tickDirMode, setTickDirMode] = useState<'any' | 'ups' | 'downs'>(cfg.tickDirMode || 'any');
     const [accuracy, setAccuracy] = useState(cfg.accuracy ?? false);
+    const [bot15Stakes, setBot15Stakes] = useState<Bot15StakeConfig>(cfg.bot15Stakes || {
+        riseToFall: 1,
+        riseToOnlyUps: 1,
+        riseFallRetry: 1,
+        fallToOnlyDowns: 1,
+        fallToRise: 1,
+        fallRiseRetry: 1,
+    });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
     const [runPhase, setRunPhase] = useState<'idle' | 'waiting' | 'buying' | 'settling'>('idle');
@@ -127,9 +140,9 @@ export const MultiKiller: React.FC = () => {
     // Persist config to localStorage
     useEffect(() => {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
-            market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy,
+            mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes,
         }));
-    }, [market, selected, stakes, barriers, delays, hlDuration, tickDirection, tickDirMode, accuracy]);
+    }, [mode, market, selected, stakes, barriers, delays, hlDuration, hlOffset, tickDirection, tickDirMode, accuracy, bot15Stakes]);
 
     // Auto-sync paired contracts: rise↔fall share delays, ups↔downs share stakes
     useEffect(() => {
@@ -179,6 +192,10 @@ export const MultiKiller: React.FC = () => {
     const tickDirModeRef = useRef<'any' | 'ups' | 'downs'>('any');
     const accuracyRef = useRef(false);
     const recentPricesRef = useRef<number[]>([]);
+    const recentTicksRef = useRef<MarketTick[]>([]);
+    const bot15ActiveRef = useRef(false);
+    const bot15SignalResolveRef = useRef<((direction: Bot15Direction | null) => void) | null>(null);
+    const bot15TickHandlerRef = useRef<((tick: MarketTick) => void) | null>(null);
 
     // Round lifecycle
     const expectedSettlementsRef = useRef(0);
@@ -280,6 +297,11 @@ export const MultiKiller: React.FC = () => {
                 if (tickSymbol && tickSymbol !== market) return;
                 const price = parseFloat(data.tick?.quote ?? data.tick?.bid ?? data.tick?.ask);
                 if (isNaN(price)) return;
+                const epoch = Number(data.tick?.epoch);
+                if (Number.isFinite(epoch)) {
+                    recentTicksRef.current.push({ quote: price, epoch });
+                    if (recentTicksRef.current.length > 100) recentTicksRef.current.shift();
+                }
 
                 // ── Always update lastTickPrice for next comparison ──
                 const prevPrice = lastTickPriceRef.current;
@@ -288,6 +310,19 @@ export const MultiKiller: React.FC = () => {
                 // ── Store recent prices for indicator calculations ──
                 recentPricesRef.current.push(price);
                 if (recentPricesRef.current.length > 100) recentPricesRef.current.shift();
+
+                // Bot 15 uses the same two-consecutive-movement signal as the
+                // original bot, but keeps the decision inside this widget.
+                if (bot15ActiveRef.current && bot15SignalResolveRef.current) {
+                    const direction = detectBot15Direction(recentPricesRef.current);
+                    if (direction) {
+                        const resolve = bot15SignalResolveRef.current;
+                        bot15SignalResolveRef.current = null;
+                        bot15ActiveRef.current = false;
+                        resolve(direction);
+                    }
+                }
+                bot15TickHandlerRef.current?.({ quote: price, epoch });
 
                 // ── Tick delay resolution (Rise/Fall 0t/1t/2t) ──
                 const pending = pendingDelaysRef.current;
@@ -449,7 +484,7 @@ export const MultiKiller: React.FC = () => {
     }, []);
 
     // Buy a single contract
-    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy } | null> => {
+    const buyOne = useCallback(async (strategy: MultiKillerStrategy, stakeNum: number, roundId: number): Promise<{ cid: string; strategy: MultiKillerStrategy; entryQuote?: number; entryEpoch?: number } | null> => {
         const ws = window._newSystemWS;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             log('❌ WS not open');
@@ -460,6 +495,7 @@ export const MultiKiller: React.FC = () => {
         const isHL = strategy === 'higher' || strategy === 'lower';
         const dur = isHL ? hlDurationRef.current : DURATION[strategy];
         const needBarrier = NEEDS_BARRIER[strategy];
+        const fallbackEntryTick = recentTicksRef.current[recentTicksRef.current.length - 1];
 
         // Higher/Lower: positive relative barrier offset.
         //   Deriv's live contracts_for metadata supplies the valid floor;
@@ -557,7 +593,16 @@ export const MultiKiller: React.FC = () => {
                 console.log(`${tag} ✅ SUCCESS contract_id=${cid}`);
                 log(`✅ ${LABELS[strategy]} bought (#${cid})`);
                 window.removeEventListener('newSystemMessage', rawCapture);
-                return { cid, strategy };
+                return {
+                    cid,
+                    strategy,
+                    entryQuote: Number.isFinite(Number(buyResp?.buy?.entry_tick))
+                        ? Number(buyResp?.buy?.entry_tick)
+                        : fallbackEntryTick?.quote,
+                    entryEpoch: Number.isFinite(Number(buyResp?.buy?.entry_tick_time))
+                        ? Number(buyResp?.buy?.entry_tick_time)
+                        : fallbackEntryTick?.epoch,
+                };
             } catch (e: any) {
                 console.error(`${tag} CAUGHT ERROR:`, JSON.stringify(e, null, 2));
                 console.error(`${tag} error.message:`, e?.message);
@@ -622,7 +667,16 @@ export const MultiKiller: React.FC = () => {
                             } as any);
                         } catch {}
                         log(`✅ ${LABELS[strategy]} bought (#${cid})`);
-                        resolve({ cid, strategy });
+                        resolve({
+                            cid,
+                            strategy,
+                            entryQuote: Number.isFinite(Number(data.buy?.entry_tick))
+                                ? Number(data.buy?.entry_tick)
+                                : fallbackEntryTick?.quote,
+                            entryEpoch: Number.isFinite(Number(data.buy?.entry_tick_time))
+                                ? Number(data.buy?.entry_tick_time)
+                                : fallbackEntryTick?.epoch,
+                        });
                     } else {
                         log(`⚠️ ${LABELS[strategy]}: no contract_id`);
                         resolve(null);
@@ -646,6 +700,132 @@ export const MultiKiller: React.FC = () => {
             }, 15000);
         });
     }, [market, log, transactions]);
+
+    const bot15RoundRef = useRef<() => Promise<void>>();
+    const runBot15Round = useCallback(async () => {
+        if (!runningRef.current) return;
+        const gen = genRef.current;
+        const myRound = ++roundIdRef.current;
+        recentPricesRef.current = [];
+        recentTicksRef.current = [];
+        setRunPhase('waiting');
+        log('🤖 Bot 15: waiting for two consecutive ticks in one direction...');
+
+        const direction = await new Promise<Bot15Direction | null>(resolve => {
+            bot15ActiveRef.current = true;
+            bot15SignalResolveRef.current = resolve;
+        });
+        if (genRef.current !== gen || !runningRef.current || !direction) return;
+
+        const plan = createBot15Plan(direction, bot15Stakes);
+        const totalCost = plan.legs.reduce((sum, leg) => sum + leg.stake, 0);
+        log(`🤖 Bot 15 ${direction.toUpperCase()}: sending Fall/Rise pair = $${totalCost.toFixed(2)}`);
+        buyPhaseDoneRef.current = false;
+        expectedSettlementsRef.current = 0;
+        settledCountRef.current = 0;
+        setRunPhase('buying');
+        setBuyProgress({ done: 0, total: plan.legs.length });
+        setSettleProgress({ done: 0, total: 0 });
+
+        const results = await Promise.all(plan.legs.map(async (leg, index) => {
+            const result = await buyOne(leg.strategy, leg.stake, myRound);
+            setBuyProgress(prev => ({ ...prev, done: prev.done + 1 }));
+            return { leg, result, index };
+        }));
+        if (genRef.current !== gen || !runningRef.current) return;
+
+        const bought = results.filter(item => item.result).map(item => ({
+            contractId: item.result!.cid,
+            strategy: item.leg.strategy,
+            stake: item.leg.stake,
+            roundId: myRound,
+        }));
+        if (bought.length === 0) {
+            log('❌ Bot 15: both initial contracts failed');
+            runningRef.current = false;
+            setRunning(false);
+            return;
+        }
+        tradesRef.current.push(...bought);
+        expectedSettlementsRef.current = bought.length;
+        buyPhaseDoneRef.current = true;
+        setRunPhase('settling');
+        setSettleProgress({ done: 0, total: bought.length });
+        log(`✅ Bot 15: ${bought.length} initial contracts open`);
+
+        const shortItem = results.find(item => item.leg.duration === 1 && item.result);
+        const shortEntryTick = recentTicksRef.current[recentTicksRef.current.length - 1];
+        const shortEntryQuote = Number(shortItem?.result?.entryQuote);
+        const shortEntryEpoch = Number(shortItem?.result?.entryEpoch);
+        const entryQuote = Number.isFinite(shortEntryQuote) ? shortEntryQuote : shortEntryTick?.quote;
+        const entryEpoch = Number.isFinite(shortEntryEpoch) ? shortEntryEpoch : shortEntryTick?.epoch;
+        let retrySlotReserved = Boolean(shortItem);
+        if (retrySlotReserved) {
+            expectedSettlementsRef.current++;
+            setSettleProgress({ done: settledCountRef.current, total: expectedSettlementsRef.current });
+        }
+        const releaseRetrySlot = () => {
+            if (!retrySlotReserved) return;
+            retrySlotReserved = false;
+            expectedSettlementsRef.current = Math.max(0, expectedSettlementsRef.current - 1);
+            setSettleProgress({ done: settledCountRef.current, total: expectedSettlementsRef.current });
+            if (buyPhaseDoneRef.current && settledCountRef.current >= expectedSettlementsRef.current) {
+                roundCompleteResolveRef.current?.();
+                roundCompleteResolveRef.current = null;
+            }
+        };
+        if (retrySlotReserved && (!Number.isFinite(entryQuote) || !Number.isFinite(entryEpoch))) {
+            log('⚠️ Bot 15: local entry tick unavailable; retry slot released');
+            releaseRetrySlot();
+        }
+        let shortResolved = false;
+        let retrySent = false;
+
+        bot15TickHandlerRef.current = async tick => {
+            if (shortResolved || retrySent || !shortItem?.result || !Number.isFinite(entryQuote) || !Number.isFinite(entryEpoch)) return;
+            if (tick.epoch <= entryEpoch) return;
+            shortResolved = true;
+            const loss = isBot15DirectionalLoss(shortItem.leg.contractType as 'CALL' | 'PUT', entryQuote, tick.quote);
+            if (loss === null) return;
+            log(`${loss ? '❌' : '✅'} Bot 15 ${shortItem.leg.contractType}: entry ${entryQuote} → exit ${tick.quote}${loss ? ' — sending immediate retry' : ''}`);
+            if (!loss) {
+                releaseRetrySlot();
+                return;
+            }
+            retrySent = true;
+            const retryResult = await buyOne(plan.retry.strategy, plan.retry.stake, myRound);
+            if (!retryResult || genRef.current !== gen || !runningRef.current) {
+                releaseRetrySlot();
+                log('⚠️ Bot 15 retry purchase failed');
+                return;
+            }
+            tradesRef.current.push({
+                contractId: retryResult.cid,
+                strategy: plan.retry.strategy,
+                stake: plan.retry.stake,
+                roundId: myRound,
+            });
+            setSettleProgress({ done: settledCountRef.current, total: expectedSettlementsRef.current });
+            log(`🔁 Bot 15 retry bought (#${retryResult.cid})`);
+        };
+        const bufferedExit = recentTicksRef.current.find(tick =>
+            Number.isFinite(entryEpoch) && tick.epoch > entryEpoch
+        );
+        if (bufferedExit) bot15TickHandlerRef.current(bufferedExit);
+
+        await new Promise<void>(resolve => {
+            if (settledCountRef.current >= expectedSettlementsRef.current) {
+                resolve();
+                return;
+            }
+            roundCompleteResolveRef.current = resolve;
+        });
+        bot15TickHandlerRef.current = null;
+        if (genRef.current !== gen || !runningRef.current) return;
+        log('🔄 Bot 15 round complete — next signal in 5s');
+        await new Promise<void>(resolve => setTimeout(resolve, 5000));
+        if (genRef.current === gen && runningRef.current) bot15RoundRef.current?.();
+    }, [bot15Stakes, buyOne, log]);
 
     // Settlement listener — only counts contracts from current round
     useEffect(() => {
@@ -813,9 +993,10 @@ export const MultiKiller: React.FC = () => {
     }, [buyOne, log, waitForTicks, waitForTickDirection, getStake, showTickDir, tickDirection]);
 
     runRoundRef.current = runRound;
+    bot15RoundRef.current = runBot15Round;
 
     const start = useCallback(() => {
-        if (running || selected.length === 0) return;
+        if (running || (mode === 'standard' && selected.length === 0)) return;
         setRunning(true);
         setRunPhase('waiting');
         setBuyProgress({ done: 0, total: 0 });
@@ -824,6 +1005,9 @@ export const MultiKiller: React.FC = () => {
         setLogs([]);
         runningRef.current = true;
         genRef.current++;
+        bot15ActiveRef.current = false;
+        bot15TickHandlerRef.current = null;
+        recentTicksRef.current = [];
         tradesRef.current = [];
         pendingDelaysRef.current = [];
         buyPhaseDoneRef.current = false;
@@ -835,13 +1019,20 @@ export const MultiKiller: React.FC = () => {
         consecutiveDownRef.current = 0;
         lastTickPriceRef.current = null;
         log('▶️ Started');
-        runRoundRef.current?.();
-    }, [running, selected, log]);
+        if (mode === 'bot15') bot15RoundRef.current?.();
+        else runRoundRef.current?.();
+    }, [mode, running, selected, log]);
 
     const stop = useCallback(() => {
         genRef.current++;
         runningRef.current = false;
         setRunning(false);
+        bot15ActiveRef.current = false;
+        bot15TickHandlerRef.current = null;
+        if (bot15SignalResolveRef.current) {
+            bot15SignalResolveRef.current(null);
+            bot15SignalResolveRef.current = null;
+        }
         tradesRef.current = [];
         buyPhaseDoneRef.current = false;
         tickDirActiveRef.current = false;
@@ -1211,6 +1402,17 @@ export const MultiKiller: React.FC = () => {
     return (
         <div className='mw-killer multi-killer-theme'>
             <div className='mw-field'>
+                <label className='mw-label'>Mode</label>
+                <div className='mw-select-wrap'>
+                    <select className='mw-input' value={mode} disabled={running}
+                        onChange={e => setMode(e.target.value as MultiKillerMode)}>
+                        <option value='standard'>Standard MultiKiller</option>
+                        <option value='bot15'>Bot 15 Strategy</option>
+                    </select>
+                    <span className='mw-select-arrow'></span>
+                </div>
+            </div>
+            <div className='mw-field'>
                 <label className='mw-label'>Market</label>
                 <div className='mw-select-wrap'>
                     <select className='mw-input' value={market} onChange={e => setMarket(e.target.value)}>
@@ -1220,7 +1422,7 @@ export const MultiKiller: React.FC = () => {
                 </div>
             </div>
 
-            {showTickDir && (
+            {mode === 'standard' && showTickDir && (
                 <button className={`mw-btn mw-btn--analyze ${analyzing ? 'mw-btn--analyzing' : ''}`}
                     disabled={analyzing || running}
                     onClick={analyzeVolatilities}>
@@ -1228,7 +1430,7 @@ export const MultiKiller: React.FC = () => {
                 </button>
             )}
 
-            <div className='mw-killer__types'>
+            {mode === 'standard' && <div className='mw-killer__types'>
                 <label className='mw-label'>Strategies</label>
                 <div className='mw-types-row'>
                     {(Object.keys(LABELS) as MultiKillerStrategy[]).map(s => (
@@ -1255,9 +1457,9 @@ export const MultiKiller: React.FC = () => {
                         </label>
                     ))}
                 </div>
-            </div>
+            </div>}
 
-            {showTickDir && (
+            {mode === 'standard' && showTickDir && (
                 <div className='mw-killer__fields'>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>Wait Ticks</label>
@@ -1281,7 +1483,7 @@ export const MultiKiller: React.FC = () => {
                 </div>
             )}
 
-            {hasDirectional && showTickDir && (
+            {mode === 'standard' && hasDirectional && showTickDir && (
                 <div className='mw-accuracy-row'>
                     <button
                         className={`mw-accuracy-btn ${accuracy ? 'mw-accuracy-btn--on' : ''}`}
@@ -1300,7 +1502,7 @@ export const MultiKiller: React.FC = () => {
                 </div>
             )}
 
-            {selected.length > 0 && (
+            {mode === 'standard' && selected.length > 0 && (
                 <div className='mw-killer__fields'>
                     {selected.map(s => (
                         <div key={s} className='mw-field mw-field--grow'>
@@ -1313,7 +1515,7 @@ export const MultiKiller: React.FC = () => {
                 </div>
             )}
 
-            {selected.some(s => NEEDS_BARRIER[s] && s !== 'higher' && s !== 'lower') && (
+            {mode === 'standard' && selected.some(s => NEEDS_BARRIER[s] && s !== 'higher' && s !== 'lower') && (
                 <div className='mw-killer__fields'>
                     {selected.filter(s => NEEDS_BARRIER[s] && s !== 'higher' && s !== 'lower').map(s => (
                         <div key={s} className='mw-field mw-field--grow'>
@@ -1326,7 +1528,7 @@ export const MultiKiller: React.FC = () => {
                 </div>
             )}
 
-            {(selected.includes('higher') || selected.includes('lower')) && (
+            {mode === 'standard' && (selected.includes('higher') || selected.includes('lower')) && (
                 <div className='mw-killer__fields mw-killer__fields--hl'>
                     <div className='mw-field mw-field--grow'>
                         <label className='mw-label'>H/L Duration (ticks)</label>
@@ -1343,6 +1545,33 @@ export const MultiKiller: React.FC = () => {
                         <span className='mw-hint'>Higher: +offset · Lower: −offset (relative to entry)</span>
                     </div>
                 </div>
+            )}
+
+            {mode === 'bot15' && (
+                <>
+                    <div className='mw-analyze-result' style={{ marginTop: 12 }}>
+                        <div className='mw-analyze-head'><span>Bot 15 Strategy</span></div>
+                        <pre>Two rising ticks → Fall 1t + Only Ups 2t; a local Fall loss sends an immediate Fall retry.
+Two falling ticks → Only Downs 2t + Rise 1t; a local Rise loss sends an immediate Rise retry.</pre>
+                    </div>
+                    <div className='mw-killer__fields'>
+                        {([
+                            ['riseToFall', 'Rise → Fall'],
+                            ['riseToOnlyUps', 'Rise → Only Ups'],
+                            ['riseFallRetry', 'Fall Retry'],
+                            ['fallToOnlyDowns', 'Fall → Only Downs'],
+                            ['fallToRise', 'Fall → Rise'],
+                            ['fallRiseRetry', 'Rise Retry'],
+                        ] as const).map(([key, label]) => (
+                            <div key={key} className='mw-field mw-field--grow'>
+                                <label className='mw-label'>{label} Stake</label>
+                                <input className='mw-input' type='number' min='0.35' step='0.01'
+                                    value={bot15Stakes[key]}
+                                    onChange={e => setBot15Stakes(p => ({ ...p, [key]: Number(e.target.value) }))} />
+                            </div>
+                        ))}
+                    </div>
+                </>
             )}
 
             <div className='mw-killer__actions'>
@@ -1370,7 +1599,7 @@ export const MultiKiller: React.FC = () => {
                         )}
                     </button>
                 ) : (
-                    <button className='mw-btn mw-btn--run' disabled={!selected.length} onClick={start}>Run</button>
+                    <button className='mw-btn mw-btn--run' disabled={mode === 'standard' && !selected.length} onClick={start}>Run</button>
                 )}
             </div>
 
