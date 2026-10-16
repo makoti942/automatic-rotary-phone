@@ -58,9 +58,9 @@ let _buySeq = 0;
 type MultiKillerMode = 'standard' | 'bot15';
 type MarketTick = { quote: number; epoch: number };
 type Bot15RiskConfig = {
-    maxRoundStake: number;
-    maxSessionLoss: number;
-    cooldownTicks: number;
+    maxRoundStake: number | '';
+    maxSessionLoss: number | '';
+    cooldownTicks: number | '';
 };
 
 const higherLowerBarrierCache = new Map<string, Promise<number | null>>();
@@ -133,9 +133,9 @@ export const MultiKiller: React.FC = () => {
         fallRiseRetry: 1,
     });
     const [bot15Risk, setBot15Risk] = useState<Bot15RiskConfig>(cfg.bot15Risk || {
-        maxRoundStake: 3,
-        maxSessionLoss: 10,
-        cooldownTicks: 3,
+        maxRoundStake: '',
+        maxSessionLoss: '',
+        cooldownTicks: '',
     });
     const [running, setRunning] = useState(false);
     const [logs, setLogs] = useState<string[]>([]);
@@ -1649,7 +1649,7 @@ Two falling ticks → Only Downs 2t + Rise 1t; a local Rise loss sends an immedi
                                 <label className='mw-label'>{label}</label>
                                 <input className='mw-input' type='number' min='0' step={key === 'cooldownTicks' ? '1' : '0.01'}
                                     value={bot15Risk[key]}
-                                    onChange={e => setBot15Risk(p => ({ ...p, [key]: Number(e.target.value) }))} />
+                                    onChange={e => setBot15Risk(p => ({ ...p, [key]: e.target.value === '' ? '' : Number(e.target.value) }))} />
                                 <span className='mw-hint'>{key === 'cooldownTicks' ? 'ticks between rounds' : '$0 = off'}</span>
                             </div>
                         ))}
