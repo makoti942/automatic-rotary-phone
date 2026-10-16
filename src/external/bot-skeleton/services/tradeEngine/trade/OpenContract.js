@@ -38,14 +38,7 @@ export default Engine =>
                             const settledIds = this.vh_state.hedge_settled_ids;
                             settledIds.add(contract.contract_id);
                             if (settledIds.size >= this.vh_state.hedge_expected_count) {
-                                this.vh_state.hedge_active = false;
-                                hedgeIds.clear();
-                                settledIds.clear();
-                                this.vh_state.hedge_expected_count = 0;
-                                this.contractId = '';
-                                if (this.afterPromise) this.afterPromise();
-                                this.onRealContractSettled?.(contract);
-                                this.store.dispatch(sell());
+                                this.completeHedge(contract);
                             } else {
                                 this.startSettlementPolling();
                             }
@@ -88,6 +81,18 @@ export default Engine =>
             api_base.pushSubscription(subscription);
         }
 
+        completeHedge(contract) {
+            if (!this.vh_state?.hedge_active) return;
+            this.vh_state.hedge_active = false;
+            this.vh_state.hedge_contract_ids?.clear();
+            this.vh_state.hedge_settled_ids?.clear();
+            this.vh_state.hedge_expected_count = 0;
+            this.contractId = '';
+            if (this.afterPromise) this.afterPromise();
+            this.onRealContractSettled?.(contract);
+            this.store.dispatch(sell());
+        }
+
         // Actively poll the open contract so a missed or delayed
         // proposal_open_contract push can never stall the bot between trades
         // (waitForAfter would otherwise hang until the sold push arrives).
@@ -116,7 +121,7 @@ export default Engine =>
                 } catch (e) {
                     /* noop */
                 }
-            }, 5000);
+            }, this.vh_state?.hedge_active ? 500 : 5000);
         }
 
         stopSettlementPolling() {

@@ -4,6 +4,12 @@ import { api_base } from '../../api/api-base';
 import ApiHelpers from '../../api/api-helpers';
 import { contractStatus, info, log } from '../utils/broadcast';
 import { doUntilDone, getUUID, recoverFromError, tradeOptionToBuy } from '../utils/helpers';
+import {
+    createDirectionalHedgePlan,
+    getDirectionalSpotOutcome,
+    getDirectionalOneTickOutcome,
+    getConfirmedTickDirection,
+} from '../utils/directional-hedge';
 import { openContractReceived, purchaseSuccessful, sell, start } from './state/actions';
 import { BEFORE_PURCHASE } from './state/constants';
 import { observer as globalObserver } from '../../../utils/observer';
@@ -100,6 +106,290 @@ export default Engine =>
                 this.renewProposalsOnPurchase();
             }
             return results;
+        }
+
+        async directionalHedgePurchase(settings = {}) {
+            if (this.$scope?.paused_ || this.store.getState().scope !== BEFORE_PURCHASE) return;
+            if (this.vh_state?.enabled && this.vh_state?.is_virtual) {
+                throw new Error(
+                    'Directional paired-contract automation requires live purchase mode. Disable virtual trading or use a demo account.'
+                );
+            }
+
+            // These requests are independent; do not make the signal wait for
+            // two sequential history round trips before submitting the pair.
+            const [quotes, lastTick] = await Promise.all([this.getTicks(), this.getLastTick(true)]);
+            if (!lastTick || lastTick === 'MarketIsClosed') return;
+            if (lastTick.epoch === this._directionalAutomationLastEpoch) return;
+            this._directionalAutomationLastEpoch = lastTick.epoch;
+
+            const direction = getConfirmedTickDirection(quotes, 2);
+            if (!direction) {
+                this._directionalAutomationLastSignal = '';
+                return;
+            }
+            if (direction === this._directionalAutomationLastSignal) return;
+            this._directionalAutomationLastSignal = direction;
+
+            const plan = createDirectionalHedgePlan(direction, settings);
+            if (!plan) return;
+            return this.executeDirectionalHedge(plan.legs, plan.retry);
+        }
+
+        async executeDirectionalHedge(legs, retryPlan) {
+            if (this.$scope?.paused_ || !Array.isArray(legs) || legs.length === 0) return;
+            this.applyAlternateMarketsToCurrentTradeOptions();
+            const baseOptions = { ...this.tradeOptions };
+            this.vh_state.hedge_active = true;
+            this.vh_state.hedge_contract_ids = new Set();
+            this.vh_state.hedge_settled_ids = new Set();
+            this.vh_state.hedge_expected_count = legs.length + (retryPlan ? 1 : 0);
+            this.isSold = false;
+
+            let retryContractId;
+            let successfulCount = 0;
+            let initialPurchasesComplete = false;
+            let retryWasRequested = false;
+            let retryPurchaseFailed = false;
+            let lastRetrySettlement;
+            let retryDecisionMade = false;
+            let retryEntryQuote;
+            let retryEntryEpoch;
+            const earlySettlements = new Map();
+            const retryTicks = [];
+            let retrySubscription;
+
+            const handleInitialRetrySettlement = async (contract, locallyDeterminedLoss) => {
+                if (
+                    retryDecisionMade ||
+                    String(contract.contract_id) !== String(retryContractId)
+                )
+                    return;
+                retryDecisionMade = true;
+                lastRetrySettlement = contract;
+                retrySubscription?.unsubscribe();
+
+                const isLoss =
+                    typeof locallyDeterminedLoss === 'boolean'
+                        ? locallyDeterminedLoss
+                        : Number(contract.profit) < 0 || contract.status === 'lost';
+                if (!isLoss) {
+                    this.vh_state.hedge_expected_count = initialPurchasesComplete ? successfulCount : legs.length;
+                    if (
+                        initialPurchasesComplete &&
+                        this.vh_state.hedge_settled_ids.size >= successfulCount
+                    ) {
+                        this.completeHedge?.(contract);
+                    }
+                    return;
+                }
+
+                retryWasRequested = true;
+                try {
+                    await this.buyDirectionalContract(retryPlan, baseOptions);
+                } catch (error) {
+                    retryPurchaseFailed = true;
+                    if (initialPurchasesComplete) {
+                        this.vh_state.hedge_expected_count = Math.max(0, this.vh_state.hedge_expected_count - 1);
+                    }
+                    globalObserver.emit('Error', error);
+                    if (
+                        initialPurchasesComplete &&
+                        this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count
+                    ) {
+                        this.completeHedge?.(contract);
+                    }
+                }
+            };
+
+            const checkLocalRetryOutcome = ticks => {
+                if (
+                    retryDecisionMade ||
+                    !retryContractId ||
+                    !Number.isFinite(retryEntryEpoch)
+                )
+                    return;
+                const outcome = getDirectionalOneTickOutcome(
+                    retryPlan.contract_type,
+                    retryEntryQuote,
+                    retryEntryEpoch,
+                    ticks
+                );
+                if (!outcome) return;
+                void handleInitialRetrySettlement(
+                    {
+                        contract_id: retryContractId,
+                        contract_type: retryPlan.contract_type,
+                        profit: outcome.isLoss ? -1 : 1,
+                        status: outcome.isLoss ? 'lost' : 'won',
+                    },
+                    outcome.isLoss
+                );
+            };
+
+            const setLocalRetryEntry = (entryQuoteValue, entryEpochValue) => {
+                const latestTick = retryTicks[retryTicks.length - 1];
+                const entryQuote = Number(entryQuoteValue ?? latestTick?.quote);
+                let entryEpoch = Number(entryEpochValue);
+                if (!Number.isFinite(entryQuote)) return;
+                if (!Number.isFinite(entryEpoch)) {
+                    const matchingEntryTick = [...retryTicks]
+                        .reverse()
+                        .find(tick => Number(tick.quote) === entryQuote);
+                    entryEpoch = Number(matchingEntryTick?.epoch ?? latestTick?.epoch);
+                }
+                if (!Number.isFinite(entryEpoch)) return;
+                retryEntryQuote = entryQuote;
+                retryEntryEpoch = entryEpoch;
+                checkLocalRetryOutcome(retryTicks);
+            };
+
+            const processRetryContractMessage = contract => {
+                if (!retryContractId || String(contract.contract_id) !== String(retryContractId)) return;
+                // Deriv can publish entry_spot and exit_spot before it sends
+                // the final is_sold/status message. Decide from those local
+                // values immediately so a loss can submit the retry without
+                // waiting for settlement polling or a settlement event.
+                const localOutcome = getDirectionalSpotOutcome(
+                    retryPlan.contract_type,
+                    contract.entry_spot ?? contract.entry_tick,
+                    contract.exit_spot ?? contract.exit_tick
+                );
+                if (localOutcome) {
+                    void handleInitialRetrySettlement(
+                        {
+                            ...contract,
+                            profit: localOutcome.isLoss ? -1 : 1,
+                            status: localOutcome.isLoss ? 'lost' : 'won',
+                        },
+                        localOutcome.isLoss
+                    );
+                    return;
+                }
+                if (contract.is_sold) {
+                    void handleInitialRetrySettlement(contract);
+                    return;
+                }
+                setLocalRetryEntry(contract.entry_tick, contract.entry_tick_time);
+            };
+
+            if (retryPlan && api_base.api) {
+                retrySubscription = api_base.api.onMessage().subscribe(({ data }) => {
+                    if (data?.msg_type === 'tick' && data.tick?.symbol === baseOptions.symbol) {
+                        const epoch = Number(data.tick.epoch);
+                        const quote = Number(data.tick.quote);
+                        if (Number.isFinite(epoch) && Number.isFinite(quote)) {
+                            const duplicate = retryTicks.some(
+                                tick => Number(tick.epoch) === epoch && Number(tick.quote) === quote
+                            );
+                            if (!duplicate) {
+                                retryTicks.push({ ...data.tick, epoch, quote });
+                                if (retryTicks.length > 16) retryTicks.shift();
+                            }
+                            // Some buy responses omit entry_tick/time. Use
+                            // the first buffered market tick as the local
+                            // entry reference, then compare the next tick
+                            // without waiting for Deriv settlement.
+                            if (retryContractId && !Number.isFinite(retryEntryEpoch)) {
+                                setLocalRetryEntry(quote, epoch);
+                            }
+                            checkLocalRetryOutcome(retryTicks);
+                        }
+                        return;
+                    }
+                    const contract = data?.proposal_open_contract;
+                    if (
+                        !contract ||
+                        (retryContractId
+                            ? String(contract.contract_id) !== String(retryContractId)
+                            : contract.contract_type !== retryPlan.contract_type)
+                    )
+                        return;
+                    if (retryContractId) {
+                        processRetryContractMessage(contract);
+                    } else {
+                        earlySettlements.set(contract.contract_id, contract);
+                    }
+                });
+                api_base.pushSubscription(retrySubscription);
+            }
+
+            const outcomes = await Promise.allSettled(
+                legs.map(leg =>
+                    this.buyDirectionalContract(leg, baseOptions).then(buy => {
+                        if (retryPlan && leg.contract_type === retryPlan.contract_type) {
+                            retryContractId = buy.contract_id;
+                            setLocalRetryEntry(buy.entry_tick, buy.entry_tick_time);
+                            const earlySettlement = earlySettlements.get(retryContractId);
+                            if (earlySettlement) {
+                                earlySettlements.delete(retryContractId);
+                                processRetryContractMessage(earlySettlement);
+                            }
+                        }
+                        return buy;
+                    })
+                )
+            );
+            const successfulBuys = outcomes
+                .map((outcome, index) => ({ outcome, leg: legs[index] }))
+                .filter(({ outcome }) => outcome.status === 'fulfilled');
+            successfulCount = successfulBuys.length;
+            initialPurchasesComplete = true;
+            this.vh_state.hedge_expected_count = successfulCount + (retryWasRequested && !retryPurchaseFailed ? 1 : 0);
+
+            outcomes
+                .filter(outcome => outcome.status === 'rejected')
+                .forEach(outcome => globalObserver.emit('Error', outcome.reason));
+
+            if (successfulCount === 0) {
+                this.vh_state.hedge_active = false;
+                this.vh_state.hedge_expected_count = 0;
+                retrySubscription?.unsubscribe();
+                throw new Error('Neither contract in the directional pair could be purchased.');
+            }
+
+            this.store.dispatch(purchaseSuccessful());
+            if (!retryContractId) {
+                retrySubscription?.unsubscribe();
+            }
+            if (this.vh_state.hedge_settled_ids.size >= this.vh_state.hedge_expected_count) {
+                this.completeHedge?.(lastRetrySettlement || this.data.contract);
+            }
+        }
+
+        async buyDirectionalContract(leg, baseOptions) {
+            if (this.$scope?.paused_) throw new Error('Bot stopped before the directional contract was purchased.');
+            const options = {
+                ...baseOptions,
+                amount: leg.stake,
+                basis: 'stake',
+                tradeType: 'risefall',
+                duration: leg.duration,
+                duration_unit: 't',
+            };
+            const tradeOption = tradeOptionToBuy(leg.contract_type, options);
+            contractStatus({ id: 'contract.purchase_sent', data: options.amount });
+            const response = await doUntilDone(() => api_base.api.send(tradeOption));
+            const { buy } = response;
+            if (!buy?.contract_id) throw new Error(`The ${leg.contract_type} contract purchase was not confirmed.`);
+
+            this.vh_state.hedge_contract_ids.add(buy.contract_id);
+            this.contractId = buy.contract_id;
+            api_base.api.send({ proposal_open_contract: 1, contract_id: buy.contract_id }).catch(() => {});
+            contractStatus({
+                id: 'contract.purchase_received',
+                data: buy.transaction_id,
+                buy,
+            });
+            log(LogTypes.PURCHASE, { transaction_id: buy.transaction_id });
+            info({
+                accountID: this.accountInfo.loginid,
+                totalRuns: this.updateAndReturnTotalRuns(),
+                transaction_ids: { buy: buy.transaction_id },
+                contract_type: leg.contract_type,
+                buy_price: buy.buy_price,
+            });
+            return buy;
         }
 
         async virtualPurchase(contract_type) {

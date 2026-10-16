@@ -169,6 +169,14 @@ export const ToolboxItems = () =>
                 </Block>
                 <Block type='before_purchase' />
                 <Block type='purchase' />
+                <Block type='directional_contract_automation'>
+                    <Field name='RISE_TO_FALL_STAKE'>1</Field>
+                    <Field name='RISE_TO_ONLY_UPS_STAKE'>1</Field>
+                    <Field name='RISE_FALL_RETRY_STAKE'>1</Field>
+                    <Field name='FALL_TO_ONLY_DOWNS_STAKE'>1</Field>
+                    <Field name='FALL_TO_RISE_STAKE'>1</Field>
+                    <Field name='FALL_RISE_RETRY_STAKE'>1</Field>
+                </Block>
             </Category>
             <Category id='sell_conditions' name={localize('Sell conditions (optional)')}>
                 <Block type='during_purchase' />

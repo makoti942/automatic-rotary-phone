@@ -16,6 +16,7 @@ const getBotInterface = tradeEngine => {
         stop: (...args) => tradeEngine.stop(...args),
         purchase: contract_type => tradeEngine.purchase(contract_type),
         hedgePurchase: contract_types => tradeEngine.hedgePurchase(contract_types),
+        directionalHedgePurchase: settings => tradeEngine.directionalHedgePurchase(settings),
         getAskPrice: contract_type => Number(getProposal(contract_type, tradeEngine).ask_price),
         getPayout: contract_type => Number(getProposal(contract_type, tradeEngine).payout),
         getPurchaseReference: () => tradeEngine.getPurchaseReference(),
