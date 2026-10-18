@@ -9,6 +9,5 @@ import './tick_analysis';
 import './last_digit';
 import './lastDigitList';
 import './digit_percentage';
-import './automated_parity_recovery';
 import './stat';
 import './stat_list';
