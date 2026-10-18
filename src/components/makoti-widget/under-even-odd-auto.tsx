@@ -9,7 +9,7 @@ type Side = 'even' | 'odd';
 interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity'; contract: string; }
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
-const BASE = { stake: '0.35', entryDigit: '2' };
+const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
 const isEven = (d: number) => d % 2 === 0;
 const digitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
     const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
@@ -33,6 +33,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const { transactions } = useStore();
     const [stake, setStake] = useState(() => localStorage.getItem('mw_ueo_stake') || BASE.stake);
     const [entryDigit, setEntryDigit] = useState(() => localStorage.getItem('mw_ueo_entry') || BASE.entryDigit);
+    const [martingale, setMartingale] = useState(() => localStorage.getItem('mw_ueo_martingale') || BASE.martingale);
     const [normalSymbol, setNormalSymbol] = useState(() => localStorage.getItem('mw_ueo_market') || '1HZ25V');
     const [availableSymbols, setAvailableSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
     const [running, setRunning] = useState(false);
@@ -52,6 +53,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const normalStartedRef = useRef(false);
     const normalCountRef = useRef(0);
     const lossRef = useRef(0);
+    const lossStreakRef = useRef(0);
     const currentStakeRef = useRef(Number(stake) || 0.35);
     const entryDigitRef = useRef(Number(entryDigit) || 2);
     const selectedRef = useRef<RecoveryPick | null>(null);
@@ -112,11 +114,15 @@ export const UnderEvenOddAuto: React.FC = () => {
         const old = buffersRef.current[symbol] || [];
         buffersRef.current[symbol] = [...old, ...digits].slice(-200);
     }, []);
-    const recoveryStake = useCallback((loss: number) => {
+    const recoveryStake = useCallback((loss: number, lossStreak = lossStreakRef.current) => {
         if (loss <= 0) return Number(stake) || 0.35;
-        // Conservative default net payout assumption for parity contracts.
-        return Math.max(0.35, Math.ceil((loss / 0.95) * 100) / 100);
-    }, [stake]);
+        const base = Math.max(0.35, Number(stake) || 0.35);
+        const multiplier = Math.max(1, Number(martingale) || 2);
+        const martingaleStake = base * Math.pow(multiplier, Math.max(0, lossStreak));
+        // Use the larger of the configured progression and the amount required
+        // to cover the full outstanding loss at the conservative 95% net payout.
+        return Math.max(0.35, Math.ceil(Math.max(martingaleStake, loss / 0.95) * 100) / 100);
+    }, [martingale, stake]);
     const scanRecovery = useCallback(async () => {
         if (!runningRef.current || scanRunningRef.current) return;
         scanRunningRef.current = true;
@@ -187,14 +193,14 @@ export const UnderEvenOddAuto: React.FC = () => {
             if (trade.kind === 'parity') {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
-                if (remaining <= 0.0001) { recoveryArmedRef.current = false; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
-                else { currentStakeRef.current = recoveryStake(remaining); setCurrentStake(currentStakeRef.current); setPhaseSafe('pattern'); }
-            } else { normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
+                if (remaining <= 0.0001) { recoveryArmedRef.current = false; lossStreakRef.current = 0; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
+                else { lossStreakRef.current = 0; currentStakeRef.current = recoveryStake(remaining, 0); setCurrentStake(currentStakeRef.current); notify(`RECOVERY BALANCE REMAINING $${remaining.toFixed(2)} | next stake $${currentStakeRef.current.toFixed(2)}`); setPhaseSafe('pattern'); }
+            } else { lossStreakRef.current = 0; normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
         } else {
             const loss = Math.max(trade.stake, Math.abs(profit));
-            lossRef.current += loss; setLossBalance(lossRef.current);
-            currentStakeRef.current = recoveryStake(lossRef.current); setCurrentStake(currentStakeRef.current);
-            notify(`RECOVERY ACTIVATED | balance $${lossRef.current.toFixed(2)} | next calculated stake $${currentStakeRef.current.toFixed(2)}`);
+            lossRef.current += loss; lossStreakRef.current += 1; setLossBalance(lossRef.current);
+            currentStakeRef.current = recoveryStake(lossRef.current, lossStreakRef.current); setCurrentStake(currentStakeRef.current);
+            notify(`LOSS ACCUMULATED $${loss.toFixed(2)} | outstanding $${lossRef.current.toFixed(2)} | loss streak ${lossStreakRef.current} | martingale ×${Number(martingale) || 2} | next stake $${currentStakeRef.current.toFixed(2)}`);
             if (trade.kind === 'parity' && selectedRef.current) {
                 // Hold the selected volatility and keep the recovery contract armed.
                 recoveryArmedRef.current = true;
@@ -205,7 +211,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 void scanRecovery();
             }
         }
-    }, [notify, recoveryStake, scanRecovery, setPhaseSafe]);
+    }, [martingale, notify, recoveryStake, scanRecovery, setPhaseSafe]);
     useEffect(() => {
         if (!running) return;
         const unsubscribe = onNewSystemMessage((event: MessageEvent) => {
@@ -252,7 +258,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [buy, handleSettled, notify, running, updateBuffer]);
     useEffect(() => { if (running) (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS).forEach(s => sendTickSubscription(s, 200)); }, [running, sendTickSubscription]);
     useEffect(() => { void loadActiveSymbols(); }, [loadActiveSymbols]);
-    useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_market', normalSymbol); }, [stake, entryDigit, normalSymbol]);
+    useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); }, [stake, entryDigit, martingale, normalSymbol]);
     useEffect(() => {
         if (!running || phase !== 'normal') return;
         const timer = setTimeout(() => { if (runningRef.current) void buy(normalSymbolRef.current, 'DIGITUNDER', currentStakeRef.current, 'under'); }, 250);
@@ -260,13 +266,13 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
         setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true); setPhaseSafe('entry'); notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
     };
     const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
-        <div className='mw-killer__fields'><div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div><div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Entry digit</label><input className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running} /></div></div>
-        <div className='mw-analyze-result' style={{ display: 'block' }}><b>UNDER → EVEN/ODD AUTO</b><div>Phase: <strong>{phase}</strong> · Normal trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div><div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)}</div>{selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()}</div>}</div>
+        <div className='mw-killer__fields'><div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div><div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Entry digit</label><input className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running} /></div></div>
+        <div className='mw-analyze-result' style={{ display: 'block' }}><b>UNDER → EVEN/ODD AUTO</b><div>Phase: <strong>{phase}</strong> · Normal trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div><div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>{selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()}</div>}</div>
         <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>RUN UNDER → EVEN/ODD</button>}</div>
         <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Automation log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, i) => <div key={i} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Configure the entry digit and run</div>}</div></div>
     </div>;
