@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTOMATED_FREQUENCY_WINDOW,
+  AUTOMATED_PAIR_HITS_REQUIRED,
   RECOVERY_SAMPLE_SIZE,
   REQUIRED_TARGET_DIGITS_IN_TOP,
   TWO_DIGIT_EXPECTED_PERCENT,
@@ -70,9 +71,10 @@ test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => 
   assert.deepEqual([over1, under8, differsAgain], ['over1', 'under8', 'differs']);
 });
 
-test('pair trigger counts two target appearances while allowing intervening digits', () => {
+test('pair trigger waits for three target appearances while allowing intervening digits', () => {
   let hits = 0;
-  for (const digit of [0, 5, 7, 1]) hits = advancePairHitCount(hits, digit, [0, 1]);
-  assert.equal(hits, 2);
-  assert.equal(advancePairHitCount(hits, 4, [0, 1]), 2);
+  for (const digit of [0, 5, 1, 7, 1]) hits = advancePairHitCount(hits, digit, [0, 1]);
+  assert.equal(AUTOMATED_PAIR_HITS_REQUIRED, 3);
+  assert.equal(hits, 3);
+  assert.equal(advancePairHitCount(hits, 4, [0, 1]), 3);
 });

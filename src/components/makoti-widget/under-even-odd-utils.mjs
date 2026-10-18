@@ -4,6 +4,7 @@ export const TOP_DIGIT_COUNT = 5;
 export const REQUIRED_TARGET_DIGITS_IN_TOP = 3;
 export const AUTOMATED_FREQUENCY_WINDOW = 1000;
 export const TWO_DIGIT_EXPECTED_PERCENT = 20;
+export const AUTOMATED_PAIR_HITS_REQUIRED = 3;
 
 export function nextAutomatedStage(stage) {
   return stage === 'differs' ? 'over1' : stage === 'over1' ? 'under8' : 'differs';

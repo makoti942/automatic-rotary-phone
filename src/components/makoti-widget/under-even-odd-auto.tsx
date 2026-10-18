@@ -5,6 +5,7 @@ import { useStore } from '@/hooks/useStore';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 import {
     AUTOMATED_FREQUENCY_WINDOW,
+    AUTOMATED_PAIR_HITS_REQUIRED,
     RECOVERY_SAMPLE_SIZE,
     TOP_DIGIT_COUNT,
     advancePairHitCount,
@@ -248,7 +249,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 return;
             }
             setPhaseSafe('automated');
-            notify(`${contractLabel}: monitoring all qualifying markets: ${qualified.map(item => `${labelsRef.current[item.symbol] || item.symbol} (${pair.join('+')} ${item.pairPct.toFixed(1)}%)`).join(', ')}. Waiting for two ${pair.join('/')} ticks per market; other digits may occur between them.`);
+            notify(`${contractLabel}: monitoring all qualifying markets: ${qualified.map(item => `${labelsRef.current[item.symbol] || item.symbol} (${pair.join('+')} ${item.pairPct.toFixed(1)}%)`).join(', ')}. Waiting for ${AUTOMATED_PAIR_HITS_REQUIRED} appearances of ${pair.join('/')} per market; other digits may occur between them.`);
         } finally {
             autoScanRunningRef.current = false;
         }
@@ -381,8 +382,8 @@ export const UnderEvenOddAuto: React.FC = () => {
                             const hits = advancePairHitCount(previousHits, digit, pair);
                             if (hits > previousHits) {
                                 pairHitsRef.current[sym] = hits;
-                                notify(`${labelsRef.current[sym] || sym}: target digit ${digit} observed (${hits}/2 for ${stage === 'over1' ? 'Over 1' : 'Under 8'}; intervening digits allowed)`);
-                                if (hits >= 2) {
+                                notify(`${labelsRef.current[sym] || sym}: target digit ${digit} observed (${hits}/${AUTOMATED_PAIR_HITS_REQUIRED} for ${stage === 'over1' ? 'Over 1' : 'Under 8'}; intervening digits allowed)`);
+                                if (hits >= AUTOMATED_PAIR_HITS_REQUIRED) {
                                     pairHitsRef.current[sym] = 0;
                                     void buy(sym, stage === 'over1' ? 'DIGITOVER' : 'DIGITUNDER', currentStakeRef.current, 'automated', stage === 'over1' ? '1' : '8');
                                 }
