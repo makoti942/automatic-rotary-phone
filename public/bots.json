@@ -17,6 +17,7 @@
     { "name": "FREE BOT WITH MARTINGALE", "file": "/xml/FREE BOT WITH MARTINGALE.xml" },
     { "name": "ENTRY POINT BOT UNDER7 OVER4 RECOVERY", "file": "/xml/ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml" },
     { "name": "NEW BOT WITH ENTRY POINT", "file": "/xml/NEW_BOT_WITH_ENTRY_POINT.xml" },
-    { "name": "SPLIT MARTINGALE BOT PREMIUM", "file": "/xml/SPLIT_MARTINGALE_BOT_PREMIUM.xml" }
+    { "name": "SPLIT MARTINGALE BOT PREMIUM", "file": "/xml/SPLIT MARTINGALE BOT PREMIUM.xml" },
+    { "name": "UNDER AUTOMATED EVEN OFD", "file": "/xml/UNDER AUTOMATED EVEN OFD.xml" }
   ]
 }

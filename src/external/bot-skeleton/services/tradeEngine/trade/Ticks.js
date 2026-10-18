@@ -6,6 +6,7 @@ import { getLast } from '../../../utils/binary-utils';
 import { getManualTradeDigitPercentage } from '@/utils/manual-trade-digit-stats';
 import { observer as globalObserver } from '../../../utils/observer';
 import { api_base } from '../../api/api-base';
+import ApiHelpers from '../../api/api-helpers';
 import { getDirection, getLastDigit } from '../utils/helpers';
 import { isLastDigitsConditionMet } from '../utils/last-digits-condition.mjs';
 import { expectPositiveInteger } from '../utils/sanitize';
@@ -101,6 +102,179 @@ export default Engine =>
 
         async getDigitPercentage(digit) {
             return getManualTradeDigitPercentage(Number(digit));
+        }
+
+        async automatedParityRecoveryPurchase() {
+            const ready = await this.prepareAutomatedParityRecovery();
+            if (!ready) return false;
+            const state = this.automated_parity_recovery_state;
+            const contractType = state.parity === 'even' ? 'DIGITEVEN' : 'DIGITODD';
+            this.tradeOptions.amount = state.nextStake;
+            this.setInterpreterVariable('Current_Stake', state.nextStake);
+            this.setInterpreterVariable('Current Stake', state.nextStake);
+            state.phase = 'executing';
+            state.lastStake = state.nextStake;
+            await this.purchase(contractType);
+            return true;
+        }
+
+        async automatedParityRecoveryUpdate(profit, stake) {
+            const amount = Number(stake) > 0 ? Number(stake) : Number(this.tradeOptions?.amount) || 0;
+            const result = Number(profit) || 0;
+            const state = this.automated_parity_recovery_state;
+            if (result > 0) {
+                if (state?.phase === 'executing') {
+                    const remaining = Math.max(0, (Number(state.totalLoss) || 0) - result);
+                    if (remaining <= 0.0001) {
+                        await this.finishAutomatedParityRecovery();
+                    } else {
+                        state.totalLoss = remaining;
+                        state.phase = 'ready';
+                        state.nextStake = this.calculateParityRecoveryStake(remaining, state.parity);
+                        this.setAutomatedRecoveryVariables(true, state.nextStake);
+                    }
+                } else {
+                    await this.finishAutomatedParityRecovery();
+                }
+                return;
+            }
+            const loss = amount > 0 ? amount : Number(state?.lastStake) || 0;
+            if (!this.automated_parity_recovery_state) {
+                this.automated_parity_recovery_state = {
+                    normalSymbol: this.tradeOptions?.symbol,
+                    totalLoss: 0,
+                    lossCount: 0,
+                    phase: 'idle',
+                };
+            }
+            const next = this.automated_parity_recovery_state;
+            next.totalLoss = (Number(next.totalLoss) || 0) + loss;
+            next.lossCount = (Number(next.lossCount) || 0) + 1;
+            next.phase = 'idle';
+            next.nextStake = 0;
+            this.setAutomatedRecoveryVariables(true, Math.max(0.35, loss));
+        }
+
+        async prepareAutomatedParityRecovery() {
+            let state = this.automated_parity_recovery_state;
+            if (!state) {
+                state = this.automated_parity_recovery_state = {
+                    normalSymbol: this.tradeOptions?.symbol,
+                    totalLoss: 0,
+                    lossCount: 0,
+                    phase: 'idle',
+                    selectedSymbol: null,
+                    parity: null,
+                    consecutiveOpposite: 0,
+                    lastEpoch: null,
+                };
+            }
+            if (state.phase === 'executing') return false;
+            if (!state.selectedSymbol) {
+                const symbols = this.getAvailableVolatilitySymbols();
+                const samples = await Promise.all(symbols.map(symbol => this.fetchParitySample(symbol)));
+                const usable = samples.filter(sample => sample && sample.count >= 100);
+                if (!usable.length) return false;
+                usable.sort((a, b) => b.bestPercentage - a.bestPercentage || a.distance - b.distance);
+                const selected = usable[0];
+                state.selectedSymbol = selected.symbol;
+                state.parity = selected.parity;
+                state.consecutiveOpposite = selected.trailingOpposite;
+                state.lastEpoch = selected.lastEpoch;
+                state.phase = selected.trailingOpposite >= 3 ? 'confirm' : 'wait_opposite';
+                await this.watchTicks(selected.symbol);
+                state.nextStake = this.calculateParityRecoveryStake(state.totalLoss, state.parity);
+                this.setAutomatedRecoveryVariables(true, state.nextStake);
+                return false;
+            }
+            const ticks = await this.$scope.ticksService.request({ symbol: state.selectedSymbol });
+            const latest = ticks?.[ticks.length - 1];
+            if (!latest || latest.epoch === state.lastEpoch) return false;
+            state.lastEpoch = latest.epoch;
+            const pip = this.$scope.ticksService.pipSizes[state.selectedSymbol] || 2;
+            const digit = Number(Number(latest.quote).toFixed(pip).slice(-1));
+            const isTarget = state.parity === 'even' ? digit % 2 === 0 : digit % 2 !== 0;
+            if (state.phase === 'wait_opposite') {
+                if (isTarget) state.consecutiveOpposite = 0;
+                else state.consecutiveOpposite += 1;
+                if (state.consecutiveOpposite >= 3) state.phase = 'confirm';
+                return false;
+            }
+            if (state.phase === 'confirm' && isTarget) {
+                state.phase = 'ready';
+                state.nextStake = this.calculateParityRecoveryStake(state.totalLoss, state.parity);
+                this.setAutomatedRecoveryVariables(true, state.nextStake);
+                return true;
+            }
+            return state.phase === 'ready';
+        }
+
+        getAvailableVolatilitySymbols() {
+            const list = ApiHelpers?.instance?.active_symbols?.getSymbolsForBot?.() || [];
+            return [...new Set(list
+                .filter(item => item?.value && /volatility|continuous indices/i.test(`${item.group || ''} ${item.submarket || ''}`))
+                .map(item => item.value))];
+        }
+
+        async fetchParitySample(symbol) {
+            try {
+                const response = await api_base.api.send({ ticks_history: symbol, count: 200, end: 'latest', style: 'ticks' });
+                const prices = response?.history?.prices || [];
+                const pip = this.$scope.ticksService.pipSizes[symbol] || 2;
+                const digits = prices.slice(-100).map(price => Number(Number(price).toFixed(pip).slice(-1)));
+                if (digits.length < 100) return null;
+                const even = digits.filter(digit => digit % 2 === 0).length;
+                const odd = digits.length - even;
+                const parity = even >= odd ? 'even' : 'odd';
+                const bestPercentage = Math.max(even, odd) / digits.length * 100;
+                const trailingOpposite = (() => {
+                    const target = parity === 'even' ? digit => digit % 2 === 0 : digit => digit % 2 !== 0;
+                    let count = 0;
+                    for (let i = digits.length - 1; i >= 0 && !target(digits[i]); i -= 1) count += 1;
+                    return count;
+                })();
+                return {
+                    symbol,
+                    parity,
+                    bestPercentage,
+                    distance: Math.abs(60 - bestPercentage),
+                    trailingOpposite,
+                    lastEpoch: response?.history?.times?.slice(-1)[0],
+                    count: digits.length,
+                };
+            } catch (error) {
+                return null;
+            }
+        }
+
+        calculateParityRecoveryStake(totalLoss, parity) {
+            if (!(Number(totalLoss) > 0)) return Number(this.tradeOptions?.amount) || 1;
+            const contractType = parity === 'even' ? 'DIGITEVEN' : 'DIGITODD';
+            const proposal = this.data?.proposals?.find(item => item.contract_type === contractType);
+            const ask = Number(proposal?.ask_price) || Number(this.tradeOptions?.amount) || 1;
+            const payout = Number(proposal?.payout) || ask * 1.95;
+            const netRate = Math.max(0.01, payout / ask - 1);
+            return Math.max(0.35, Math.ceil((Number(totalLoss) / netRate) * 100) / 100);
+        }
+
+        setAutomatedRecoveryVariables(isRecovery, stake) {
+            this.setInterpreterVariable('is_recovery', !!isRecovery);
+            this.setInterpreterVariable('is_recovery_var', !!isRecovery);
+            if (Number(stake) > 0) {
+                ['Current_Stake', 'Current Stake', 'CurrentStake', 'stake', 'Stake'].forEach(name =>
+                    this.setInterpreterVariable(name, Number(stake))
+                );
+            }
+        }
+
+        async finishAutomatedParityRecovery() {
+            const state = this.automated_parity_recovery_state;
+            const normalSymbol = state?.normalSymbol || this.options?.symbol;
+            this.automated_parity_recovery_state = null;
+            this.tradeOptions = { ...this.tradeOptions, symbol: normalSymbol, amount: 1 };
+            this.setAutomatedRecoveryVariables(false, 1);
+            this.setInterpreterVariable('prediction', 8);
+            await this.watchTicks(normalSymbol);
         }
 
         getLastDigitsFromList(ticks) {

@@ -142,6 +142,16 @@ const Interpreter = () => {
         );
         js_interpreter.setProperty(
             pseudo_bot_interface,
+            'automatedParityRecoveryPurchase',
+            createAsync(js_interpreter, bot_interface.automatedParityRecoveryPurchase)
+        );
+        js_interpreter.setProperty(
+            pseudo_bot_interface,
+            'automatedParityRecoveryUpdate',
+            createAsync(js_interpreter, bot_interface.automatedParityRecoveryUpdate)
+        );
+        js_interpreter.setProperty(
+            pseudo_bot_interface,
             'hedgePurchase',
             createAsync(js_interpreter, bot_interface.hedgePurchase)
         );
