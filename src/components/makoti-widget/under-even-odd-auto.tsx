@@ -230,21 +230,21 @@ export const UnderEvenOddAuto: React.FC = () => {
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
                         if (phaseRef.current === 'pattern') {
-                            if (target && recoveryArmedRef.current) {
-                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing`);
+                            if (recoveryArmedRef.current) {
+                                notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${pick.side.toUpperCase()}`);
                                 oppositeRef.current = 0;
                                 void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
-                            } else if (target && oppositeRef.current >= 3) {
-                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | confirmation complete`);
+                            } else if (oppositeRef.current >= 3) {
                                 recoveryArmedRef.current = true;
+                                notify(`RECOVERY TRIGGER ${digit} | three-opposite pattern complete | entering ${pick.side.toUpperCase()} immediately`);
                                 oppositeRef.current = 0;
                                 void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
-                            } else if (target) {
-                                oppositeRef.current = 0;
-                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | waiting for 3 opposites`);
-                            } else {
+                            } else if (!target) {
                                 oppositeRef.current++;
                                 notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/3`);
+                            } else {
+                                oppositeRef.current = 0;
+                                notify(`RECOVERY TICK ${digit} = TARGET | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | pattern reset`);
                             }
                         }
                     }
