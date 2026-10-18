@@ -190,7 +190,13 @@ export const UnderEvenOddAuto: React.FC = () => {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
                 if (remaining <= 0.0001) { recoveryArmedRef.current = false; lossStreakRef.current = 0; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
-                else { lossStreakRef.current = 0; setCurrentStake(currentStakeRef.current); notify(`RECOVERY BALANCE REMAINING $${remaining.toFixed(2)} | continuing with stake $${currentStakeRef.current.toFixed(2)}`); setPhaseSafe('pattern'); }
+                else {
+                    lossStreakRef.current = 0;
+                    currentStakeRef.current = recoveryStake(Number(stakeRef.current) || 0.35);
+                    setCurrentStake(currentStakeRef.current);
+                    notify(`RECOVERY WIN BUT BALANCE REMAINS $${remaining.toFixed(2)} | reset next stake to base $${Number(stakeRef.current).toFixed(2)} ×${Number(martingale) || 2} = $${currentStakeRef.current.toFixed(2)}`);
+                    setPhaseSafe('pattern');
+                }
             } else { lossStreakRef.current = 0; normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
         } else {
             const loss = Math.max(trade.stake, Math.abs(profit));
