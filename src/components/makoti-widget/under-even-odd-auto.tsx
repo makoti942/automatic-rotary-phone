@@ -12,14 +12,6 @@ const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
 const OPPOSITE_TRIGGER = 5;
 const isEven = (d: number) => d % 2 === 0;
-const digitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
-    const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
-    const raw = String(quote).trim();
-    if (/e/i.test(raw)) return Number(Number(quote).toFixed(pip).slice(-1));
-    const fraction = (raw.split('.')[1] || '').replace(/[^0-9]/g, '');
-    if (fraction) return Number(fraction.padEnd(pip, '0').slice(0, pip).slice(-1));
-    return Number(Number(quote).toFixed(pip).slice(-1));
-};
 const manualTradeDigitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
     const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
     return Number(Number(quote).toFixed(pip).slice(-1));
@@ -114,10 +106,10 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, []);
     const updateBuffer = useCallback((symbol: string, prices: any[]) => {
-        const digits = prices.map(price => digitOf(price, symbol, pipSizesRef.current)).filter(Number.isFinite);
+        const digits = prices.map(price => manualTradeDigitOf(price, symbol, pipSizesRef.current)).filter(Number.isFinite);
         if (!digits.length) return;
         const old = buffersRef.current[symbol] || [];
-        buffersRef.current[symbol] = [...old, ...digits].slice(-200);
+        buffersRef.current[symbol] = [...old, ...digits].slice(-1000);
     }, []);
     const recoveryStake = useCallback((lastTradeStake: number) => {
         const base = Math.max(0.35, Number(stake) || 0.35);
@@ -237,12 +229,12 @@ export const UnderEvenOddAuto: React.FC = () => {
                 const data = JSON.parse(event.data);
                 if ((data.msg_type === 'history' || data.msg_type === 'ticks_history') && data.history?.prices) updateBuffer(data.echo_req?.ticks_history, data.history.prices);
                 if (data.msg_type === 'tick' && data.tick?.symbol) {
-                    const sym = data.tick.symbol; const digit = digitOf(data.tick.quote, sym, pipSizesRef.current); const buf = buffersRef.current[sym] || [];
-                    buffersRef.current[sym] = [...buf, digit].slice(-200);
+                    const sym = data.tick.symbol; const digit = manualTradeDigitOf(data.tick.quote, sym, pipSizesRef.current); const buf = buffersRef.current[sym] || [];
+                    buffersRef.current[sym] = [...buf, digit].slice(-1000);
                     if (sym === normalSymbolRef.current) setLastDigit(digit);
                     if (sym === selectedRef.current?.symbol) {
                         const pick = selectedRef.current; const target = pick.side === 'even' ? isEven(digit) : !isEven(digit);
-                        const ds = buffersRef.current[sym].slice(-100); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
+                        const ds = buffersRef.current[sym].slice(-1000); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
                         if (phaseRef.current === 'pattern') {
@@ -281,7 +273,9 @@ export const UnderEvenOddAuto: React.FC = () => {
         });
         return unsubscribe;
     }, [buy, handleSettled, notify, running, updateBuffer]);
-    useEffect(() => { if (running) (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS).forEach(s => sendTickSubscription(s, 200)); }, [running, sendTickSubscription]);
+    useEffect(() => {
+        if (running) sendTickSubscription(normalSymbolRef.current, 200);
+    }, [running, normalSymbol, sendTickSubscription]);
     useEffect(() => { void loadActiveSymbols(); }, [loadActiveSymbols]);
     useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); }, [stake, entryDigit, martingale, normalSymbol]);
     useEffect(() => {
