@@ -105,6 +105,10 @@ export default Engine =>
         }
 
         async automatedParityRecoveryPurchase() {
+            const currentState = this.automated_parity_recovery_state;
+            // Parity is strictly a loss-recovery path. Never initialize or trade
+            // parity during the bot's normal entry/Under strategy.
+            if (!currentState || !(Number(currentState.totalLoss) > 0)) return false;
             const ready = await this.prepareAutomatedParityRecovery();
             if (!ready) return false;
             const state = this.automated_parity_recovery_state;
@@ -114,6 +118,10 @@ export default Engine =>
             this.setInterpreterVariable('Current Stake', state.nextStake);
             state.phase = 'executing';
             state.lastStake = state.nextStake;
+            this.notifyAutomatedRecovery(
+                `Parity recovery trade: ${contractType} on ${state.selectedSymbol} | stake ${state.nextStake}`,
+                'info'
+            );
             await this.purchase(contractType);
             return true;
         }
@@ -125,6 +133,10 @@ export default Engine =>
             if (result > 0) {
                 if (state?.phase === 'executing') {
                     const remaining = Math.max(0, (Number(state.totalLoss) || 0) - result);
+                    this.notifyAutomatedRecovery(
+                        `Recovery win: profit ${result.toFixed(2)} | remaining loss ${remaining.toFixed(2)}`,
+                        remaining <= 0.0001 ? 'success' : 'info'
+                    );
                     if (remaining <= 0.0001) {
                         await this.finishAutomatedParityRecovery();
                     } else {
@@ -153,6 +165,10 @@ export default Engine =>
             next.phase = 'idle';
             next.nextStake = 0;
             this.setAutomatedRecoveryVariables(true, Math.max(0.35, loss));
+            this.notifyAutomatedRecovery(
+                `Recovery loss: ${loss.toFixed(2)} | total recovery balance ${next.totalLoss.toFixed(2)} | losses ${next.lossCount}`,
+                'warn'
+            );
         }
 
         async prepareAutomatedParityRecovery() {
@@ -185,6 +201,10 @@ export default Engine =>
                 await this.watchTicks(selected.symbol);
                 state.nextStake = this.calculateParityRecoveryStake(state.totalLoss, state.parity);
                 this.setAutomatedRecoveryVariables(true, state.nextStake);
+                this.notifyAutomatedRecovery(
+                    `Recovery scan selected ${selected.symbol}: even ${selected.evenPercentage.toFixed(1)}% / odd ${selected.oddPercentage.toFixed(1)}% | target ${selected.parity} | stake ${state.nextStake}`,
+                    'info'
+                );
                 return false;
             }
             const ticks = await this.$scope.ticksService.request({ symbol: state.selectedSymbol });
@@ -193,17 +213,34 @@ export default Engine =>
             state.lastEpoch = latest.epoch;
             const pip = this.$scope.ticksService.pipSizes[state.selectedSymbol] || 2;
             const digit = Number(Number(latest.quote).toFixed(pip).slice(-1));
+            const recentDigits = ticks.slice(-100).map(tick => Number(Number(tick.quote).toFixed(pip).slice(-1)));
+            const evenPercentage = recentDigits.length
+                ? (recentDigits.filter(value => value % 2 === 0).length / recentDigits.length) * 100
+                : 0;
+            const oddPercentage = 100 - evenPercentage;
             const isTarget = state.parity === 'even' ? digit % 2 === 0 : digit % 2 !== 0;
+            this.notifyAutomatedRecovery(
+                `Recovery tick ${state.selectedSymbol}: last digit ${digit} | even ${evenPercentage.toFixed(1)}% / odd ${oddPercentage.toFixed(1)}% | target ${state.parity} | phase ${state.phase}`,
+                'info'
+            );
             if (state.phase === 'wait_opposite') {
                 if (isTarget) state.consecutiveOpposite = 0;
                 else state.consecutiveOpposite += 1;
                 if (state.consecutiveOpposite >= 3) state.phase = 'confirm';
+                this.notifyAutomatedRecovery(
+                    `Recovery pattern: ${state.consecutiveOpposite} opposite digit(s); waiting for ${state.parity} confirmation`,
+                    'info'
+                );
                 return false;
             }
             if (state.phase === 'confirm' && isTarget) {
                 state.phase = 'ready';
                 state.nextStake = this.calculateParityRecoveryStake(state.totalLoss, state.parity);
                 this.setAutomatedRecoveryVariables(true, state.nextStake);
+                this.notifyAutomatedRecovery(
+                    `Parity confirmed: digit ${digit} is ${state.parity} | executing recovery stake ${state.nextStake}`,
+                    'success'
+                );
                 return true;
             }
             return state.phase === 'ready';
@@ -226,6 +263,8 @@ export default Engine =>
                 const even = digits.filter(digit => digit % 2 === 0).length;
                 const odd = digits.length - even;
                 const parity = even >= odd ? 'even' : 'odd';
+                const evenPercentage = (even / digits.length) * 100;
+                const oddPercentage = (odd / digits.length) * 100;
                 const bestPercentage = Math.max(even, odd) / digits.length * 100;
                 const trailingOpposite = (() => {
                     const target = parity === 'even' ? digit => digit % 2 === 0 : digit => digit % 2 !== 0;
@@ -236,6 +275,8 @@ export default Engine =>
                 return {
                     symbol,
                     parity,
+                    evenPercentage,
+                    oddPercentage,
                     bestPercentage,
                     distance: Math.abs(60 - bestPercentage),
                     trailingOpposite,
@@ -265,6 +306,14 @@ export default Engine =>
                     this.setInterpreterVariable(name, Number(stake))
                 );
             }
+        }
+
+        notifyAutomatedRecovery(message, type = 'info') {
+            globalObserver.emit('ui.log.notify', {
+                className: `journal__text--${type}`,
+                message,
+                sound: 'silent',
+            });
         }
 
         async finishAutomatedParityRecovery() {
