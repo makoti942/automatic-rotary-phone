@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS } from './makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
+import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 
 type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling';
 type Side = 'even' | 'odd';
@@ -69,6 +70,11 @@ export const UnderEvenOddAuto: React.FC = () => {
     const setPhaseSafe = useCallback((next: Phase) => { phaseRef.current = next; setPhase(next); }, []);
     const notify = useCallback((message: string) => {
         addLog(message);
+        globalObserver.emit('ui.log.notify', {
+            className: 'journal__text--info',
+            message: `[UNDER→EVEN/ODD] ${message}`,
+            sound: 'silent',
+        });
         try { window.dispatchEvent(new CustomEvent('makoti:notification', { detail: message })); } catch {}
     }, [addLog]);
     const loadActiveSymbols = useCallback(async () => {
@@ -210,10 +216,20 @@ export const UnderEvenOddAuto: React.FC = () => {
                     if (sym === selectedRef.current?.symbol) {
                         const pick = selectedRef.current; const target = pick.side === 'even' ? isEven(digit) : !isEven(digit);
                         const ds = buffersRef.current[sym].slice(-100); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
+                        setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
                         if (phaseRef.current === 'pattern') {
-                            if (target) { if (oppositeRef.current >= 3) { oppositeRef.current = 0; void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity'); } else oppositeRef.current = 0; }
-                            else { oppositeRef.current++; notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/3`); }
+                            if (target && oppositeRef.current >= 3) {
+                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | confirmation complete`);
+                                oppositeRef.current = 0;
+                                void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
+                            } else if (target) {
+                                oppositeRef.current = 0;
+                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | waiting for 3 opposites`);
+                            } else {
+                                oppositeRef.current++;
+                                notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/3`);
+                            }
                         }
                     }
                     if (phaseRef.current === 'entry' && sym === normalSymbolRef.current && digit === entryDigitRef.current) { notify(`ENTRY DIGIT ${digit} CONFIRMED — Under 7`); void buy(sym, 'DIGITUNDER', currentStakeRef.current, 'under'); }
