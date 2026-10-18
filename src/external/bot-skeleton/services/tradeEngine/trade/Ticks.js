@@ -220,6 +220,7 @@ export default Engine =>
             if (state.phase === 'executing') return false;
             if (!state.selectedSymbol) {
                 const symbols = this.getAvailableVolatilitySymbols();
+                this.notifyAutomatedRecovery(`Recovery scan: requesting 200 ticks from ${symbols.length} volatility indices`, 'info');
                 const samples = await Promise.all(symbols.map(symbol => this.fetchParitySample(symbol)));
                 const usable = samples.filter(sample => sample && sample.count >= 100);
                 if (!usable.length) return false;
@@ -280,9 +281,19 @@ export default Engine =>
 
         getAvailableVolatilitySymbols() {
             const list = ApiHelpers?.instance?.active_symbols?.getSymbolsForBot?.() || [];
-            return [...new Set(list
-                .filter(item => item?.value && /volatility|continuous indices/i.test(`${item.group || ''} ${item.submarket || ''}`))
-                .map(item => item.value))];
+            const discovered = list
+                .filter(item => {
+                    const value = item?.value || '';
+                    const metadata = `${item.group || ''} ${item.submarket || ''} ${item.display_name || ''} ${item.name || ''}`;
+                    return /^R_\d+$/i.test(value) || /^1HZ\d+V$/i.test(value) || /volatility|continuous indices/i.test(metadata);
+                })
+                .map(item => item.value);
+            const knownVolatilityIndices = [
+                'R_10', 'R_25', 'R_50', 'R_75', 'R_100',
+                '1HZ10V', '1HZ15V', '1HZ25V', '1HZ30V', '1HZ50V', '1HZ75V', '1HZ90V',
+                '1HZ100V', '1HZ150V', '1HZ200V', '1HZ250V', '1HZ300V',
+            ];
+            return [...new Set([...knownVolatilityIndices, ...discovered])];
         }
 
         async fetchParitySample(symbol) {
