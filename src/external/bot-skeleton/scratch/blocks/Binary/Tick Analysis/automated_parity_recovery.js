@@ -32,8 +32,7 @@ window.Blockly.Blocks.automated_parity_status = {
 window.Blockly.Blocks.automated_trade_purchase = {
     init() {
         this.jsonInit({
-            message0: localize('Automated Under 7/8 or even/odd recovery %1'),
-            args0: [{ type: 'input_value', name: 'PREDICTION', check: 'Number' }],
+            message0: localize('Automated Under 7/8 or even/odd recovery'),
             previousStatement: 'Purchase',
             ...baseStyle(),
             tooltip: localize('Runs Under 7 on the first normal trade, Under 8 afterward, and parity recovery after a loss.'),
@@ -99,14 +98,8 @@ window.Blockly.Blocks.automated_parity_recovery_update = {
 window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_parity_status = () =>
     'Bot.automatedParityRecoveryStatus();\n';
 
-window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_trade_purchase = block => {
-    const prediction = window.Blockly.JavaScript.javascriptGenerator.valueToCode(
-        block,
-        'PREDICTION',
-        window.Blockly.JavaScript.javascriptGenerator.ORDER_ATOMIC
-    ) || '0';
-    return `Bot.automatedTradePurchase(${prediction});\n`;
-};
+window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_trade_purchase = () =>
+    'Bot.automatedTradePurchase();\n';
 
 window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_parity_recovery_purchase = () =>
     'Bot.automatedParityRecoveryPurchase();\n';

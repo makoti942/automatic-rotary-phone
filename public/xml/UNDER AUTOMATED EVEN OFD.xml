@@ -440,7 +440,7 @@
               </block>
             </value>
             <next>
-              <block type="automated_trade_purchase" id="automatedTradePurchase"><value name="PREDICTION"><block type="variables_get" id="automatedPredictionInput"><field name="VAR" id="Y5/XSGh1;v85;8*pTo7c">prediction</field></block></value></block></next>
+              <block type="automated_trade_purchase" id="automatedTradePurchase" /></next>
           </block>
         </statement>
       </block>

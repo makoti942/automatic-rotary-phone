@@ -130,7 +130,7 @@ export default Engine =>
             return true;
         }
 
-        async automatedTradePurchase(requestedPrediction) {
+        async automatedTradePurchase() {
             const currentState = this.automated_parity_recovery_state;
             if (currentState && Number(currentState.totalLoss) > 0) {
                 return this.automatedParityRecoveryPurchase();
@@ -144,7 +144,7 @@ export default Engine =>
             };
             this.setInterpreterVariable('prediction', prediction);
             this.notifyAutomatedRecovery(
-                `Normal Under entry: DIGITUNDER ${prediction} | requested ${Number(requestedPrediction) || 0}`,
+                `Normal Under entry: DIGITUNDER ${prediction}`,
                 'info'
             );
             await this.purchase('DIGITUNDER');
