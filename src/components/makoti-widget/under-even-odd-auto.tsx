@@ -7,7 +7,7 @@ import { observer as globalObserver } from '@/external/bot-skeleton/utils/observ
 type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling';
 type Side = 'even' | 'odd';
 interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity'; contract: string; }
-interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; trailingOpposite: number; lastEpoch?: number; }
+interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; digitPcts: number[]; topDigits: number[]; losingTopCount: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
 const OPPOSITE_TRIGGER = 5;
@@ -18,6 +18,10 @@ const digitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number
     if (/e/i.test(raw)) return Number(Number(quote).toFixed(pip).slice(-1));
     const fraction = (raw.split('.')[1] || '').replace(/[^0-9]/g, '');
     if (fraction) return Number(fraction.padEnd(pip, '0').slice(0, pip).slice(-1));
+    return Number(Number(quote).toFixed(pip).slice(-1));
+};
+const manualTradeDigitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
+    const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
     return Number(Number(quote).toFixed(pip).slice(-1));
 };
 const withTimeout = <T,>(promise: Promise<T>, ms: number) => Promise.race([promise, new Promise<T>((_, reject) => setTimeout(() => reject(new Error('request timeout')), ms))]);
@@ -125,35 +129,41 @@ export const UnderEvenOddAuto: React.FC = () => {
         scanRunningRef.current = true;
         setPhaseSafe('scanning');
         const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
-        notify(`RECOVERY SCAN: requesting 200 ticks from ${symbols.length} live Deriv volatility indices`);
+        notify(`RECOVERY SCAN: requesting 1000 ticks from ${symbols.length} live Deriv volatility indices`);
         try {
             const samples = await Promise.all(symbols.map(async symbol => {
                 try {
-                    const response: any = await withTimeout(sendViaNewSystemWithPromise({ ticks_history: symbol, count: 200, end: 'latest', style: 'ticks' }), 8000);
+                    const response: any = await withTimeout(sendViaNewSystemWithPromise({ ticks_history: symbol, count: 1000, end: 'latest', style: 'ticks' }), 8000);
                     const prices = response?.history?.prices || [];
                     updateBuffer(symbol, prices);
-                    const digits = prices.slice(-100).map((p: unknown) => digitOf(p, symbol, pipSizesRef.current)).filter(Number.isFinite);
-                    if (digits.length < 100) return null;
-                    const evens = digits.filter(isEven).length;
-                    const ep = evens / digits.length * 100;
+                    const digits = prices.slice(-1000).map((p: unknown) => manualTradeDigitOf(p, symbol, pipSizesRef.current)).filter(d => Number.isInteger(d) && d >= 0 && d <= 9);
+                    if (digits.length < 1000) return null;
+                    const counts = Array(10).fill(0);
+                    digits.forEach(d => { counts[d]++; });
+                    const digitPcts = counts.map(count => count / digits.length * 100);
+                    const ep = digitPcts.filter((_, digit) => isEven(digit)).reduce((sum, pct) => sum + pct, 0);
                     const op = 100 - ep;
                     const side: Side = ep >= op ? 'even' : 'odd';
+                    const losingDigits = side === 'even' ? [1, 3, 5, 7, 9] : [0, 2, 4, 6, 8];
+                    const topDigits = [...Array(10).keys()].sort((a, b) => digitPcts[b] - digitPcts[a]);
+                    const losingTopCount = topDigits.slice(0, 5).filter(d => losingDigits.includes(d)).length;
                     const target = side === 'even' ? isEven : (d: number) => !isEven(d);
                     let trailingOpposite = 0;
                     for (let i = digits.length - 1; i >= 0 && !target(digits[i]); i--) trailingOpposite++;
-                    return { symbol, side, evenPct: ep, oddPct: op, trailingOpposite, lastEpoch: response?.history?.times?.at(-1) } as RecoveryPick;
+                    return { symbol, side, evenPct: ep, oddPct: op, digitPcts, topDigits, losingTopCount, trailingOpposite, lastEpoch: response?.history?.times?.at(-1) } as RecoveryPick;
                 } catch { return null; }
             }));
             const usable = samples.filter(Boolean) as RecoveryPick[];
             if (!usable.length) {
-                notify('RECOVERY SCAN: no index returned 100 usable ticks; retrying in 3 seconds');
+                notify('RECOVERY SCAN: no index returned 1000 usable ticks; retrying in 3 seconds');
                 setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
                 return;
             }
-            notify(`SCAN PERCENTAGES: ${usable.map(x => `${x.symbol} E${x.evenPct.toFixed(1)}%/O${x.oddPct.toFixed(1)}%`).join(' | ')}`);
+            notify(`SCAN PARITY/DIGITS: ${usable.map(x => `${x.symbol} ${x.side.toUpperCase()} ${Math.max(x.evenPct, x.oddPct).toFixed(1)}% | top ${x.topDigits.slice(0, 5).join('')} | losing-top ${x.losingTopCount}/5`).join(' | ')}`);
             const distanceTo60 = (item: RecoveryPick) => Math.abs(Math.max(item.evenPct, item.oddPct) - 60);
-            const qualifying = usable.filter(item => Math.max(item.evenPct, item.oddPct) >= 60);
-            const best = (qualifying.length ? qualifying : usable).sort((a, b) => distanceTo60(a) - distanceTo60(b))[0];
+            const digitQualified = usable.filter(item => item.losingTopCount < 3);
+            const qualifying = digitQualified.filter(item => Math.max(item.evenPct, item.oddPct) >= 60);
+            const best = (qualifying.length ? qualifying : digitQualified.length ? digitQualified : usable).sort((a, b) => distanceTo60(a) - distanceTo60(b))[0];
             selectedRef.current = best;
             setSelected(best);
             setEvenPct(best.evenPct); setOddPct(best.oddPct);
@@ -163,7 +173,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             sendTickSubscription(best.symbol, 200);
             setPhaseSafe('pattern');
             const target = best.side.toUpperCase();
-            notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | opposite streak ${oppositeRef.current}`);
+            notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | top digits ${best.topDigits.slice(0, 5).join(',')} | losing-top ${best.losingTopCount}/5 | opposite streak ${oppositeRef.current}`);
         } finally { scanRunningRef.current = false; }
     }, [notify, sendTickSubscription, setPhaseSafe, updateBuffer]);
     const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind']) => {
