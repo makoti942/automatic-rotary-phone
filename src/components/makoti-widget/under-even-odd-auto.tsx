@@ -114,14 +114,10 @@ export const UnderEvenOddAuto: React.FC = () => {
         const old = buffersRef.current[symbol] || [];
         buffersRef.current[symbol] = [...old, ...digits].slice(-200);
     }, []);
-    const recoveryStake = useCallback((loss: number, lossStreak = lossStreakRef.current) => {
-        if (loss <= 0) return Number(stake) || 0.35;
+    const recoveryStake = useCallback((lastTradeStake: number) => {
         const base = Math.max(0.35, Number(stake) || 0.35);
         const multiplier = Math.max(1, Number(martingale) || 2);
-        const martingaleStake = base * Math.pow(multiplier, Math.max(0, lossStreak));
-        // Use the larger of the configured progression and the amount required
-        // to cover the full outstanding loss at the conservative 95% net payout.
-        return Math.max(0.35, Math.ceil(Math.max(martingaleStake, loss / 0.95) * 100) / 100);
+        return Math.max(0.35, Math.ceil(Math.max(base, Number(lastTradeStake) || base) * multiplier * 100) / 100);
     }, [martingale, stake]);
     const scanRecovery = useCallback(async () => {
         if (!runningRef.current || scanRunningRef.current) return;
@@ -194,13 +190,13 @@ export const UnderEvenOddAuto: React.FC = () => {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
                 if (remaining <= 0.0001) { recoveryArmedRef.current = false; lossStreakRef.current = 0; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
-                else { lossStreakRef.current = 0; currentStakeRef.current = recoveryStake(remaining, 0); setCurrentStake(currentStakeRef.current); notify(`RECOVERY BALANCE REMAINING $${remaining.toFixed(2)} | next stake $${currentStakeRef.current.toFixed(2)}`); setPhaseSafe('pattern'); }
+                else { lossStreakRef.current = 0; setCurrentStake(currentStakeRef.current); notify(`RECOVERY BALANCE REMAINING $${remaining.toFixed(2)} | continuing with stake $${currentStakeRef.current.toFixed(2)}`); setPhaseSafe('pattern'); }
             } else { lossStreakRef.current = 0; normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
         } else {
             const loss = Math.max(trade.stake, Math.abs(profit));
             lossRef.current += loss; lossStreakRef.current += 1; setLossBalance(lossRef.current);
-            currentStakeRef.current = recoveryStake(lossRef.current, lossStreakRef.current); setCurrentStake(currentStakeRef.current);
-            notify(`LOSS ACCUMULATED $${loss.toFixed(2)} | outstanding $${lossRef.current.toFixed(2)} | loss streak ${lossStreakRef.current} | martingale ×${Number(martingale) || 2} | next stake $${currentStakeRef.current.toFixed(2)}`);
+            currentStakeRef.current = recoveryStake(trade.stake); setCurrentStake(currentStakeRef.current);
+            notify(`LOSS ACCUMULATED $${loss.toFixed(2)} | outstanding $${lossRef.current.toFixed(2)} | last stake $${trade.stake.toFixed(2)} ×${Number(martingale) || 2} | next stake $${currentStakeRef.current.toFixed(2)}`);
             if (trade.kind === 'parity' && selectedRef.current) {
                 // Hold the selected volatility and keep the recovery contract armed.
                 recoveryArmedRef.current = true;
