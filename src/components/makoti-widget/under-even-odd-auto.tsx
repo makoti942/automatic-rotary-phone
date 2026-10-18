@@ -58,6 +58,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const buffersRef = useRef<Record<string, number[]>>({});
     const openRef = useRef<Map<string, OpenTrade>>(new Map());
     const oppositeRef = useRef(0);
+    const recoveryArmedRef = useRef(false);
     const lastEpochRef = useRef<number | undefined>();
     const scanRunningRef = useRef(false);
     const availableSymbolsRef = useRef<string[]>(FALLBACK_SYMBOLS);
@@ -152,6 +153,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             selectedRef.current = best;
             setSelected(best);
             setEvenPct(best.evenPct); setOddPct(best.oddPct);
+            recoveryArmedRef.current = false;
             oppositeRef.current = best.trailingOpposite;
             lastEpochRef.current = best.lastEpoch;
             sendTickSubscription(best.symbol, 200);
@@ -185,7 +187,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             if (trade.kind === 'parity') {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
-                if (remaining <= 0.0001) { notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
+                if (remaining <= 0.0001) { recoveryArmedRef.current = false; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
                 else { currentStakeRef.current = recoveryStake(remaining); setCurrentStake(currentStakeRef.current); setPhaseSafe('pattern'); }
             } else { normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
         } else {
@@ -194,10 +196,11 @@ export const UnderEvenOddAuto: React.FC = () => {
             currentStakeRef.current = recoveryStake(lossRef.current); setCurrentStake(currentStakeRef.current);
             notify(`RECOVERY ACTIVATED | balance $${lossRef.current.toFixed(2)} | next calculated stake $${currentStakeRef.current.toFixed(2)}`);
             if (trade.kind === 'parity' && selectedRef.current) {
-                // Hold the winning scan selection through the entire recovery sequence.
+                // Hold the selected volatility and keep the recovery contract armed.
+                recoveryArmedRef.current = true;
                 oppositeRef.current = 0;
                 setPhaseSafe('pattern');
-                notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — waiting for 3 opposite digits, then ${selectedRef.current.side.toUpperCase()}`);
+                notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — pattern gate bypassed; next ${selectedRef.current.side.toUpperCase()} tick will execute`);
             } else {
                 void scanRecovery();
             }
@@ -219,8 +222,13 @@ export const UnderEvenOddAuto: React.FC = () => {
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
                         if (phaseRef.current === 'pattern') {
-                            if (target && oppositeRef.current >= 3) {
+                            if (target && recoveryArmedRef.current) {
+                                notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing`);
+                                oppositeRef.current = 0;
+                                void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
+                            } else if (target && oppositeRef.current >= 3) {
                                 notify(`RECOVERY TICK ${digit} = TARGET ${pick.side.toUpperCase()} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | confirmation complete`);
+                                recoveryArmedRef.current = true;
                                 oppositeRef.current = 0;
                                 void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
                             } else if (target) {
@@ -252,7 +260,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0;
+        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
         setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true); setPhaseSafe('entry'); notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
     };
     const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); notify('STOPPED'); };
