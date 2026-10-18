@@ -1150,6 +1150,61 @@ $mw-radius:   10px;
     }
 }
 
+.mw-ueo-entry-controls {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.mw-killer__fields .mw-ueo-entry-field .mw-ueo-entry-controls > .mw-input {
+    flex: 0 1 58px !important;
+    width: 58px;
+    min-width: 48px !important;
+}
+
+.mw-ueo-auto-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: $mw-text;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.25px;
+    white-space: nowrap;
+}
+
+.mw-ueo-auto-toggle__button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    flex: 0 0 auto;
+
+    &:disabled {
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+}
+
+.mw-ueo-auto-toggle .mw-toggle__track {
+    width: 34px;
+    height: 19px;
+    border-radius: 10px;
+}
+
+.mw-ueo-auto-toggle .mw-toggle__thumb {
+    width: 13px;
+    height: 13px;
+    top: 2px;
+    left: 2px;
+}
+
+.mw-ueo-auto-toggle .mw-toggle__thumb--on {
+    left: 17px;
+}
+
 @keyframes mw-blink {
     from { opacity: 1; }
     to   { opacity: 0.4; }

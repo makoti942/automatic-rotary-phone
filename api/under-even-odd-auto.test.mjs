@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AUTOMATED_FREQUENCY_WINDOW,
   RECOVERY_SAMPLE_SIZE,
   REQUIRED_TARGET_DIGITS_IN_TOP,
+  TWO_DIGIT_EXPECTED_PERCENT,
+  advancePairHitCount,
+  isPairLessAppearing,
+  nextAutomatedStage,
   selectRecoveryCandidate,
 } from '../src/components/makoti-widget/under-even-odd-utils.mjs';
 
@@ -40,4 +45,34 @@ test('does not select a market when the top-five digit majority disagrees with t
     candidate('R_25', 'even', 58, 42, 4),
   ];
   assert.equal(selectRecoveryCandidate(samples), null);
+});
+
+test('automated frequency checks use the 1,000-tick window and 20% two-digit baseline', () => {
+  assert.equal(AUTOMATED_FREQUENCY_WINDOW, 1000);
+  assert.equal(TWO_DIGIT_EXPECTED_PERCENT, 20);
+});
+
+test('qualifies a pair by combined frequency even when one member is above 10%', () => {
+  const pcts = [12, 7, 11, 11, 11, 11, 11, 11, 7, 8];
+  assert.equal(isPairLessAppearing(pcts, [0, 1]), true); // 19%; digit 0 is 12%
+});
+
+test('does not treat a pair at or above 20% as less appearing', () => {
+  const pcts = [13, 7, 11, 11, 11, 11, 11, 11, 7, 7];
+  assert.equal(isPairLessAppearing(pcts, [0, 1]), false); // exactly 20%
+  assert.equal(isPairLessAppearing(pcts, [8, 9]), true); // 14%
+});
+
+test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => {
+  const over1 = nextAutomatedStage('differs');
+  const under8 = nextAutomatedStage(over1);
+  const differsAgain = nextAutomatedStage(under8);
+  assert.deepEqual([over1, under8, differsAgain], ['over1', 'under8', 'differs']);
+});
+
+test('pair trigger counts two target appearances while allowing intervening digits', () => {
+  let hits = 0;
+  for (const digit of [0, 5, 7, 1]) hits = advancePairHitCount(hits, digit, [0, 1]);
+  assert.equal(hits, 2);
+  assert.equal(advancePairHitCount(hits, 4, [0, 1]), 2);
 });

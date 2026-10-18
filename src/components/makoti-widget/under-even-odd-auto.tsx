@@ -3,11 +3,21 @@ import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS } from './makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
-import { RECOVERY_SAMPLE_SIZE, TOP_DIGIT_COUNT, selectRecoveryCandidate } from './under-even-odd-utils.mjs';
+import {
+    AUTOMATED_FREQUENCY_WINDOW,
+    RECOVERY_SAMPLE_SIZE,
+    TOP_DIGIT_COUNT,
+    advancePairHitCount,
+    isPairLessAppearing,
+    nextAutomatedStage,
+    selectRecoveryCandidate,
+} from './under-even-odd-utils.mjs';
 
-type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling';
+type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling' | 'automated';
 type Side = 'even' | 'odd';
-interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity'; contract: string; }
+type AutoStage = 'differs' | 'over1' | 'under8';
+interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity' | 'automated'; contract: string; autoStage?: AutoStage; }
+interface QualifiedMarket { symbol: string; pairPct: number; }
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; digitPcts: number[]; topDigits: number[]; losingTopCount: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
@@ -34,8 +44,11 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [martingale, setMartingale] = useState(() => localStorage.getItem('mw_ueo_martingale') || BASE.martingale);
     const [normalSymbol, setNormalSymbol] = useState(() => localStorage.getItem('mw_ueo_market') || '1HZ25V');
     const [availableSymbols, setAvailableSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
+    const [automated, setAutomated] = useState(() => localStorage.getItem('mw_ueo_automated') === 'true');
     const [running, setRunning] = useState(false);
     const [phase, setPhase] = useState<Phase>('idle');
+    const [autoStage, setAutoStage] = useState<AutoStage>('differs');
+    const [qualifiedMarkets, setQualifiedMarkets] = useState<QualifiedMarket[]>([]);
     const [normalCount, setNormalCount] = useState(0);
     const [selected, setSelected] = useState<RecoveryPick | null>(null);
     const [lastDigit, setLastDigit] = useState<number | null>(null);
@@ -46,6 +59,12 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [logs, setLogs] = useState<string[]>([]);
     const runningRef = useRef(false);
     const phaseRef = useRef<Phase>('idle');
+    const automatedRef = useRef(automated);
+    const autoStageRef = useRef<AutoStage>('differs');
+    const digitStreaksRef = useRef<Record<string, { digit: number; count: number }>>({});
+    const pairHitsRef = useRef<Record<string, number>>({});
+    const qualifiedMarketsRef = useRef<Set<string>>(new Set());
+    const autoScanRunningRef = useRef(false);
     const normalSymbolRef = useRef(normalSymbol);
     const stakeRef = useRef(Number(stake) || 0.35);
     const normalStartedRef = useRef(false);
@@ -64,11 +83,14 @@ export const UnderEvenOddAuto: React.FC = () => {
     const availableSymbolsRef = useRef<string[]>(FALLBACK_SYMBOLS);
     const pipSizesRef = useRef<Record<string, number>>({ ...PIP_SIZES });
     const labelsRef = useRef<Record<string, string>>({ ...SYMBOL_LABELS });
+    const subscribedTickSymbolsRef = useRef<Set<string>>(new Set());
+    const tickSubscriptionSocketRef = useRef<WebSocket | null>(null);
     const addLog = useCallback((message: string) => {
         const line = `${new Date().toLocaleTimeString()} ${message}`;
         setLogs(prev => [...prev.slice(-119), line]);
     }, []);
     const setPhaseSafe = useCallback((next: Phase) => { phaseRef.current = next; setPhase(next); }, []);
+    const setAutoStageSafe = useCallback((next: AutoStage) => { autoStageRef.current = next; setAutoStage(next); }, []);
     const notify = useCallback((message: string) => {
         addLog(message);
         globalObserver.emit('ui.log.notify', {
@@ -102,9 +124,15 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, [notify]);
     const sendTickSubscription = useCallback((symbol: string, count = 200) => {
-        if (window._newSystemWS?.readyState === WebSocket.OPEN) {
-            window._newSystemWS.send(JSON.stringify({ ticks_history: symbol, count, end: 'latest', style: 'ticks', subscribe: 1 }));
+        const socket = window._newSystemWS;
+        if (socket?.readyState !== WebSocket.OPEN) return;
+        if (tickSubscriptionSocketRef.current !== socket) {
+            tickSubscriptionSocketRef.current = socket;
+            subscribedTickSymbolsRef.current.clear();
         }
+        if (subscribedTickSymbolsRef.current.has(symbol)) return;
+        socket.send(JSON.stringify({ ticks_history: symbol, count, end: 'latest', style: 'ticks', subscribe: 1 }));
+        subscribedTickSymbolsRef.current.add(symbol);
     }, []);
     const updateBuffer = useCallback((symbol: string, prices: any[]) => {
         const digits = prices.map(price => manualTradeDigitOf(price, symbol, pipSizesRef.current)).filter(Number.isFinite);
@@ -171,22 +199,87 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | top digits ${best.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${best.digitPcts[d].toFixed(0)}%`).join(',')} | opposite-top ${best.losingTopCount}/${TOP_DIGIT_COUNT} | opposite streak ${oppositeRef.current}`);
         } finally { scanRunningRef.current = false; }
     }, [notify, sendTickSubscription, setPhaseSafe, updateBuffer]);
-    const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind']) => {
+    const scanAutomatedPair = useCallback(async (stage: AutoStage) => {
+        if (!runningRef.current || !automatedRef.current || autoScanRunningRef.current) return;
+        autoScanRunningRef.current = true;
+        setAutoStageSafe(stage);
+        setPhaseSafe('scanning');
+        setQualifiedMarkets([]);
+        qualifiedMarketsRef.current = new Set();
+        pairHitsRef.current = {};
+        const pair: [number, number] = stage === 'over1' ? [0, 1] : [8, 9];
+        const contractLabel = stage === 'over1' ? 'Over 1' : 'Under 8';
+        const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
+        notify(`${contractLabel} scan: checking digits ${pair.join(' and ')} over the last ${AUTOMATED_FREQUENCY_WINDOW} ticks on ${symbols.length} volatility indices; combined frequency must be below 20%`);
+        try {
+            const samples = await Promise.all(symbols.map(async symbol => {
+                try {
+                    const response: any = await withTimeout(sendViaNewSystemWithPromise({
+                        ticks_history: symbol,
+                        count: AUTOMATED_FREQUENCY_WINDOW,
+                        end: 'latest',
+                        style: 'ticks',
+                    }), 8000);
+                    const prices = response?.history?.prices || [];
+                    const digits = prices.slice(-AUTOMATED_FREQUENCY_WINDOW)
+                        .map((price: unknown) => manualTradeDigitOf(price, symbol, pipSizesRef.current))
+                        .filter((digit: number) => Number.isInteger(digit) && digit >= 0 && digit <= 9);
+                    if (digits.length < AUTOMATED_FREQUENCY_WINDOW) return null;
+                    updateBuffer(symbol, prices);
+                    const counts = Array(10).fill(0);
+                    digits.forEach((digit: number) => { counts[digit]++; });
+                    const digitPcts = counts.map(count => count / digits.length * 100);
+                    const pairPct = digitPcts[pair[0]] + digitPcts[pair[1]];
+                    return { symbol, pairPct, qualifies: isPairLessAppearing(digitPcts, pair) } as QualifiedMarket & { qualifies: boolean };
+                } catch { return null; }
+            }));
+            if (!runningRef.current || !automatedRef.current || autoStageRef.current !== stage) return;
+            const usable = samples.filter(Boolean) as Array<QualifiedMarket & { qualifies: boolean }>;
+            const qualified = usable.filter(item => item.qualifies).map(({ symbol, pairPct }) => ({ symbol, pairPct }));
+            notify(`${contractLabel} frequency scan (${AUTOMATED_FREQUENCY_WINDOW} ticks): ${usable.length ? usable.map(item => `${item.symbol} ${pair.join('+')}=${item.pairPct.toFixed(1)}%${item.qualifies ? ' ✓' : ''}`).join(' | ') : 'no usable samples'}`);
+            setQualifiedMarkets(qualified);
+            qualifiedMarketsRef.current = new Set(qualified.map(item => item.symbol));
+            pairHitsRef.current = Object.fromEntries(qualified.map(item => [item.symbol, 0]));
+            if (!qualified.length) {
+                notify(`${contractLabel}: no market has combined ${pair.join('+')} frequency below 20%; no trade, retrying in 5 seconds`);
+                setTimeout(() => {
+                    if (runningRef.current && automatedRef.current && autoStageRef.current === stage) void scanAutomatedPair(stage);
+                }, 5000);
+                return;
+            }
+            setPhaseSafe('automated');
+            notify(`${contractLabel}: monitoring all qualifying markets: ${qualified.map(item => `${labelsRef.current[item.symbol] || item.symbol} (${pair.join('+')} ${item.pairPct.toFixed(1)}%)`).join(', ')}. Waiting for two ${pair.join('/')} ticks per market; other digits may occur between them.`);
+        } finally {
+            autoScanRunningRef.current = false;
+        }
+    }, [notify, setAutoStageSafe, setPhaseSafe, updateBuffer]);
+    const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind'], barrier?: string) => {
         if (!runningRef.current || phaseRef.current === 'settling') return;
         setPhaseSafe('settling');
         const underBarrier = normalStartedRef.current ? '8' : '7';
-        const label = contract === 'DIGITEVEN' ? 'EVEN' : contract === 'DIGITODD' ? 'ODD' : `UNDER ${contract === 'DIGITUNDER' ? underBarrier : ''}`;
-            notify(`TRADE ${label} on ${labelsRef.current[symbol] || symbol} | stake $${amount.toFixed(2)}`);
+        const actualBarrier = barrier || (contract === 'DIGITUNDER' ? underBarrier : undefined);
+        const label = contract === 'DIGITEVEN' ? 'EVEN'
+            : contract === 'DIGITODD' ? 'ODD'
+                : contract === 'DIGITDIFF' ? `DIFFERS ${actualBarrier}`
+                    : contract === 'DIGITOVER' ? `OVER ${actualBarrier}` : `UNDER ${actualBarrier || ''}`;
+        notify(`TRADE ${label} on ${labelsRef.current[symbol] || symbol} | stake $${amount.toFixed(2)}`);
         try {
-            const response: any = await sendViaNewSystemWithPromise({ buy: 1, price: amount, parameters: { amount, basis: 'stake', currency: 'USD', duration: 1, duration_unit: 't', symbol, contract_type: contract, ...(contract === 'DIGITUNDER' ? { barrier: underBarrier } : {}) } });
+            const response: any = await sendViaNewSystemWithPromise({
+                buy: 1,
+                price: amount,
+                parameters: {
+                    amount, basis: 'stake', currency: 'USD', duration: 1, duration_unit: 't', symbol, contract_type: contract,
+                    ...(['DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(contract) && actualBarrier ? { barrier: actualBarrier } : {}),
+                },
+            });
             const cid = response?.buy?.contract_id ?? response?.contract_id;
             if (!cid) throw new Error('no contract id');
             if (kind === 'under') normalStartedRef.current = true;
-            openRef.current.set(String(cid), { symbol, stake: amount, kind, contract });
+            openRef.current.set(String(cid), { symbol, stake: amount, kind, contract, autoStage: kind === 'automated' ? autoStageRef.current : undefined });
             try { transactions.onBotContractEvent({ contract_id: cid, transaction_ids: { buy: response?.buy?.transaction_id }, buy_price: amount, currency: 'USD', contract_type: contract, underlying: symbol, display_name: SYMBOL_LABELS[symbol] || symbol, date_start: Math.floor(Date.now() / 1000), status: 'open' } as any); } catch {}
         } catch (error: any) {
             notify(`BUY ERROR: ${error?.error?.message || error?.message || 'request failed'}`);
-            setPhaseSafe(kind === 'parity' ? 'pattern' : 'normal');
+            setPhaseSafe(kind === 'parity' ? 'pattern' : kind === 'automated' ? 'automated' : 'normal');
         }
     }, [notify, setPhaseSafe, transactions]);
     const handleSettled = useCallback((trade: OpenTrade, profit: number) => {
@@ -196,7 +289,20 @@ export const UnderEvenOddAuto: React.FC = () => {
             if (trade.kind === 'parity') {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
-                if (remaining <= 0.0001) { recoveryArmedRef.current = false; lossStreakRef.current = 0; notify('RECOVERY COMPLETE — returning to normal Under 8'); selectedRef.current = null; setSelected(null); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
+                if (remaining <= 0.0001) {
+                    recoveryArmedRef.current = false; lossStreakRef.current = 0;
+                    selectedRef.current = null; setSelected(null);
+                    currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current);
+                    if (automatedRef.current) {
+                        setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
+                        pairHitsRef.current = {}; digitStreaksRef.current = {};
+                        setPhaseSafe('automated');
+                        notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
+                    } else {
+                        notify('RECOVERY COMPLETE — returning to normal Under 8');
+                        setPhaseSafe('normal');
+                    }
+                }
                 else {
                     lossStreakRef.current = 0;
                     currentStakeRef.current = recoveryStake(Number(stakeRef.current) || 0.35);
@@ -204,7 +310,25 @@ export const UnderEvenOddAuto: React.FC = () => {
                     notify(`RECOVERY WIN BUT BALANCE REMAINS $${remaining.toFixed(2)} | reset next stake to base $${Number(stakeRef.current).toFixed(2)} ×${Number(martingale) || 2} = $${currentStakeRef.current.toFixed(2)}`);
                     setPhaseSafe('pattern');
                 }
-            } else { lossStreakRef.current = 0; normalCountRef.current++; setNormalCount(normalCountRef.current); currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal'); }
+            } else if (trade.kind === 'automated') {
+                lossStreakRef.current = 0;
+                normalCountRef.current++; setNormalCount(normalCountRef.current);
+                currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current);
+                const nextStage = nextAutomatedStage(trade.autoStage || autoStageRef.current) as AutoStage;
+                setAutoStageSafe(nextStage);
+                setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {};
+                digitStreaksRef.current = {};
+                if (nextStage === 'differs') {
+                    setPhaseSafe('automated');
+                    notify('UNDER 8 complete — restarting automated sequence at Digit Differs');
+                } else {
+                    notify(`${trade.contract} won — advancing to ${nextStage === 'over1' ? 'Over 1' : 'Under 8'}`);
+                    void scanAutomatedPair(nextStage);
+                }
+            } else {
+                lossStreakRef.current = 0; normalCountRef.current++; setNormalCount(normalCountRef.current);
+                currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current); setPhaseSafe('normal');
+            }
         } else {
             const loss = Math.max(trade.stake, Math.abs(profit));
             lossRef.current += loss; lossStreakRef.current += 1; setLossBalance(lossRef.current);
@@ -216,6 +340,12 @@ export const UnderEvenOddAuto: React.FC = () => {
                 oppositeRef.current = 0;
                 setPhaseSafe('pattern');
                 notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — pattern gate bypassed; next ${selectedRef.current.side.toUpperCase()} tick will execute`);
+            } else if (trade.kind === 'automated') {
+                selectedRef.current = null; setSelected(null); oppositeRef.current = 0; recoveryArmedRef.current = false;
+                setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
+                pairHitsRef.current = {}; digitStreaksRef.current = {};
+                notify(`AUTOMATED ${trade.autoStage || 'stage'} lost — entering Even/Odd recovery; automation will resume at Differs after recovery`);
+                void scanRecovery();
             } else {
                 selectedRef.current = null;
                 setSelected(null);
@@ -224,7 +354,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 void scanRecovery();
             }
         }
-    }, [martingale, notify, recoveryStake, scanRecovery, setPhaseSafe]);
+    }, [martingale, notify, recoveryStake, scanAutomatedPair, scanRecovery, setAutoStageSafe, setPhaseSafe]);
     useEffect(() => {
         if (!running) return;
         const unsubscribe = onNewSystemMessage((event: MessageEvent) => {
@@ -234,7 +364,31 @@ export const UnderEvenOddAuto: React.FC = () => {
                 if (data.msg_type === 'tick' && data.tick?.symbol) {
                     const sym = data.tick.symbol; const digit = manualTradeDigitOf(data.tick.quote, sym, pipSizesRef.current); const buf = buffersRef.current[sym] || [];
                     buffersRef.current[sym] = [...buf, digit].slice(-1000);
-                    if (sym === normalSymbolRef.current) setLastDigit(digit);
+                    if (sym === normalSymbolRef.current || automatedRef.current) setLastDigit(digit);
+                    if (automatedRef.current && phaseRef.current === 'automated') {
+                        const stage = autoStageRef.current;
+                        if (stage === 'differs') {
+                            const previous = digitStreaksRef.current[sym];
+                            const streak = previous?.digit === digit ? previous.count + 1 : 1;
+                            digitStreaksRef.current[sym] = { digit, count: streak };
+                            if (streak >= 3) {
+                                notify(`${labelsRef.current[sym] || sym}: digit ${digit} has repeated ${streak} live ticks — buying Digit Differs ${digit}`);
+                                void buy(sym, 'DIGITDIFF', currentStakeRef.current, 'automated', String(digit));
+                            }
+                        } else if (qualifiedMarketsRef.current.has(sym)) {
+                            const pair = stage === 'over1' ? [0, 1] : [8, 9];
+                            const previousHits = pairHitsRef.current[sym] || 0;
+                            const hits = advancePairHitCount(previousHits, digit, pair);
+                            if (hits > previousHits) {
+                                pairHitsRef.current[sym] = hits;
+                                notify(`${labelsRef.current[sym] || sym}: target digit ${digit} observed (${hits}/2 for ${stage === 'over1' ? 'Over 1' : 'Under 8'}; intervening digits allowed)`);
+                                if (hits >= 2) {
+                                    pairHitsRef.current[sym] = 0;
+                                    void buy(sym, stage === 'over1' ? 'DIGITOVER' : 'DIGITUNDER', currentStakeRef.current, 'automated', stage === 'over1' ? '1' : '8');
+                                }
+                            }
+                        }
+                    }
                     if (sym === selectedRef.current?.symbol) {
                         const pick = selectedRef.current; const target = pick.side === 'even' ? isEven(digit) : !isEven(digit);
                         const ds = buffersRef.current[sym].slice(-RECOVERY_SAMPLE_SIZE); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
@@ -277,10 +431,16 @@ export const UnderEvenOddAuto: React.FC = () => {
         return unsubscribe;
     }, [buy, handleSettled, notify, running, updateBuffer]);
     useEffect(() => {
-        if (running) sendTickSubscription(normalSymbolRef.current, 200);
-    }, [running, normalSymbol, sendTickSubscription]);
+        if (!running) return;
+        if (automatedRef.current) {
+            (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS)
+                .forEach(symbol => sendTickSubscription(symbol, AUTOMATED_FREQUENCY_WINDOW));
+        } else {
+            sendTickSubscription(normalSymbolRef.current, 200);
+        }
+    }, [running, automated, availableSymbols, sendTickSubscription]);
     useEffect(() => { void loadActiveSymbols(); }, [loadActiveSymbols]);
-    useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); }, [stake, entryDigit, martingale, normalSymbol]);
+    useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); localStorage.setItem('mw_ueo_automated', String(automated)); }, [stake, entryDigit, martingale, normalSymbol, automated]);
     useEffect(() => {
         if (!running || phase !== 'normal') return;
         if (runningRef.current) void buy(normalSymbolRef.current, 'DIGITUNDER', currentStakeRef.current, 'under');
@@ -288,13 +448,47 @@ export const UnderEvenOddAuto: React.FC = () => {
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
         normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
-        setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true); setPhaseSafe('entry'); notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
+        automatedRef.current = automated;
+        digitStreaksRef.current = {}; pairHitsRef.current = {}; qualifiedMarketsRef.current = new Set();
+        setQualifiedMarkets([]); setAutoStageSafe('differs');
+        setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
+        if (automated) {
+            setPhaseSafe('automated');
+            notify(`STARTED AUTOMATED — ignoring manual entry digit and volatility; monitoring all indices for three-repeat Digit Differs signals`);
+        } else {
+            setPhaseSafe('entry');
+            notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
+        }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
-        <div className='mw-killer__fields'><div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div><div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Entry digit</label><input className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running} /></div></div>
-        <div className='mw-analyze-result' style={{ display: 'block' }}><b>UNDER → EVEN/ODD AUTO</b><div>Phase: <strong>{phase}</strong> · Normal trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div><div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>{selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}</div>
-        <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>RUN UNDER → EVEN/ODD</button>}</div>
-        <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Automation log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, i) => <div key={i} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Configure the entry digit and run</div>}</div></div>
+        <div className='mw-killer__fields'>
+            <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
+            <div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div>
+            <div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div>
+            <div className='mw-field mw-field--grow mw-ueo-entry-field'>
+                <label className='mw-label' htmlFor='mw-ueo-entry-digit'>Entry digit</label>
+                <div className='mw-ueo-entry-controls'>
+                    <input id='mw-ueo-entry-digit' className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running || automated} />
+                    <div className='mw-ueo-auto-toggle'>
+                        <span id='mw-ueo-auto-label'>Automated</span>
+                        <button type='button' role='switch' aria-checked={automated} aria-labelledby='mw-ueo-auto-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAutomated(value => !value)} title='Scan volatility indices and run the automatic contract sequence'>
+                            <span className={`mw-toggle__track ${automated ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${automated ? 'mw-toggle__thumb--on' : ''}`} /></span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div className='mw-analyze-result' style={{ display: 'block' }}>
+            <b>UNDER → EVEN/ODD AUTO</b>
+            <div>Mode: <strong>{automated ? 'Automated sequence' : 'Manual entry'}</strong>{automated ? ` · Stage: ${autoStage === 'differs' ? 'Digit Differs' : autoStage === 'over1' ? 'Over 1' : 'Under 8'}` : ''}</div>
+            <div>Phase: <strong>{phase}</strong> · Completed trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div>
+            <div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>
+            {automated && <div>Automated mode ignores the manual entry digit and selected volatility.</div>}
+            {qualifiedMarkets.length > 0 && <div>Qualified markets ({autoStage === 'over1' ? '0+1' : '8+9'} below 20%): {qualifiedMarkets.map(item => `${labelsRef.current[item.symbol] || item.symbol} ${item.pairPct.toFixed(1)}%`).join(' · ')}</div>}
+            {selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}
+        </div>
+        <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>{automated ? 'RUN AUTOMATED CYCLE' : 'RUN UNDER → EVEN/ODD'}</button>}</div>
+        <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Automation log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, i) => <div key={i} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Select a mode, configure stake, and run</div>}</div></div>
     </div>;
 };
