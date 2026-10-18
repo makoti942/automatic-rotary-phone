@@ -142,6 +142,11 @@ const Interpreter = () => {
         );
         js_interpreter.setProperty(
             pseudo_bot_interface,
+            'automatedParityRecoveryStatus',
+            createAsync(js_interpreter, bot_interface.automatedParityRecoveryStatus)
+        );
+        js_interpreter.setProperty(
+            pseudo_bot_interface,
             'automatedParityRecoveryPurchase',
             createAsync(js_interpreter, bot_interface.automatedParityRecoveryPurchase)
         );

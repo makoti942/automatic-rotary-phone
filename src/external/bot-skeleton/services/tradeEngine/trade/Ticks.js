@@ -108,7 +108,11 @@ export default Engine =>
             const currentState = this.automated_parity_recovery_state;
             // Parity is strictly a loss-recovery path. Never initialize or trade
             // parity during the bot's normal entry/Under strategy.
-            if (!currentState || !(Number(currentState.totalLoss) > 0)) return false;
+            if (!currentState || !(Number(currentState.totalLoss) > 0)) {
+                this.notifyAutomatedRecovery(`Normal entry: DIGITUNDER on ${this.tradeOptions?.symbol || this.symbol}`, 'info');
+                await this.purchase('DIGITUNDER');
+                return true;
+            }
             const ready = await this.prepareAutomatedParityRecovery();
             if (!ready) return false;
             const state = this.automated_parity_recovery_state;
@@ -123,6 +127,34 @@ export default Engine =>
                 'info'
             );
             await this.purchase(contractType);
+            return true;
+        }
+
+        async automatedParityRecoveryStatus() {
+            try {
+                const symbol = this.symbol || this.tradeOptions?.symbol;
+                const ticks = await this.$scope.ticksService.request({ symbol });
+                const latest = ticks?.[ticks.length - 1];
+                if (!latest || latest.epoch === this.automated_parity_status_epoch) return false;
+                this.automated_parity_status_epoch = latest.epoch;
+                const pip = this.$scope.ticksService.pipSizes[symbol] || 2;
+                const digit = Number(Number(latest.quote).toFixed(pip).slice(-1));
+                const recentDigits = ticks.slice(-100).map(tick => Number(Number(tick.quote).toFixed(pip).slice(-1)));
+                const evenPercentage = recentDigits.length
+                    ? (recentDigits.filter(value => value % 2 === 0).length / recentDigits.length) * 100
+                    : 0;
+                const oddPercentage = 100 - evenPercentage;
+                const state = this.automated_parity_recovery_state;
+                const mode = state?.totalLoss > 0
+                    ? `RECOVERY ${state.phase || 'waiting'}`
+                    : 'NORMAL / recovery inactive';
+                this.notifyAutomatedRecovery(
+                    `${mode} | ${symbol} | last digit ${digit} | even ${evenPercentage.toFixed(1)}% / odd ${oddPercentage.toFixed(1)}%`,
+                    state?.totalLoss > 0 ? 'warn' : 'info'
+                );
+            } catch (error) {
+                this.notifyAutomatedRecovery(`Status unavailable: ${error?.message || 'tick data unavailable'}`, 'warn');
+            }
             return true;
         }
 

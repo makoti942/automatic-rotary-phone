@@ -8,19 +8,40 @@ const baseStyle = () => ({
     category: window.Blockly.Categories.Tick_Analysis,
 });
 
-window.Blockly.Blocks.automated_parity_recovery_purchase = {
+window.Blockly.Blocks.automated_parity_status = {
     init() {
         this.jsonInit({
-            message0: localize('Automated even/odd recovery purchase'),
+            message0: localize('Show automated recovery status'),
             previousStatement: null,
+            nextStatement: null,
             ...baseStyle(),
-            tooltip: localize('Scans volatility indices, waits for the parity reversal pattern, and purchases the selected parity.'),
+            tooltip: localize('Shows the current symbol, last digit, even/odd percentages, and recovery state in the Journal.'),
         });
     },
     meta() {
         return {
-            display_name: localize('Automated even/odd recovery purchase'),
-            description: localize('Fast parity recovery: scan 200 ticks across all available volatility indices, use the latest 100 for selection, wait for three opposite digits and a confirmation digit, then trade the selected parity.'),
+            display_name: localize('Show automated recovery status'),
+            description: localize('Displays live normal-entry and recovery status in the Journal.'),
+        };
+    },
+    customContextMenu(menu) {
+        modifyContextMenu(menu);
+    },
+};
+
+window.Blockly.Blocks.automated_parity_recovery_purchase = {
+    init() {
+        this.jsonInit({
+            message0: localize('Automated Under or even/odd recovery purchase'),
+            previousStatement: null,
+            ...baseStyle(),
+            tooltip: localize('Trades Under during normal mode and switches to parity only after a recorded loss.'),
+        });
+    },
+    meta() {
+        return {
+            display_name: localize('Automated Under or parity recovery purchase'),
+            description: localize('Uses the original Under entry trade with parity recovery after losses.'),
         };
     },
     customContextMenu(menu) {
@@ -51,6 +72,9 @@ window.Blockly.Blocks.automated_parity_recovery_update = {
         modifyContextMenu(menu);
     },
 };
+
+window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_parity_status = () =>
+    'Bot.automatedParityRecoveryStatus();\n';
 
 window.Blockly.JavaScript.javascriptGenerator.forBlock.automated_parity_recovery_purchase = () =>
     'Bot.automatedParityRecoveryPurchase();\n';
