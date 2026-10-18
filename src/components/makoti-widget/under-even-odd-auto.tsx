@@ -276,8 +276,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     useEffect(() => { normalSymbolRef.current = normalSymbol; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); }, [stake, entryDigit, martingale, normalSymbol]);
     useEffect(() => {
         if (!running || phase !== 'normal') return;
-        const timer = setTimeout(() => { if (runningRef.current) void buy(normalSymbolRef.current, 'DIGITUNDER', currentStakeRef.current, 'under'); }, 250);
-        return () => clearTimeout(timer);
+        if (runningRef.current) void buy(normalSymbolRef.current, 'DIGITUNDER', currentStakeRef.current, 'under');
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
