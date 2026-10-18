@@ -17,6 +17,7 @@ const getBotInterface = tradeEngine => {
         purchase: contract_type => tradeEngine.purchase(contract_type),
         hedgePurchase: contract_types => tradeEngine.hedgePurchase(contract_types),
         automatedParityRecoveryStatus: () => tradeEngine.automatedParityRecoveryStatus(),
+        automatedTradePurchase: prediction => tradeEngine.automatedTradePurchase(prediction),
         automatedParityRecoveryPurchase: () => tradeEngine.automatedParityRecoveryPurchase(),
         automatedParityRecoveryUpdate: (profit, stake) => tradeEngine.automatedParityRecoveryUpdate(profit, stake),
         getAskPrice: contract_type => Number(getProposal(contract_type, tradeEngine).ask_price),

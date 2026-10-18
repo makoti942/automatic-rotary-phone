@@ -130,6 +130,27 @@ export default Engine =>
             return true;
         }
 
+        async automatedTradePurchase(requestedPrediction) {
+            const currentState = this.automated_parity_recovery_state;
+            if (currentState && Number(currentState.totalLoss) > 0) {
+                return this.automatedParityRecoveryPurchase();
+            }
+            const isFirstNormalTrade = !this.automated_normal_trade_started;
+            const prediction = isFirstNormalTrade ? 7 : 8;
+            this.automated_normal_trade_started = true;
+            this.tradeOptions = {
+                ...this.tradeOptions,
+                prediction,
+            };
+            this.setInterpreterVariable('prediction', prediction);
+            this.notifyAutomatedRecovery(
+                `Normal Under entry: DIGITUNDER ${prediction} | requested ${Number(requestedPrediction) || 0}`,
+                'info'
+            );
+            await this.purchase('DIGITUNDER');
+            return true;
+        }
+
         async automatedParityRecoveryStatus() {
             try {
                 const symbol = this.symbol || this.tradeOptions?.symbol;
