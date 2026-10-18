@@ -51,7 +51,7 @@
       </block>
     </statement>
     <statement name="INITIALIZATION">
-      <block type="variables_set" id="setInitialStakeValue">
+      <block type="variables_set" id="initializeRecoveryFlag"><field name="VAR">is_recovery_var</field><value name="VALUE"><block type="logic_boolean" id="initializeRecoveryFalse"><field name="BOOL">FALSE</field></block></value><next /></block><block type="variables_set" id="setInitialStakeValue">
         <field name="VAR" id="initStakeVar">Initial Stake</field>
         <value name="VALUE">
           <block type="math_number" id="initialStakeValue">
@@ -440,7 +440,7 @@
               </block>
             </value>
             <next>
-              <block type="automated_parity_recovery_purchase" id="automatedParityPurchase" /></next>
+              <block type="controls_if" id="checkRecoveryPurchase"><mutation else="1" /><value name="IF0"><block type="logic_compare" id="compareIsRecoveryFalse"><field name="OP">EQ</field><value name="A"><block type="variables_get" id="get_recovery_var"><field name="VAR">is_recovery_var</field></block></value><value name="B"><block type="logic_boolean" id="isRecoveryFalse"><field name="BOOL">FALSE</field></block></value></block></value><statement name="DO0"><block type="purchase" id="mandatoryNormalPurchase"><field name="PURCHASE_LIST">DIGITUNDER</field></block></statement><statement name="ELSE"><block type="automated_parity_recovery_purchase" id="automatedParityPurchase" /></statement></block></next>
           </block>
         </statement>
       </block>
