@@ -3,6 +3,7 @@ import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS } from './makoti-ws';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
+import { RECOVERY_SAMPLE_SIZE, TOP_DIGIT_COUNT, selectRecoveryCandidate } from './under-even-odd-utils.mjs';
 
 type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling';
 type Side = 'even' | 'odd';
@@ -121,15 +122,15 @@ export const UnderEvenOddAuto: React.FC = () => {
         scanRunningRef.current = true;
         setPhaseSafe('scanning');
         const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
-        notify(`RECOVERY SCAN: requesting 1000 ticks from ${symbols.length} live Deriv volatility indices`);
+        notify(`RECOVERY SCAN: requesting ${RECOVERY_SAMPLE_SIZE} ticks from ${symbols.length} live Deriv volatility indices`);
         try {
             const samples = await Promise.all(symbols.map(async symbol => {
                 try {
-                    const response: any = await withTimeout(sendViaNewSystemWithPromise({ ticks_history: symbol, count: 1000, end: 'latest', style: 'ticks' }), 8000);
+                    const response: any = await withTimeout(sendViaNewSystemWithPromise({ ticks_history: symbol, count: RECOVERY_SAMPLE_SIZE, end: 'latest', style: 'ticks' }), 8000);
                     const prices = response?.history?.prices || [];
                     updateBuffer(symbol, prices);
-                    const digits = prices.slice(-1000).map((p: unknown) => manualTradeDigitOf(p, symbol, pipSizesRef.current)).filter(d => Number.isInteger(d) && d >= 0 && d <= 9);
-                    if (digits.length < 1000) return null;
+                    const digits = prices.slice(-RECOVERY_SAMPLE_SIZE).map((p: unknown) => manualTradeDigitOf(p, symbol, pipSizesRef.current)).filter(d => Number.isInteger(d) && d >= 0 && d <= 9);
+                    if (digits.length < RECOVERY_SAMPLE_SIZE) return null;
                     const counts = Array(10).fill(0);
                     digits.forEach(d => { counts[d]++; });
                     const digitPcts = counts.map(count => count / digits.length * 100);
@@ -138,7 +139,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                     const side: Side = ep >= op ? 'even' : 'odd';
                     const losingDigits = side === 'even' ? [1, 3, 5, 7, 9] : [0, 2, 4, 6, 8];
                     const topDigits = [...Array(10).keys()].sort((a, b) => digitPcts[b] - digitPcts[a]);
-                    const losingTopCount = topDigits.slice(0, 5).filter(d => losingDigits.includes(d)).length;
+                    const losingTopCount = topDigits.slice(0, TOP_DIGIT_COUNT).filter(d => losingDigits.includes(d)).length;
                     const target = side === 'even' ? isEven : (d: number) => !isEven(d);
                     let trailingOpposite = 0;
                     for (let i = digits.length - 1; i >= 0 && !target(digits[i]); i--) trailingOpposite++;
@@ -147,25 +148,27 @@ export const UnderEvenOddAuto: React.FC = () => {
             }));
             const usable = samples.filter(Boolean) as RecoveryPick[];
             if (!usable.length) {
-                notify('RECOVERY SCAN: no index returned 1000 usable ticks; retrying in 3 seconds');
+                notify(`RECOVERY SCAN: no index returned ${RECOVERY_SAMPLE_SIZE} usable ticks; retrying in 3 seconds`);
                 setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
                 return;
             }
-            notify(`SCAN PARITY/DIGITS: ${usable.map(x => `${x.symbol} ${x.side.toUpperCase()} ${Math.max(x.evenPct, x.oddPct).toFixed(1)}% | top ${x.topDigits.slice(0, 5).join('')} | losing-top ${x.losingTopCount}/5`).join(' | ')}`);
-            const distanceTo60 = (item: RecoveryPick) => Math.abs(Math.max(item.evenPct, item.oddPct) - 60);
-            const digitQualified = usable.filter(item => item.losingTopCount < 3);
-            const qualifying = digitQualified.filter(item => Math.max(item.evenPct, item.oddPct) >= 60);
-            const best = (qualifying.length ? qualifying : digitQualified.length ? digitQualified : usable).sort((a, b) => distanceTo60(a) - distanceTo60(b))[0];
+            notify(`SCAN PARITY/DIGITS (${RECOVERY_SAMPLE_SIZE} ticks): ${usable.map(x => `${x.symbol} ${x.side.toUpperCase()} ${Math.max(x.evenPct, x.oddPct).toFixed(1)}% | top ${x.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${x.digitPcts[d].toFixed(0)}%`).join(',')} | opposite-top ${x.losingTopCount}/${TOP_DIGIT_COUNT}`).join(' | ')}`);
+            const best = selectRecoveryCandidate(usable) as RecoveryPick | null;
+            if (!best) {
+                notify(`RECOVERY SCAN: no index passed both the 60%/closest-parity ranking and the top-${TOP_DIGIT_COUNT} digit majority check; no trade, retrying in 3 seconds`);
+                setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
+                return;
+            }
             selectedRef.current = best;
             setSelected(best);
             setEvenPct(best.evenPct); setOddPct(best.oddPct);
             recoveryArmedRef.current = false;
             oppositeRef.current = best.trailingOpposite;
             lastEpochRef.current = best.lastEpoch;
-            sendTickSubscription(best.symbol, 200);
+            sendTickSubscription(best.symbol, RECOVERY_SAMPLE_SIZE);
             setPhaseSafe('pattern');
             const target = best.side.toUpperCase();
-            notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | top digits ${best.topDigits.slice(0, 5).join(',')} | losing-top ${best.losingTopCount}/5 | opposite streak ${oppositeRef.current}`);
+            notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | top digits ${best.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${best.digitPcts[d].toFixed(0)}%`).join(',')} | opposite-top ${best.losingTopCount}/${TOP_DIGIT_COUNT} | opposite streak ${oppositeRef.current}`);
         } finally { scanRunningRef.current = false; }
     }, [notify, sendTickSubscription, setPhaseSafe, updateBuffer]);
     const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind']) => {
@@ -234,7 +237,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                     if (sym === normalSymbolRef.current) setLastDigit(digit);
                     if (sym === selectedRef.current?.symbol) {
                         const pick = selectedRef.current; const target = pick.side === 'even' ? isEven(digit) : !isEven(digit);
-                        const ds = buffersRef.current[sym].slice(-1000); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
+                        const ds = buffersRef.current[sym].slice(-RECOVERY_SAMPLE_SIZE); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
                         if (phaseRef.current === 'pattern') {
@@ -290,7 +293,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'><div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div><div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div><div className='mw-field mw-field--grow'><label className='mw-label'>Entry digit</label><input className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running} /></div></div>
-        <div className='mw-analyze-result' style={{ display: 'block' }}><b>UNDER → EVEN/ODD AUTO</b><div>Phase: <strong>{phase}</strong> · Normal trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div><div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>{selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()}</div>}</div>
+        <div className='mw-analyze-result' style={{ display: 'block' }}><b>UNDER → EVEN/ODD AUTO</b><div>Phase: <strong>{phase}</strong> · Normal trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div><div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>{selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}</div>
         <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>RUN UNDER → EVEN/ODD</button>}</div>
         <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Automation log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, i) => <div key={i} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Configure the entry digit and run</div>}</div></div>
     </div>;
