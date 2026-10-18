@@ -22,6 +22,24 @@ export function isPairLessAppearing(digitPcts, pair) {
   return combined < TWO_DIGIT_EXPECTED_PERCENT;
 }
 
+/** Prefer markets below the expected 20% pair rate; otherwise choose relatively lower-rate markets. */
+export function selectLessAppearingMarkets(samples) {
+  const usable = (samples || []).filter(item => Number.isFinite(Number(item?.pairPct)))
+    .map(item => ({ ...item, pairPct: Number(item.pairPct) }));
+  if (!usable.length) return { markets: [], rule: 'no-data', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
+
+  const belowBaseline = usable.filter(item => item.pairPct < TWO_DIGIT_EXPECTED_PERCENT);
+  if (belowBaseline.length) return { markets: belowBaseline, rule: 'below-20', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
+
+  const peerAverage = usable.reduce((sum, item) => sum + item.pairPct, 0) / usable.length;
+  const belowAverage = usable.filter(item => item.pairPct < peerAverage);
+  if (belowAverage.length) return { markets: belowAverage, rule: 'below-peer-average', referencePct: peerAverage };
+
+  const lowestRate = Math.min(...usable.map(item => item.pairPct));
+  const lowestMarkets = usable.filter(item => Math.abs(item.pairPct - lowestRate) < 1e-9);
+  return { markets: lowestMarkets, rule: 'lowest-rate-tie', referencePct: lowestRate };
+}
+
 /**
  * Rank candidates at/above the target first, nearest to 60% within that group,
  * then rank below-target candidates by closeness. A candidate is selected only

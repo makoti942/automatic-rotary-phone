@@ -9,8 +9,8 @@ import {
     RECOVERY_SAMPLE_SIZE,
     TOP_DIGIT_COUNT,
     advancePairHitCount,
-    isPairLessAppearing,
     nextAutomatedStage,
+    selectLessAppearingMarkets,
     selectRecoveryCandidate,
 } from './under-even-odd-utils.mjs';
 
@@ -231,25 +231,31 @@ export const UnderEvenOddAuto: React.FC = () => {
                     digits.forEach((digit: number) => { counts[digit]++; });
                     const digitPcts = counts.map(count => count / digits.length * 100);
                     const pairPct = digitPcts[pair[0]] + digitPcts[pair[1]];
-                    return { symbol, pairPct, qualifies: isPairLessAppearing(digitPcts, pair) } as QualifiedMarket & { qualifies: boolean };
+                    return { symbol, pairPct } as QualifiedMarket;
                 } catch { return null; }
             }));
             if (!runningRef.current || !automatedRef.current || autoStageRef.current !== stage) return;
-            const usable = samples.filter(Boolean) as Array<QualifiedMarket & { qualifies: boolean }>;
-            const qualified = usable.filter(item => item.qualifies).map(({ symbol, pairPct }) => ({ symbol, pairPct }));
-            notify(`${contractLabel} frequency scan (${AUTOMATED_FREQUENCY_WINDOW} ticks): ${usable.length ? usable.map(item => `${item.symbol} ${pair.join('+')}=${item.pairPct.toFixed(1)}%${item.qualifies ? ' ✓' : ''}`).join(' | ') : 'no usable samples'}`);
+            const usable = samples.filter(Boolean) as QualifiedMarket[];
+            const selection = selectLessAppearingMarkets(usable) as { markets: QualifiedMarket[]; rule: string; referencePct: number };
+            const qualified = selection.markets;
+            notify(`${contractLabel} frequency scan (${AUTOMATED_FREQUENCY_WINDOW} ticks): ${usable.length ? usable.map(item => `${item.symbol} ${pair.join('+')}=${item.pairPct.toFixed(1)}%`).join(' | ') : 'no usable samples'}`);
             setQualifiedMarkets(qualified);
             qualifiedMarketsRef.current = new Set(qualified.map(item => item.symbol));
             pairHitsRef.current = Object.fromEntries(qualified.map(item => [item.symbol, 0]));
             if (!qualified.length) {
-                notify(`${contractLabel}: no market has combined ${pair.join('+')} frequency below 20%; no trade, retrying in 5 seconds`);
+                notify(`${contractLabel}: no valid ${AUTOMATED_FREQUENCY_WINDOW}-tick samples yet; retrying in 5 seconds`);
                 setTimeout(() => {
                     if (runningRef.current && automatedRef.current && autoStageRef.current === stage) void scanAutomatedPair(stage);
                 }, 5000);
                 return;
             }
+            if (selection.rule === 'below-peer-average') {
+                notify(`No market was below 20%; using ${qualified.length} market(s) below the cross-index average of ${selection.referencePct.toFixed(1)}%`);
+            } else if (selection.rule === 'lowest-rate-tie') {
+                notify(`No market was below 20% and pair rates were tied; using the lowest observed rate, ${selection.referencePct.toFixed(1)}%`);
+            }
             setPhaseSafe('automated');
-            notify(`${contractLabel}: monitoring all qualifying markets: ${qualified.map(item => `${labelsRef.current[item.symbol] || item.symbol} (${pair.join('+')} ${item.pairPct.toFixed(1)}%)`).join(', ')}. Waiting for ${AUTOMATED_PAIR_HITS_REQUIRED} appearances of ${pair.join('/')} per market; other digits may occur between them.`);
+            notify(`${contractLabel}: monitoring lower-frequency markets (${selection.rule}): ${qualified.map(item => `${labelsRef.current[item.symbol] || item.symbol} (${pair.join('+')} ${item.pairPct.toFixed(1)}%)`).join(', ')}. Waiting for ${AUTOMATED_PAIR_HITS_REQUIRED} appearances of ${pair.join('/')} per market; other digits may occur between them.`);
         } finally {
             autoScanRunningRef.current = false;
         }
@@ -486,7 +492,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             <div>Phase: <strong>{phase}</strong> · Completed trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div>
             <div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>
             {automated && <div>Automated mode ignores the manual entry digit and selected volatility.</div>}
-            {qualifiedMarkets.length > 0 && <div>Qualified markets ({autoStage === 'over1' ? '0+1' : '8+9'} below 20%): {qualifiedMarkets.map(item => `${labelsRef.current[item.symbol] || item.symbol} ${item.pairPct.toFixed(1)}%`).join(' · ')}</div>}
+            {qualifiedMarkets.length > 0 && <div>Selected lower-frequency markets ({autoStage === 'over1' ? '0+1' : '8+9'}): {qualifiedMarkets.map(item => `${labelsRef.current[item.symbol] || item.symbol} ${item.pairPct.toFixed(1)}%`).join(' · ')}</div>}
             {selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}
         </div>
         <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>{automated ? 'RUN AUTOMATED CYCLE' : 'RUN UNDER → EVEN/ODD'}</button>}</div>

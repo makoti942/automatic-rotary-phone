@@ -9,6 +9,7 @@ import {
   advancePairHitCount,
   isPairLessAppearing,
   nextAutomatedStage,
+  selectLessAppearingMarkets,
   selectRecoveryCandidate,
 } from '../src/components/makoti-widget/under-even-odd-utils.mjs';
 
@@ -62,6 +63,37 @@ test('does not treat a pair at or above 20% as less appearing', () => {
   const pcts = [13, 7, 11, 11, 11, 11, 11, 11, 7, 7];
   assert.equal(isPairLessAppearing(pcts, [0, 1]), false); // exactly 20%
   assert.equal(isPairLessAppearing(pcts, [8, 9]), true); // 14%
+});
+
+test('prefers markets below the 20% baseline when any are available', () => {
+  const result = selectLessAppearingMarkets([
+    { symbol: 'R_10', pairPct: 19.8 },
+    { symbol: 'R_25', pairPct: 21.2 },
+    { symbol: 'R_50', pairPct: 24.1 },
+  ]);
+  assert.equal(result.rule, 'below-20');
+  assert.deepEqual(result.markets.map(item => item.symbol), ['R_10']);
+});
+
+test('falls back to below-peer-average markets when every pair rate is at least 20%', () => {
+  const result = selectLessAppearingMarkets([
+    { symbol: 'R_10', pairPct: 22.4 },
+    { symbol: 'R_25', pairPct: 24.0 },
+    { symbol: 'R_50', pairPct: 27.6 },
+  ]);
+  assert.equal(result.rule, 'below-peer-average');
+  assert.equal(result.referencePct, 24.666666666666668);
+  assert.deepEqual(result.markets.map(item => item.symbol), ['R_10', 'R_25']);
+});
+
+test('uses all lowest-rate ties if all rates are identical and returns empty for no samples', () => {
+  const tied = selectLessAppearingMarkets([
+    { symbol: 'R_10', pairPct: 22 },
+    { symbol: 'R_25', pairPct: 22 },
+  ]);
+  assert.equal(tied.rule, 'lowest-rate-tie');
+  assert.deepEqual(tied.markets.map(item => item.symbol), ['R_10', 'R_25']);
+  assert.deepEqual(selectLessAppearingMarkets([]).markets, []);
 });
 
 test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => {
