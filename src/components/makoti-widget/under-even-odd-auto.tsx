@@ -10,6 +10,7 @@ interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity'; c
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
+const OPPOSITE_TRIGGER = 5;
 const isEven = (d: number) => d % 2 === 0;
 const digitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
     const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
@@ -150,8 +151,9 @@ export const UnderEvenOddAuto: React.FC = () => {
                 return;
             }
             notify(`SCAN PERCENTAGES: ${usable.map(x => `${x.symbol} E${x.evenPct.toFixed(1)}%/O${x.oddPct.toFixed(1)}%`).join(' | ')}`);
-            usable.sort((a, b) => Math.max(b.evenPct, b.oddPct) - Math.max(a.evenPct, a.oddPct));
-            const best = usable.find(x => Math.max(x.evenPct, x.oddPct) >= 60) || usable.sort((a, b) => Math.abs(Math.max(a.evenPct, a.oddPct) - 60) - Math.abs(Math.max(b.evenPct, b.oddPct) - 60))[0];
+            const distanceTo60 = (item: RecoveryPick) => Math.abs(Math.max(item.evenPct, item.oddPct) - 60);
+            const qualifying = usable.filter(item => Math.max(item.evenPct, item.oddPct) >= 60);
+            const best = (qualifying.length ? qualifying : usable).sort((a, b) => distanceTo60(a) - distanceTo60(b))[0];
             selectedRef.current = best;
             setSelected(best);
             setEvenPct(best.evenPct); setOddPct(best.oddPct);
@@ -210,6 +212,10 @@ export const UnderEvenOddAuto: React.FC = () => {
                 setPhaseSafe('pattern');
                 notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — pattern gate bypassed; next ${selectedRef.current.side.toUpperCase()} tick will execute`);
             } else {
+                selectedRef.current = null;
+                setSelected(null);
+                oppositeRef.current = 0;
+                notify('NEW NORMAL LOSS — clearing the previous volatility and starting a fresh live recovery scan');
                 void scanRecovery();
             }
         }
@@ -234,14 +240,21 @@ export const UnderEvenOddAuto: React.FC = () => {
                                 notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${pick.side.toUpperCase()}`);
                                 oppositeRef.current = 0;
                                 void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
-                            } else if (oppositeRef.current >= 3) {
+                            } else if (oppositeRef.current >= OPPOSITE_TRIGGER) {
                                 recoveryArmedRef.current = true;
-                                notify(`RECOVERY TRIGGER ${digit} | three-opposite pattern complete | entering ${pick.side.toUpperCase()} immediately`);
+                                notify(`RECOVERY TRIGGER | ${OPPOSITE_TRIGGER} opposite digits already confirmed | entering ${pick.side.toUpperCase()} immediately`);
                                 oppositeRef.current = 0;
                                 void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
                             } else if (!target) {
                                 oppositeRef.current++;
-                                notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/3`);
+                                if (oppositeRef.current >= OPPOSITE_TRIGGER) {
+                                    recoveryArmedRef.current = true;
+                                    notify(`RECOVERY TRIGGER ${digit} | ${OPPOSITE_TRIGGER} opposite digits complete | entering ${pick.side.toUpperCase()} immediately`);
+                                    oppositeRef.current = 0;
+                                    void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity');
+                                } else {
+                                    notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/${OPPOSITE_TRIGGER}`);
+                                }
                             } else {
                                 oppositeRef.current = 0;
                                 notify(`RECOVERY TICK ${digit} = TARGET | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | pattern reset`);
