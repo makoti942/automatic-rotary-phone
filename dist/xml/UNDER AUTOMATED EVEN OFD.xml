@@ -329,68 +329,7 @@
                 </next>
               </block>
             </statement>
-            <next>
-              <block type="controls_if" id="checkTPSL">
-                <html:mutation elseif="1" else="1" />
-                <value name="IF0">
-                  <block type="logic_compare" id="compareTP">
-                    <field name="OP">GTE</field>
-                    <value name="A">
-                      <block type="variables_get" id="getTotalProfitTP">
-                        <field name="VAR" id="total_profit">Total Profit</field>
-                      </block>
-                    </value>
-                    <value name="B">
-                      <block type="variables_get" id="getTP">
-                        <field name="VAR" id="tp">Target Profit</field>
-                      </block>
-                    </value>
-                  </block>
-                </value>
-                <statement name="DO0">
-                  <block type="text_print" id="printTP">
-                    <value name="TEXT">
-                      <block type="text" id="9JNhfx#$PxDW75.((^Tu">
-                        <field name="TEXT">take profit hit</field>
-                      </block>
-                    </value>
-                  </block>
-                </statement>
-                <value name="IF1">
-                  <block type="logic_compare" id="compareSL">
-                    <field name="OP">LTE</field>
-                    <value name="A">
-                      <block type="variables_get" id="getTotalProfitSL">
-                        <field name="VAR" id="total_profit">Total Profit</field>
-                      </block>
-                    </value>
-                    <value name="B">
-                      <block type="math_single" id="negateSL">
-                        <field name="OP">NEG</field>
-                        <value name="NUM">
-                          <block type="variables_get" id="getSL">
-                            <field name="VAR" id="sl">Stop Loss</field>
-                          </block>
-                        </value>
-                      </block>
-                    </value>
-                  </block>
-                </value>
-                <statement name="DO1">
-                  <block type="text_print" id="printSL">
-                    <value name="TEXT">
-                      <block type="text" id="slText">
-                        <field name="TEXT">Stop Loss Hit</field>
-                      </block>
-                    </value>
-                  </block>
-                </statement>
-                <statement name="ELSE">
-                  <block type="automated_parity_recovery_update" id="automatedParityUpdate"><value name="PROFIT"><block type="read_details" id="recoveryProfit"><field name="DETAIL_INDEX">4</field></block></value><value name="STAKE"><block type="read_details" id="recoveryStake"><field name="DETAIL_INDEX">2</field></block></value><next><block type="trade_again" id="G=znPPs6=xtZA|o(KBQX" />
-                </next></block></statement>
-              </block>
-            </next>
-          </block>
+            <next><block type="automated_parity_recovery_update" id="automatedParityUpdate"><value name="PROFIT"><block type="read_details" id="recoveryProfit"><field name="DETAIL_INDEX">4</field></block></value><value name="STAKE"><block type="read_details" id="recoveryStake"><field name="DETAIL_INDEX">2</field></block></value><next><block type="trade_again" id="G=znPPs6=xtZA|o(KBQX" /></next></block></next></block>
         </next>
       </block>
     </statement>
