@@ -28,7 +28,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [logs, setLogs] = useState<string[]>([]);
     const runningRef = useRef(false);
     const phaseRef = useRef<Phase>('idle');
-    const normalSymbolRef = useRef('R_100');
+    const normalSymbolRef = useRef('1HZ25V');
     const stakeRef = useRef(Number(stake) || 0.35);
     const normalStartedRef = useRef(false);
     const normalCountRef = useRef(0);
@@ -177,8 +177,8 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = 'R_100'; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0;
-        setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true); setPhaseSafe('entry'); notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS.R_100}; then Under 7 → Under 8`);
+        normalSymbolRef.current = '1HZ25V'; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0;
+        setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true); setPhaseSafe('entry'); notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS['1HZ25V']}; then Under 7 → Under 8`);
     };
     const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); selectedRef.current = null; setSelected(null); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
