@@ -18,7 +18,7 @@ import {
 type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling' | 'automated';
 type Side = 'even' | 'odd';
 type AutoStage = 'differs' | 'over1' | 'under8';
-interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity' | 'automated'; contract: string; autoStage?: AutoStage; }
+interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity' | 'automated'; contract: string; autoStage?: AutoStage; entryEpoch?: number; localOutcome?: 'win' | 'loss'; }
 interface QualifiedMarket { symbol: string; pairPct: number; }
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; digitPcts: number[]; topDigits: number[]; losingTopCount: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
@@ -77,6 +77,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const localParityTradeRef = useRef<{ symbol: string; side: Side; stake: number; entryEpoch: number } | null>(null);
     const localRecoveryCompleteRef = useRef(false);
     const lastRecoveryEntryEpochRef = useRef<number | null>(null);
+    const localOutcomeByEntryRef = useRef<Map<string, 'win' | 'loss'>>(new Map());
     const normalSymbolRef = useRef(normalSymbol);
     const stakeRef = useRef(Number(stake) || 0.35);
     const normalStartedRef = useRef(false);
@@ -304,7 +305,8 @@ export const UnderEvenOddAuto: React.FC = () => {
             const cid = response?.buy?.contract_id ?? response?.contract_id;
             if (!cid) throw new Error('no contract id');
             if (kind === 'under') normalStartedRef.current = true;
-            openRef.current.set(String(cid), { symbol, stake: amount, kind, contract, autoStage: kind === 'automated' ? autoStageRef.current : undefined });
+            const localKey = Number.isFinite(entryEpoch) ? `${symbol}:${Number(entryEpoch)}` : '';
+            openRef.current.set(String(cid), { symbol, stake: amount, kind, contract, autoStage: kind === 'automated' ? autoStageRef.current : undefined, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined, localOutcome: localKey ? localOutcomeByEntryRef.current.get(localKey) : undefined });
             try { transactions.onBotContractEvent({ contract_id: cid, transaction_ids: { buy: response?.buy?.transaction_id }, buy_price: amount, currency: 'USD', contract_type: contract, underlying: symbol, display_name: SYMBOL_LABELS[symbol] || symbol, date_start: Math.floor(Date.now() / 1000), status: 'open' } as any); } catch {}
         } catch (error: any) {
             if (kind === 'parity' && localParityTradeRef.current?.entryEpoch === entryEpoch) localParityTradeRef.current = null;
@@ -333,6 +335,13 @@ export const UnderEvenOddAuto: React.FC = () => {
                 openRef.current.clear();
                 return;
             }
+        }
+        // Recovery-each-tick already made the loss decision locally. The later
+        // proposal_open_contract event is informational for that loss and must
+        // not add the same loss or advance the martingale a second time.
+        if (trade.kind === 'parity' && trade.localOutcome === 'loss') {
+            notify(`OFFICIAL SETTLEMENT CONFIRMED LOCAL LOSS ${trade.contract} ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)} — recovery state unchanged`);
+            return;
         }
         const won = profit >= 0;
         if (trade.kind === 'parity') localRecoveryCompleteRef.current = false;
@@ -422,6 +431,8 @@ export const UnderEvenOddAuto: React.FC = () => {
                     const localParityTrade = localParityTradeRef.current;
                     if (recoveryEachTickRef.current && localParityTrade && localParityTrade.symbol === sym && tickEpoch > localParityTrade.entryEpoch) {
                         const localWin = localParityTrade.side === 'even' ? isEven(digit) : !isEven(digit);
+                        const localKey = `${sym}:${localParityTrade.entryEpoch}`;
+                        localOutcomeByEntryRef.current.set(localKey, localWin ? 'win' : 'loss');
                         localParityTradeRef.current = null;
                         notify(`LOCAL ${localWin ? 'WIN' : 'LOSS'} — entry tick ${localParityTrade.entryEpoch}, exit tick ${tickEpoch}, digit ${digit} is ${isEven(digit) ? 'EVEN' : 'ODD'} | ${localParityTrade.side.toUpperCase()} target`);
                         if (localWin) {
@@ -429,6 +440,8 @@ export const UnderEvenOddAuto: React.FC = () => {
                             recoveryArmedRef.current = false;
                             setPhaseSafe('pattern');
                         } else {
+                            lossRef.current += Math.max(localParityTrade.stake, localParityTrade.stake);
+                            setLossBalance(lossRef.current);
                             recoveryArmedRef.current = true;
                             currentStakeRef.current = recoveryStake(localParityTrade.stake);
                             setCurrentStake(currentStakeRef.current);
@@ -472,6 +485,16 @@ export const UnderEvenOddAuto: React.FC = () => {
                         const ds = buffersRef.current[sym].slice(-RECOVERY_SAMPLE_SIZE); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
+                        const targetPct = pick.side === 'even' ? ep : 100 - ep;
+                        if (phaseRef.current === 'pattern' && !localParityTradeRef.current && targetPct < 54) {
+                            notify(`RECOVERY PARITY WEAKENED — ${pick.side.toUpperCase()} is ${targetPct.toFixed(1)}%, below 54%; rescanning all volatility indices for a closer/stronger 60% candidate`);
+                            selectedRef.current = null;
+                            setSelected(null);
+                            recoveryArmedRef.current = false;
+                            oppositeRef.current = 0;
+                            localRecoveryCompleteRef.current = false;
+                            void scanRecovery();
+                        }
                         if (phaseRef.current === 'pattern' && !localRecoveryCompleteRef.current) {
                             if (recoveryArmedRef.current) {
                                 notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${pick.side.toUpperCase()}`);
@@ -525,7 +548,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
         automatedRef.current = automated;
         digitStreaksRef.current = {}; pairHitsRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
@@ -538,7 +561,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
