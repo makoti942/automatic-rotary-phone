@@ -202,18 +202,16 @@ export default class TicksService {
             const subscription = api_base.api.onMessage().subscribe(({ data }) => {
                 if (data?.msg_type === 'tick' && data?.tick) {
                     const { tick } = data;
-                    const { symbol, id } = tick;
+                    const { symbol } = tick;
                     if (this.ticks.has(symbol)) {
-                        this.subscriptions = this.subscriptions.setIn(['tick', symbol], id);
                         this.updateTicksAndCallListeners(symbol, updateTicks(this.ticks.get(symbol), parseTick(tick)));
                     }
                 }
 
                 if (data.msg_type === 'ohlc') {
                     const { ohlc } = data;
-                    const { symbol, granularity, id } = ohlc;
+                    const { symbol, granularity } = ohlc;
                     if (this.candles.hasIn([symbol, Number(granularity)])) {
-                        this.subscriptions = this.subscriptions.setIn(['ohlc', symbol, Number(granularity)], id);
                         const address = [symbol, Number(granularity)];
                         this.updateCandlesAndCallListeners(
                             address,
@@ -274,10 +272,18 @@ export default class TicksService {
                     if (style === 'ticks') {
                         const ticks = historyToTicks(r.history);
 
+                        if (r.subscription?.id) {
+                            this.subscriptions = this.subscriptions.setIn(['tick', symbol], r.subscription.id);
+                        }
+
                         this.updateTicksAndCallListeners(symbol, ticks);
                         resolve(ticks);
                     } else {
                         const candles = parseCandles(r.candles);
+
+                        if (r.subscription?.id) {
+                            this.subscriptions = this.subscriptions.setIn(['ohlc', symbol, Number(granularity)], r.subscription.id);
+                        }
 
                         this.updateCandlesAndCallListeners([symbol, Number(granularity)], candles);
 
