@@ -357,13 +357,11 @@ export const UnderEvenOddAuto: React.FC = () => {
                 }
                 else {
                     lossStreakRef.current = 0;
-                    // A recovery win can still leave an outstanding balance. Continue
-                    // from the just-settled recovery stake instead of resetting to
-                    // base × martingale; otherwise a partial win drops the next
-                    // recovery stake and can never follow the configured progression.
-                    currentStakeRef.current = recoveryStake(trade.stake);
+                    // A recovery win that does not clear the full balance resets
+                    // the next recovery attempt to the configured base × martingale.
+                    currentStakeRef.current = recoveryStake(Number(stakeRef.current) || 0.35);
                     setCurrentStake(currentStakeRef.current);
-                    notify(`RECOVERY WIN BUT BALANCE REMAINS $${remaining.toFixed(2)} | next stake keeps progression: $${trade.stake.toFixed(2)} ×${Number(martingale) || 2} = $${currentStakeRef.current.toFixed(2)}`);
+                    notify(`RECOVERY WIN BUT BALANCE REMAINS $${remaining.toFixed(2)} | reset next stake to base $${Number(stakeRef.current).toFixed(2)} ×${Number(martingale) || 2} = $${currentStakeRef.current.toFixed(2)}`);
                     setPhaseSafe('pattern');
                 }
             } else if (trade.kind === 'automated') {
