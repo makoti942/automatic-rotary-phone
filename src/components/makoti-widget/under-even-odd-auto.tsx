@@ -278,7 +278,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, [notify, setAutoStageSafe, setPhaseSafe, updateBuffer]);
     const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind'], barrier?: string, entryEpoch?: number) => {
-        if (!runningRef.current || phaseRef.current === 'settling') return;
+        if (!runningRef.current || (phaseRef.current === 'settling' && !(kind === 'parity' && recoveryEachTickRef.current))) return;
         const requestSymbol = String(symbol);
         const requestContract = kind === 'parity' ? (contract === 'DIGITEVEN' ? 'DIGITEVEN' : 'DIGITODD') : contract;
         const signal = { symbol: requestSymbol, contract: requestContract, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined };
