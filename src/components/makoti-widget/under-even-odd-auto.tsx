@@ -525,13 +525,15 @@ export const UnderEvenOddAuto: React.FC = () => {
                             <span className={`mw-toggle__track ${automated ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${automated ? 'mw-toggle__thumb--on' : ''}`} /></span>
                         </button>
                     </div>
-                    <div className='mw-ueo-auto-toggle'>
-                        <span id='mw-ueo-recovery-tick-label'>Recovery each tick</span>
-                        <button type='button' role='switch' aria-checked={recoveryEachTick} aria-labelledby='mw-ueo-recovery-tick-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)} title='Keep the five-opposite-tick gate, then evaluate the next tick locally for fast recovery decisions'>
-                            <span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                        </button>
-                    </div>
                 </div>
+            </div>
+        </div>
+        <div className='mw-ueo-recovery-row'>
+            <div className='mw-ueo-auto-toggle'>
+                <span id='mw-ueo-recovery-tick-label'>Recovery each tick</span>
+                <button type='button' role='switch' aria-checked={recoveryEachTick} aria-labelledby='mw-ueo-recovery-tick-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)} title='Keep the five-opposite-tick gate, then evaluate the next tick locally for fast recovery decisions'>
+                    <span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span>
+                </button>
             </div>
         </div>
         <div className='mw-analyze-result' style={{ display: 'block' }}>
