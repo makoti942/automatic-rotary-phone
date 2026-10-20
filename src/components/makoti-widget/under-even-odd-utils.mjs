@@ -2,9 +2,11 @@ export const RECOVERY_SAMPLE_SIZE = 100;
 export const RECOVERY_PARITY_TARGET = 60;
 export const TOP_DIGIT_COUNT = 5;
 export const REQUIRED_TARGET_DIGITS_IN_TOP = 3;
-export const AUTOMATED_FREQUENCY_WINDOW = 1000;
+export const AUTOMATED_FREQUENCY_WINDOW = 25;
 export const TWO_DIGIT_EXPECTED_PERCENT = 20;
-export const AUTOMATED_PAIR_HITS_REQUIRED = 3;
+export const AUTOMATED_PAIR_HITS_REQUIRED = 2;
+export const AUTOMATED_PAIR_MAX_TICK_RANGE = 7;
+export const AUTOMATED_TOP_MARKETS = 3;
 
 export function nextAutomatedStage(stage) {
   return stage === 'differs' ? 'over1' : stage === 'over1' ? 'under8' : 'differs';
@@ -28,16 +30,18 @@ export function selectLessAppearingMarkets(samples) {
     .map(item => ({ ...item, pairPct: Number(item.pairPct) }));
   if (!usable.length) return { markets: [], rule: 'no-data', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
 
+  const lowestThree = items => [...items].sort((a, b) => a.pairPct - b.pairPct).slice(0, AUTOMATED_TOP_MARKETS);
+
   const belowBaseline = usable.filter(item => item.pairPct < TWO_DIGIT_EXPECTED_PERCENT);
-  if (belowBaseline.length) return { markets: belowBaseline, rule: 'below-20', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
+  if (belowBaseline.length) return { markets: lowestThree(belowBaseline), rule: 'below-20', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
 
   const peerAverage = usable.reduce((sum, item) => sum + item.pairPct, 0) / usable.length;
   const belowAverage = usable.filter(item => item.pairPct < peerAverage);
-  if (belowAverage.length) return { markets: belowAverage, rule: 'below-peer-average', referencePct: peerAverage };
+  if (belowAverage.length) return { markets: lowestThree(belowAverage), rule: 'below-peer-average', referencePct: peerAverage };
 
   const lowestRate = Math.min(...usable.map(item => item.pairPct));
   const lowestMarkets = usable.filter(item => Math.abs(item.pairPct - lowestRate) < 1e-9);
-  return { markets: lowestMarkets, rule: 'lowest-rate-tie', referencePct: lowestRate };
+  return { markets: lowestThree(lowestMarkets), rule: 'lowest-rate-tie', referencePct: lowestRate };
 }
 
 /**
