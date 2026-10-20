@@ -44,6 +44,8 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [stake, setStake] = useState(() => localStorage.getItem('mw_ueo_stake') || BASE.stake);
     const [entryDigit, setEntryDigit] = useState(() => localStorage.getItem('mw_ueo_entry') || BASE.entryDigit);
     const [martingale, setMartingale] = useState(() => localStorage.getItem('mw_ueo_martingale') || BASE.martingale);
+    const [takeProfit, setTakeProfit] = useState(() => localStorage.getItem('mw_ueo_take_profit') || '');
+    const [stopLoss, setStopLoss] = useState(() => localStorage.getItem('mw_ueo_stop_loss') || '');
     const [normalSymbol, setNormalSymbol] = useState(() => localStorage.getItem('mw_ueo_market') || '1HZ25V');
     const [availableSymbols, setAvailableSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
     const [automated, setAutomated] = useState(() => localStorage.getItem('mw_ueo_automated') === 'true');
@@ -58,6 +60,8 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [evenPct, setEvenPct] = useState(0);
     const [oddPct, setOddPct] = useState(0);
     const [lossBalance, setLossBalance] = useState(0);
+    const [sessionProfit, setSessionProfit] = useState(0);
+    const [riskAlert, setRiskAlert] = useState<{ kind: 'take-profit' | 'stop-loss'; amount: number } | null>(null);
     const [currentStake, setCurrentStake] = useState(Number(stake) || 0.35);
     const [logs, setLogs] = useState<string[]>([]);
     const runningRef = useRef(false);
@@ -78,6 +82,8 @@ export const UnderEvenOddAuto: React.FC = () => {
     const normalStartedRef = useRef(false);
     const normalCountRef = useRef(0);
     const lossRef = useRef(0);
+    const sessionProfitRef = useRef(0);
+    const riskTriggeredRef = useRef(false);
     const lossStreakRef = useRef(0);
     const currentStakeRef = useRef(Number(stake) || 0.35);
     const entryDigitRef = useRef(Number(entryDigit) || 2);
@@ -307,6 +313,27 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, [notify, setPhaseSafe, transactions]);
     const handleSettled = useCallback((trade: OpenTrade, profit: number) => {
+        const nextSessionProfit = sessionProfitRef.current + profit;
+        sessionProfitRef.current = nextSessionProfit;
+        setSessionProfit(nextSessionProfit);
+        if (!riskTriggeredRef.current) {
+            const takeProfitTarget = Math.max(0, Number(takeProfit) || 0);
+            const stopLossTarget = Math.max(0, Number(stopLoss) || 0);
+            const hitTakeProfit = takeProfitTarget > 0 && nextSessionProfit >= takeProfitTarget;
+            const hitStopLoss = stopLossTarget > 0 && nextSessionProfit <= -stopLossTarget;
+            if (hitTakeProfit || hitStopLoss) {
+                const kind = hitTakeProfit ? 'take-profit' : 'stop-loss';
+                riskTriggeredRef.current = true;
+                setRiskAlert({ kind, amount: nextSessionProfit });
+                notify(`${kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'} — realized P/L ${nextSessionProfit >= 0 ? '+' : ''}$${nextSessionProfit.toFixed(2)} (threshold $${(kind === 'take-profit' ? takeProfitTarget : stopLossTarget).toFixed(2)})`);
+                runningRef.current = false;
+                setRunning(false);
+                setPhaseSafe('idle');
+                localParityTradeRef.current = null;
+                openRef.current.clear();
+                return;
+            }
+        }
         const won = profit >= 0;
         if (trade.kind === 'parity') localRecoveryCompleteRef.current = false;
         notify(`${won ? 'WIN' : 'LOSS'} ${trade.contract} ${profit >= 0 ? '+' : ''}$${profit.toFixed(2)}`);
@@ -379,7 +406,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 void scanRecovery();
             }
         }
-    }, [martingale, notify, recoveryStake, scanAutomatedPair, scanRecovery, setAutoStageSafe, setPhaseSafe]);
+    }, [martingale, notify, recoveryStake, scanAutomatedPair, scanRecovery, setAutoStageSafe, setPhaseSafe, stopLoss, takeProfit]);
     useEffect(() => {
         if (!running) return;
         const unsubscribe = onNewSystemMessage((event: MessageEvent) => {
@@ -489,18 +516,18 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, [running, automated, availableSymbols, sendTickSubscription]);
     useEffect(() => { void loadActiveSymbols(); }, [loadActiveSymbols]);
-    useEffect(() => { normalSymbolRef.current = normalSymbol; automatedRef.current = automated; recoveryEachTickRef.current = recoveryEachTick; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_market', normalSymbol); localStorage.setItem('mw_ueo_automated', String(automated)); localStorage.setItem('mw_ueo_recovery_each_tick', String(recoveryEachTick)); }, [stake, entryDigit, martingale, normalSymbol, automated, recoveryEachTick]);
+    useEffect(() => { normalSymbolRef.current = normalSymbol; automatedRef.current = automated; recoveryEachTickRef.current = recoveryEachTick; localStorage.setItem('mw_ueo_stake', stake); localStorage.setItem('mw_ueo_entry', entryDigit); localStorage.setItem('mw_ueo_martingale', martingale); localStorage.setItem('mw_ueo_take_profit', takeProfit); localStorage.setItem('mw_ueo_stop_loss', stopLoss); localStorage.setItem('mw_ueo_market', normalSymbol); localStorage.setItem('mw_ueo_automated', String(automated)); localStorage.setItem('mw_ueo_recovery_each_tick', String(recoveryEachTick)); }, [stake, entryDigit, martingale, takeProfit, stopLoss, normalSymbol, automated, recoveryEachTick]);
     useEffect(() => {
         if (!running || phase !== 'normal') return;
         if (runningRef.current) void buy(normalSymbolRef.current, 'DIGITUNDER', currentStakeRef.current, 'under');
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
         automatedRef.current = automated;
         digitStreaksRef.current = {}; pairHitsRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
-        setNormalCount(0); setLossBalance(0); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
+        setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
         if (automated) {
             setPhaseSafe('automated');
             notify(`STARTED AUTOMATED — ignoring manual entry digit and volatility; monitoring all indices for three-repeat Digit Differs signals`);
@@ -515,6 +542,8 @@ export const UnderEvenOddAuto: React.FC = () => {
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div>
+            <div className='mw-field mw-field--grow'><label className='mw-label'>Take profit ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={takeProfit} onChange={e => setTakeProfit(e.target.value)} disabled={running} /></div>
+            <div className='mw-field mw-field--grow'><label className='mw-label'>Stop loss ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={stopLoss} onChange={e => setStopLoss(e.target.value)} disabled={running} /></div>
             <div className='mw-field mw-field--grow mw-ueo-entry-field'>
                 <label className='mw-label' htmlFor='mw-ueo-entry-digit'>Entry digit</label>
                 <div className='mw-ueo-entry-controls'>
@@ -539,13 +568,18 @@ export const UnderEvenOddAuto: React.FC = () => {
         <div className='mw-analyze-result' style={{ display: 'block' }}>
             <b>UNDER → EVEN/ODD AUTO</b>
             <div>Mode: <strong>{automated ? 'Automated sequence' : 'Manual entry'}</strong>{automated ? ` · Stage: ${autoStage === 'differs' ? 'Digit Differs' : autoStage === 'over1' ? 'Over 1' : 'Under 8'}` : ''}</div>
-            <div>Phase: <strong>{phase}</strong> · Completed trades: {normalCount} · Recovery balance: ${lossBalance.toFixed(2)}</div>
+            <div>Phase: <strong>{phase}</strong> · Completed trades: {normalCount} · Session P/L: {sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)} · Recovery balance: ${lossBalance.toFixed(2)}</div>
             <div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>
             <div>Recovery each tick: <strong>{recoveryEachTick ? 'ON — five-opposite gate, then local next-tick result' : 'OFF — wait for Deriv settlement'}</strong></div>
             {automated && <div>Automated mode ignores the manual entry digit and selected volatility.</div>}
             {qualifiedMarkets.length > 0 && <div>Selected lower-frequency markets ({autoStage === 'over1' ? '0+1' : '8+9'}): {qualifiedMarkets.map(item => `${labelsRef.current[item.symbol] || item.symbol} ${item.pairPct.toFixed(1)}%`).join(' · ')}</div>}
             {selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}
         </div>
+        {riskAlert && <div className={`mw-ueo-risk-alert mw-ueo-risk-alert--${riskAlert.kind}`} role='alert'>
+            <strong>{riskAlert.kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'}</strong>
+            <span>Realized P/L: {riskAlert.amount >= 0 ? '+' : ''}${riskAlert.amount.toFixed(2)}</span>
+            <button type='button' onClick={() => setRiskAlert(null)} aria-label='Dismiss risk alert'>Dismiss</button>
+        </div>}
         <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>{automated ? 'RUN AUTOMATED CYCLE' : 'RUN UNDER → EVEN/ODD'}</button>}</div>
         <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Automation log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, i) => <div key={i} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Select a mode, configure stake, and run</div>}</div></div>
     </div>;
