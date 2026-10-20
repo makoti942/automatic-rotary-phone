@@ -25,6 +25,7 @@ const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
 const OPPOSITE_TRIGGER = 5;
 const isEven = (d: number) => d % 2 === 0;
+const parityContractFor = (side: Side) => (side === 'even' ? 'DIGITEVEN' : 'DIGITODD');
 const manualTradeDigitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
     const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
     return Number(Number(quote).toFixed(pip).slice(-1));
@@ -78,6 +79,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const localRecoveryCompleteRef = useRef(false);
     const lastRecoveryEntryEpochRef = useRef<number | null>(null);
     const localOutcomeByEntryRef = useRef<Map<string, 'win' | 'loss'>>(new Map());
+    const recoveryBuyInFlightRef = useRef<{ symbol: string; contract: string; entryEpoch?: number } | null>(null);
     const normalSymbolRef = useRef(normalSymbol);
     const stakeRef = useRef(Number(stake) || 0.35);
     const normalStartedRef = useRef(false);
@@ -276,42 +278,57 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     }, [notify, setAutoStageSafe, setPhaseSafe, updateBuffer]);
     const buy = useCallback(async (symbol: string, contract: string, amount: number, kind: OpenTrade['kind'], barrier?: string, entryEpoch?: number) => {
-        if (!runningRef.current || (phaseRef.current === 'settling' && !(kind === 'parity' && recoveryEachTickRef.current))) return;
-        if (kind === 'parity' && recoveryEachTickRef.current && Number.isFinite(entryEpoch)) {
-            if (lastRecoveryEntryEpochRef.current === Number(entryEpoch)) return;
-            lastRecoveryEntryEpochRef.current = Number(entryEpoch);
+        if (!runningRef.current || phaseRef.current === 'settling') return;
+        const requestSymbol = String(symbol);
+        const requestContract = kind === 'parity' ? (contract === 'DIGITEVEN' ? 'DIGITEVEN' : 'DIGITODD') : contract;
+        const signal = { symbol: requestSymbol, contract: requestContract, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined };
+        if (kind === 'parity') {
+            if (recoveryBuyInFlightRef.current) return;
+            if (recoveryEachTickRef.current && Number.isFinite(entryEpoch)) {
+                if (lastRecoveryEntryEpochRef.current === Number(entryEpoch)) return;
+                lastRecoveryEntryEpochRef.current = Number(entryEpoch);
+            }
+            recoveryBuyInFlightRef.current = signal;
         }
         setPhaseSafe('settling');
         const underBarrier = normalStartedRef.current ? '8' : '7';
-        const actualBarrier = barrier || (contract === 'DIGITUNDER' ? underBarrier : undefined);
-        const label = contract === 'DIGITEVEN' ? 'EVEN'
-            : contract === 'DIGITODD' ? 'ODD'
-                : contract === 'DIGITDIFF' ? `DIFFERS ${actualBarrier}`
-                    : contract === 'DIGITOVER' ? `OVER ${actualBarrier}` : `UNDER ${actualBarrier || ''}`;
-        notify(`TRADE ${label} on ${labelsRef.current[symbol] || symbol} | stake $${amount.toFixed(2)}`);
+        const actualBarrier = barrier || (requestContract === 'DIGITUNDER' ? underBarrier : undefined);
+        const label = requestContract === 'DIGITEVEN' ? 'EVEN'
+            : requestContract === 'DIGITODD' ? 'ODD'
+                : requestContract === 'DIGITDIFF' ? `DIFFERS ${actualBarrier}`
+                    : requestContract === 'DIGITOVER' ? `OVER ${actualBarrier}` : `UNDER ${actualBarrier || ''}`;
+        notify(`TRADE ${label} on ${labelsRef.current[requestSymbol] || requestSymbol} | stake $${amount.toFixed(2)} | signal ${requestSymbol}/${signal.entryEpoch ?? 'live'}`);
         if (kind === 'parity' && recoveryEachTickRef.current && Number.isFinite(entryEpoch)) {
-            localParityTradeRef.current = { symbol, side: contract === 'DIGITEVEN' ? 'even' : 'odd', stake: amount, entryEpoch: Number(entryEpoch) };
+            localParityTradeRef.current = { symbol: requestSymbol, side: requestContract === 'DIGITEVEN' ? 'even' : 'odd', stake: amount, entryEpoch: Number(entryEpoch) };
             localRecoveryCompleteRef.current = false;
         }
         try {
-            const response: any = await sendViaNewSystemWithPromise({
+            const request: any = {
                 buy: 1,
                 price: amount,
                 parameters: {
-                    amount, basis: 'stake', currency: 'USD', duration: 1, duration_unit: 't', symbol, contract_type: contract,
-                    ...(['DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(contract) && actualBarrier ? { barrier: actualBarrier } : {}),
+                    amount, basis: 'stake', currency: 'USD', duration: 1, duration_unit: 't', symbol: requestSymbol, contract_type: requestContract,
+                    ...(['DIGITDIFF', 'DIGITOVER', 'DIGITUNDER'].includes(requestContract) && actualBarrier ? { barrier: actualBarrier } : {}),
                 },
-            });
+            };
+            notify(`BUY REQUEST ${request.parameters.contract_type} on ${request.parameters.symbol} | duration 1t | signal ${requestSymbol}/${signal.entryEpoch ?? 'live'}`);
+            const response: any = await sendViaNewSystemWithPromise(request);
             const cid = response?.buy?.contract_id ?? response?.contract_id;
             if (!cid) throw new Error('no contract id');
+            const acceptedType = response?.buy?.contract_type;
+            const acceptedSymbol = response?.buy?.underlying_symbol || response?.buy?.symbol;
+            if (acceptedType && acceptedType !== requestContract) notify(`BUY RESPONSE MISMATCH — requested ${requestContract}, accepted ${acceptedType} (contract ${cid})`);
+            if (acceptedSymbol && acceptedSymbol !== requestSymbol) notify(`BUY MARKET MISMATCH — requested ${requestSymbol}, accepted ${acceptedSymbol} (contract ${cid})`);
             if (kind === 'under') normalStartedRef.current = true;
-            const localKey = Number.isFinite(entryEpoch) ? `${symbol}:${Number(entryEpoch)}` : '';
-            openRef.current.set(String(cid), { symbol, stake: amount, kind, contract, autoStage: kind === 'automated' ? autoStageRef.current : undefined, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined, localOutcome: localKey ? localOutcomeByEntryRef.current.get(localKey) : undefined });
-            try { transactions.onBotContractEvent({ contract_id: cid, transaction_ids: { buy: response?.buy?.transaction_id }, buy_price: amount, currency: 'USD', contract_type: contract, underlying: symbol, display_name: SYMBOL_LABELS[symbol] || symbol, date_start: Math.floor(Date.now() / 1000), status: 'open' } as any); } catch {}
+            const localKey = Number.isFinite(entryEpoch) ? `${requestSymbol}:${Number(entryEpoch)}` : '';
+            openRef.current.set(String(cid), { symbol: requestSymbol, stake: amount, kind, contract: requestContract, autoStage: kind === 'automated' ? autoStageRef.current : undefined, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined, localOutcome: localKey ? localOutcomeByEntryRef.current.get(localKey) : undefined });
+            try { transactions.onBotContractEvent({ contract_id: cid, transaction_ids: { buy: response?.buy?.transaction_id }, buy_price: amount, currency: 'USD', contract_type: requestContract, underlying: requestSymbol, display_name: SYMBOL_LABELS[requestSymbol] || requestSymbol, date_start: Math.floor(Date.now() / 1000), status: 'open' } as any); } catch {}
         } catch (error: any) {
             if (kind === 'parity' && localParityTradeRef.current?.entryEpoch === entryEpoch) localParityTradeRef.current = null;
             notify(`BUY ERROR: ${error?.error?.message || error?.message || 'request failed'}`);
             setPhaseSafe(kind === 'parity' ? 'pattern' : kind === 'automated' ? 'automated' : 'normal');
+        } finally {
+            if (kind === 'parity' && recoveryBuyInFlightRef.current === signal) recoveryBuyInFlightRef.current = null;
         }
     }, [notify, setPhaseSafe, transactions]);
     const handleSettled = useCallback((trade: OpenTrade, profit: number) => {
@@ -446,7 +463,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                             currentStakeRef.current = recoveryStake(localParityTrade.stake);
                             setCurrentStake(currentStakeRef.current);
                             setPhaseSafe('pattern');
-                            void buy(sym, localParityTrade.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity', undefined, tickEpoch);
+                            void buy(sym, parityContractFor(localParityTrade.side), currentStakeRef.current, 'parity', undefined, tickEpoch);
                         }
                     }
                     if (automatedRef.current && phaseRef.current === 'automated') {
@@ -499,19 +516,19 @@ export const UnderEvenOddAuto: React.FC = () => {
                             if (recoveryArmedRef.current) {
                                 notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${pick.side.toUpperCase()}`);
                                 oppositeRef.current = 0;
-                                void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity', undefined, tickEpoch);
+                                void buy(sym, parityContractFor(pick.side), currentStakeRef.current, 'parity', undefined, tickEpoch);
                             } else if (oppositeRef.current >= OPPOSITE_TRIGGER) {
                                 recoveryArmedRef.current = true;
                                 notify(`RECOVERY TRIGGER | ${OPPOSITE_TRIGGER} opposite digits already confirmed | entering ${pick.side.toUpperCase()} immediately`);
                                 oppositeRef.current = 0;
-                                void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity', undefined, tickEpoch);
+                                void buy(sym, parityContractFor(pick.side), currentStakeRef.current, 'parity', undefined, tickEpoch);
                             } else if (!target) {
                                 oppositeRef.current++;
                                 if (oppositeRef.current >= OPPOSITE_TRIGGER) {
                                     recoveryArmedRef.current = true;
                                     notify(`RECOVERY TRIGGER ${digit} | ${OPPOSITE_TRIGGER} opposite digits complete | entering ${pick.side.toUpperCase()} immediately`);
                                     oppositeRef.current = 0;
-                                    void buy(sym, pick.side === 'even' ? 'DIGITEVEN' : 'DIGITODD', currentStakeRef.current, 'parity', undefined, tickEpoch);
+                                    void buy(sym, parityContractFor(pick.side), currentStakeRef.current, 'parity', undefined, tickEpoch);
                                 } else {
                                     notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | opposite ${oppositeRef.current}/${OPPOSITE_TRIGGER}`);
                                 }
@@ -548,7 +565,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; selectedRef.current = null; oppositeRef.current = 0; recoveryArmedRef.current = false;
         automatedRef.current = automated;
         digitStreaksRef.current = {}; pairHitsRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
@@ -561,7 +578,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
