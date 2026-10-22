@@ -2,46 +2,46 @@ export const RECOVERY_SAMPLE_SIZE = 100;
 export const RECOVERY_PARITY_TARGET = 60;
 export const TOP_DIGIT_COUNT = 5;
 export const REQUIRED_TARGET_DIGITS_IN_TOP = 3;
-export const AUTOMATED_FREQUENCY_WINDOW = 25;
-export const TWO_DIGIT_EXPECTED_PERCENT = 20;
-export const AUTOMATED_PAIR_HITS_REQUIRED = 2;
-export const AUTOMATED_PAIR_MAX_TICK_RANGE = 7;
-export const AUTOMATED_TOP_MARKETS = 3;
+export const AUTOMATED_FREQUENCY_WINDOW = 1000;
+export const AUTOMATED_TRIGGER_WINDOW = 30;
+export const AUTOMATED_LOW_DIGIT_PERCENT = 10;
+export const AUTOMATED_TRIGGER_MIN_OCCURRENCES = 2;
+export const AUTOMATED_TOP_MARKETS = 1;
 
 export function nextAutomatedStage(stage) {
   return stage === 'differs' ? 'over1' : stage === 'over1' ? 'under8' : 'differs';
 }
 
-/** Count only target-pair appearances; unrelated digits do not reset the count. */
-export function advancePairHitCount(currentCount, digit, pair) {
-  return Array.isArray(pair) && pair.includes(digit) ? (Number(currentCount) || 0) + 1 : (Number(currentCount) || 0);
+/** Manual Trade's digit percentage formula: digit count divided by valid digit total. */
+export function calculateDigitPercentages(digits) {
+  const counts = Array(10).fill(0);
+  const valid = (digits || []).filter(digit => Number.isInteger(Number(digit)) && Number(digit) >= 0 && Number(digit) <= 9).map(Number);
+  valid.forEach(digit => { counts[digit] += 1; });
+  return { counts, total: valid.length, percentages: counts.map(count => valid.length ? (count / valid.length) * 100 : 0) };
 }
 
-/** Less-appearing means the combined pair rate is below its 20% baseline. */
-export function isPairLessAppearing(digitPcts, pair) {
-  if (!Array.isArray(digitPcts) || !Array.isArray(pair) || pair.length !== 2) return false;
-  const combined = pair.reduce((sum, digit) => sum + (Number(digitPcts[digit]) || 0), 0);
-  return combined < TWO_DIGIT_EXPECTED_PERCENT;
+/** Select the first trigger whose every observed next digit is a winning digit. */
+export function findWinningDigitTrigger(digits, winningDigits, minOccurrences = AUTOMATED_TRIGGER_MIN_OCCURRENCES) {
+  const values = (digits || []).map(Number).filter(digit => Number.isInteger(digit) && digit >= 0 && digit <= 9);
+  const winners = new Set((winningDigits || []).map(Number));
+  const candidates = [];
+  for (let trigger = 0; trigger <= 9; trigger += 1) {
+    const nextDigits = [];
+    for (let index = 0; index < values.length - 1; index += 1) {
+      if (values[index] === trigger) nextDigits.push(values[index + 1]);
+    }
+    if (nextDigits.length >= minOccurrences && nextDigits.every(digit => winners.has(digit))) {
+      candidates.push({ triggerDigit: trigger, occurrences: nextDigits.length, winningNext: nextDigits.length, confidence: 100 });
+    }
+  }
+  return candidates.sort((a, b) => b.occurrences - a.occurrences || a.triggerDigit - b.triggerDigit)[0] || null;
 }
 
-/** Prefer markets below the expected 20% pair rate; otherwise choose relatively lower-rate markets. */
-export function selectLessAppearingMarkets(samples) {
-  const usable = (samples || []).filter(item => Number.isFinite(Number(item?.pairPct)))
-    .map(item => ({ ...item, pairPct: Number(item.pairPct) }));
-  if (!usable.length) return { markets: [], rule: 'no-data', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
-
-  const lowestThree = items => [...items].sort((a, b) => a.pairPct - b.pairPct).slice(0, AUTOMATED_TOP_MARKETS);
-
-  const belowBaseline = usable.filter(item => item.pairPct < TWO_DIGIT_EXPECTED_PERCENT);
-  if (belowBaseline.length) return { markets: lowestThree(belowBaseline), rule: 'below-20', referencePct: TWO_DIGIT_EXPECTED_PERCENT };
-
-  const peerAverage = usable.reduce((sum, item) => sum + item.pairPct, 0) / usable.length;
-  const belowAverage = usable.filter(item => item.pairPct < peerAverage);
-  if (belowAverage.length) return { markets: lowestThree(belowAverage), rule: 'below-peer-average', referencePct: peerAverage };
-
-  const lowestRate = Math.min(...usable.map(item => item.pairPct));
-  const lowestMarkets = usable.filter(item => Math.abs(item.pairPct - lowestRate) < 1e-9);
-  return { markets: lowestThree(lowestMarkets), rule: 'lowest-rate-tie', referencePct: lowestRate };
+/** Keep only markets whose required losing digits are each below the 10% threshold. */
+export function selectAutomatedMarkets(samples, lowDigits, maxPercent = AUTOMATED_LOW_DIGIT_PERCENT) {
+  const usable = (samples || []).filter(item => item && Array.isArray(item.digitPcts)
+    && (lowDigits || []).every(digit => Number(item.digitPcts[digit]) < maxPercent));
+  return [...usable].sort((a, b) => (a.pairPct - b.pairPct) || String(a.symbol).localeCompare(String(b.symbol))).slice(0, AUTOMATED_TOP_MARKETS);
 }
 
 /**

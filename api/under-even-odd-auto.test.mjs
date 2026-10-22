@@ -2,14 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   AUTOMATED_FREQUENCY_WINDOW,
-  AUTOMATED_PAIR_HITS_REQUIRED,
+  AUTOMATED_TRIGGER_WINDOW,
+  AUTOMATED_LOW_DIGIT_PERCENT,
   RECOVERY_SAMPLE_SIZE,
   REQUIRED_TARGET_DIGITS_IN_TOP,
-  TWO_DIGIT_EXPECTED_PERCENT,
-  advancePairHitCount,
-  isPairLessAppearing,
+  calculateDigitPercentages,
+  findWinningDigitTrigger,
   nextAutomatedStage,
-  selectLessAppearingMarkets,
+  selectAutomatedMarkets,
   selectRecoveryCandidate,
 } from '../src/components/makoti-widget/under-even-odd-utils.mjs';
 
@@ -23,8 +23,8 @@ test('recovery uses the intended 100-tick analysis window', () => {
 });
 
 test('ranks candidates near 60%, but rejects the closest candidate if its top digits disagree', () => {
-  const rejected = candidate('R_10', 'odd', 40, 60, 3); // only 2 of top 5 digits are odd
-  const accepted = candidate('R_25', 'odd', 41, 59, 2); // 3 of top 5 digits are odd
+  const rejected = candidate('R_10', 'odd', 40, 60, 3);
+  const accepted = candidate('R_25', 'odd', 41, 59, 2);
   assert.equal(selectRecoveryCandidate([rejected, accepted]), accepted);
 });
 
@@ -42,58 +42,39 @@ test('uses the closest below-60 candidate only when no >=60 candidate passes the
 });
 
 test('does not select a market when the top-five digit majority disagrees with the parity', () => {
-  const samples = [
+  assert.equal(selectRecoveryCandidate([
     candidate('R_10', 'odd', 39, 61, 3),
     candidate('R_25', 'even', 58, 42, 4),
-  ];
-  assert.equal(selectRecoveryCandidate(samples), null);
+  ]), null);
 });
 
-test('automated frequency checks use the 1,000-tick window and 20% two-digit baseline', () => {
+test('automated scanning uses 1,000 ticks and a 30-tick trigger window', () => {
   assert.equal(AUTOMATED_FREQUENCY_WINDOW, 1000);
-  assert.equal(TWO_DIGIT_EXPECTED_PERCENT, 20);
+  assert.equal(AUTOMATED_TRIGGER_WINDOW, 30);
+  assert.equal(AUTOMATED_LOW_DIGIT_PERCENT, 10);
 });
 
-test('qualifies a pair by combined frequency even when one member is above 10%', () => {
-  const pcts = [12, 7, 11, 11, 11, 11, 11, 11, 7, 8];
-  assert.equal(isPairLessAppearing(pcts, [0, 1]), true); // 19%; digit 0 is 12%
+test('digit percentages use count divided by valid digit total', () => {
+  const result = calculateDigitPercentages([0, 1, 1, 2, 9]);
+  assert.equal(result.total, 5);
+  assert.deepEqual(result.percentages, [20, 40, 20, 0, 0, 0, 0, 0, 0, 20]);
 });
 
-test('does not treat a pair at or above 20% as less appearing', () => {
-  const pcts = [13, 7, 11, 11, 11, 11, 11, 11, 7, 7];
-  assert.equal(isPairLessAppearing(pcts, [0, 1]), false); // exactly 20%
-  assert.equal(isPairLessAppearing(pcts, [8, 9]), true); // 14%
+test('finds a trigger whose following digits are always winners', () => {
+  const trigger = findWinningDigitTrigger([4, 2, 4, 9, 4, 8], [2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(trigger, { triggerDigit: 4, occurrences: 3, winningNext: 3, confidence: 100 });
 });
 
-test('prefers markets below the 20% baseline when any are available', () => {
-  const result = selectLessAppearingMarkets([
-    { symbol: 'R_10', pairPct: 19.8 },
-    { symbol: 'R_25', pairPct: 21.2 },
-    { symbol: 'R_50', pairPct: 24.1 },
-  ]);
-  assert.equal(result.rule, 'below-20');
-  assert.deepEqual(result.markets.map(item => item.symbol), ['R_10']);
+test('rejects a trigger when one of its following digits is not a winner', () => {
+  assert.equal(findWinningDigitTrigger([4, 2, 4, 1, 4, 8], [2, 3, 4, 5, 6, 7, 8, 9]), null);
 });
 
-test('falls back to below-peer-average markets when every pair rate is at least 20%', () => {
-  const result = selectLessAppearingMarkets([
-    { symbol: 'R_10', pairPct: 22.4 },
-    { symbol: 'R_25', pairPct: 24.0 },
-    { symbol: 'R_50', pairPct: 27.6 },
-  ]);
-  assert.equal(result.rule, 'below-peer-average');
-  assert.equal(result.referencePct, 24.666666666666668);
-  assert.deepEqual(result.markets.map(item => item.symbol), ['R_10', 'R_25']);
-});
-
-test('uses all lowest-rate ties if all rates are identical and returns empty for no samples', () => {
-  const tied = selectLessAppearingMarkets([
-    { symbol: 'R_10', pairPct: 22 },
-    { symbol: 'R_25', pairPct: 22 },
-  ]);
-  assert.equal(tied.rule, 'lowest-rate-tie');
-  assert.deepEqual(tied.markets.map(item => item.symbol), ['R_10', 'R_25']);
-  assert.deepEqual(selectLessAppearingMarkets([]).markets, []);
+test('automated markets require each losing digit to be below 10%', () => {
+  const markets = selectAutomatedMarkets([
+    { symbol: 'R_10', pairPct: 15, digitPcts: [6, 10, 10, 10, 10, 10, 10, 10, 17, 18] },
+    { symbol: 'R_25', pairPct: 12, digitPcts: [9, 9, 10, 10, 10, 10, 10, 10, 16, 17] },
+  ], [0, 1]);
+  assert.deepEqual(markets.map(item => item.symbol), ['R_25']);
 });
 
 test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => {
@@ -101,12 +82,4 @@ test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => 
   const under8 = nextAutomatedStage(over1);
   const differsAgain = nextAutomatedStage(under8);
   assert.deepEqual([over1, under8, differsAgain], ['over1', 'under8', 'differs']);
-});
-
-test('pair trigger waits for three target appearances while allowing intervening digits', () => {
-  let hits = 0;
-  for (const digit of [0, 5, 1, 7, 1]) hits = advancePairHitCount(hits, digit, [0, 1]);
-  assert.equal(AUTOMATED_PAIR_HITS_REQUIRED, 3);
-  assert.equal(hits, 3);
-  assert.equal(advancePairHitCount(hits, 4, [0, 1]), 3);
 });
