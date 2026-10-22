@@ -97,6 +97,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const oppositeTriggerRef = useRef(Math.max(1, Number(oppositeTrigger) || 5));
     const freshRecoveryPatternRef = useRef(false);
     const recoveryNeedsFreshScanRef = useRef(false);
+    const recoveryLockedSymbolRef = useRef<string | null>(null);
     const recoveryArmedRef = useRef(false);
     const lastEpochRef = useRef<number | undefined>();
     const scanRunningRef = useRef(false);
@@ -201,12 +202,21 @@ export const UnderEvenOddAuto: React.FC = () => {
                 return;
             }
             notify(`SCAN PARITY/DIGITS (${RECOVERY_SAMPLE_SIZE} ticks): ${usable.map(x => `${x.symbol} ${x.side.toUpperCase()} ${Math.max(x.evenPct, x.oddPct).toFixed(1)}% | top ${x.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${x.digitPcts[d].toFixed(0)}%`).join(',')} | opposite-top ${x.losingTopCount}/${TOP_DIGIT_COUNT}`).join(' | ')}`);
-            const best = selectRecoveryCandidate(usable) as RecoveryPick | null;
+            const lockedUsable = recoveryLockedSymbolRef.current
+                ? usable.filter(item => item.symbol === recoveryLockedSymbolRef.current)
+                : usable;
+            if (!lockedUsable.length) {
+                notify(`RECOVERY SCAN: locked volatility ${recoveryLockedSymbolRef.current} did not return usable ticks; keeping the recovery lock and retrying in 3 seconds`);
+                setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
+                return;
+            }
+            const best = selectRecoveryCandidate(lockedUsable) as RecoveryPick | null;
             if (!best) {
                 notify(`RECOVERY SCAN: no index passed both the 60%/closest-parity ranking and the top-${TOP_DIGIT_COUNT} digit majority check; no trade, retrying in 3 seconds`);
                 setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
                 return;
             }
+            if (!recoveryLockedSymbolRef.current) recoveryLockedSymbolRef.current = best.symbol;
             selectedRef.current = best;
             setSelected(best);
             setEvenPct(best.evenPct); setOddPct(best.oddPct);
@@ -289,6 +299,10 @@ export const UnderEvenOddAuto: React.FC = () => {
         const requestContract = kind === 'parity' ? (contract === 'DIGITEVEN' ? 'DIGITEVEN' : 'DIGITODD') : contract;
         const signal = { symbol: requestSymbol, contract: requestContract, entryEpoch: Number.isFinite(entryEpoch) ? Number(entryEpoch) : undefined };
         if (kind === 'parity') {
+            if (recoveryLockedSymbolRef.current && recoveryLockedSymbolRef.current !== requestSymbol) {
+                notify(`RECOVERY REQUEST BLOCKED — locked to ${recoveryLockedSymbolRef.current}; ignored ${requestSymbol} ${requestContract}`);
+                return;
+            }
             if (recoveryBuyInFlightRef.current) return;
             if (recoveryEachTickRef.current && Number.isFinite(entryEpoch)) {
                 if (lastRecoveryEntryEpochRef.current === Number(entryEpoch)) return;
@@ -374,7 +388,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 const remaining = Math.max(0, lossRef.current - profit);
                 lossRef.current = remaining; setLossBalance(remaining);
                 if (remaining <= 0.0001) {
-                    recoveryArmedRef.current = false; recoveryNeedsFreshScanRef.current = false; lossStreakRef.current = 0;
+                    recoveryArmedRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; lossStreakRef.current = 0;
                     selectedRef.current = null; setSelected(null);
                     currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current);
                     if (automatedRef.current) {
@@ -436,7 +450,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 setPhaseSafe('pattern');
                 notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — pattern gate bypassed; next ${selectedRef.current.side.toUpperCase()} tick will execute`);
             } else if (trade.kind === 'automated') {
-                selectedRef.current = null; setSelected(null); oppositeRef.current = 0; recoveryArmedRef.current = false;
+                selectedRef.current = null; setSelected(null); oppositeRef.current = 0; recoveryArmedRef.current = false; recoveryLockedSymbolRef.current = null;
                 setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
                 pairHitsRef.current = {}; digitStreaksRef.current = {};
                 notify(`AUTOMATED ${trade.autoStage || 'stage'} lost — entering Even/Odd recovery; automation will resume at Differs after recovery`);
@@ -445,6 +459,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 selectedRef.current = null;
                 setSelected(null);
                 oppositeRef.current = 0;
+                recoveryLockedSymbolRef.current = null;
                 notify('NEW NORMAL LOSS — clearing the previous volatility and starting a fresh live recovery scan');
                 void scanRecovery();
             }
@@ -585,7 +600,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; recoveryArmedRef.current = false;
         automatedRef.current = automated;
         digitStreaksRef.current = {}; pairHitsRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
@@ -598,7 +613,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); pairHitsRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
