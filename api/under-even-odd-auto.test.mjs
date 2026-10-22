@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   AUTOMATED_FREQUENCY_WINDOW,
   AUTOMATED_TRIGGER_WINDOW,
+  AUTOMATED_TRIGGER_MIN_OCCURRENCES,
   AUTOMATED_LOW_DIGIT_PERCENT,
   RECOVERY_SAMPLE_SIZE,
   REQUIRED_TARGET_DIGITS_IN_TOP,
@@ -51,6 +52,7 @@ test('does not select a market when the top-five digit majority disagrees with t
 test('automated scanning uses 1,000 ticks and a 30-tick trigger window', () => {
   assert.equal(AUTOMATED_FREQUENCY_WINDOW, 1000);
   assert.equal(AUTOMATED_TRIGGER_WINDOW, 30);
+  assert.equal(AUTOMATED_TRIGGER_MIN_OCCURRENCES, 4);
   assert.equal(AUTOMATED_LOW_DIGIT_PERCENT, 10);
 });
 
@@ -61,8 +63,8 @@ test('digit percentages use count divided by valid digit total', () => {
 });
 
 test('finds a trigger whose following digits are always winners', () => {
-  const trigger = findWinningDigitTrigger([4, 2, 4, 9, 4, 8], [2, 3, 4, 5, 6, 7, 8, 9]);
-  assert.deepEqual(trigger, { triggerDigit: 4, occurrences: 3, winningNext: 3, confidence: 100 });
+  const trigger = findWinningDigitTrigger([4, 2, 4, 9, 4, 8, 4, 3, 4, 7], [2, 3, 4, 5, 6, 7, 8, 9]);
+  assert.deepEqual(trigger, { triggerDigit: 4, occurrences: 5, winningNext: 5, confidence: 100 });
 });
 
 test('rejects a trigger when one of its following digits is not a winner', () => {

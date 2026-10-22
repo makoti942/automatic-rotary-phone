@@ -5,7 +5,7 @@ export const REQUIRED_TARGET_DIGITS_IN_TOP = 3;
 export const AUTOMATED_FREQUENCY_WINDOW = 1000;
 export const AUTOMATED_TRIGGER_WINDOW = 30;
 export const AUTOMATED_LOW_DIGIT_PERCENT = 10;
-export const AUTOMATED_TRIGGER_MIN_OCCURRENCES = 2;
+export const AUTOMATED_TRIGGER_MIN_OCCURRENCES = 4;
 export const AUTOMATED_TOP_MARKETS = 1;
 
 export function nextAutomatedStage(stage) {
