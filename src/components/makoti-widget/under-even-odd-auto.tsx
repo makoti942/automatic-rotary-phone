@@ -172,8 +172,10 @@ export const UnderEvenOddAuto: React.FC = () => {
         if (!runningRef.current || scanRunningRef.current) return;
         scanRunningRef.current = true;
         setPhaseSafe('scanning');
-        const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
-        notify(`RECOVERY SCAN: requesting ${RECOVERY_SAMPLE_SIZE} ticks from ${symbols.length} live Deriv volatility indices`);
+        const symbols = recoveryLockedSymbolRef.current
+            ? [recoveryLockedSymbolRef.current]
+            : (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS);
+        notify(`RECOVERY SCAN: sampling ${RECOVERY_SAMPLE_SIZE} ticks from ${symbols.length === 1 ? `locked volatility ${symbols[0]}` : `${symbols.length} live Deriv volatility indices for initial selection`}`);
         try {
             const samples = await Promise.all(symbols.map(async symbol => {
                 try {
