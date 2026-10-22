@@ -19,7 +19,7 @@ type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling' |
 type Side = 'even' | 'odd';
 type AutoStage = 'differs' | 'over1' | 'under8';
 interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity' | 'automated'; contract: string; autoStage?: AutoStage; entryEpoch?: number; localOutcome?: 'win' | 'loss'; }
-interface QualifiedMarket { symbol: string; pairPct: number; digitPcts: number[]; lowDigits: number[]; triggerDigit: number; triggerOccurrences: number; triggerConfidence: number; }
+interface QualifiedMarket { symbol: string; pairPct: number; digitPcts: number[]; lowDigits: number[]; triggerDigit: number; triggerOccurrences: number; triggerConfidence: number; lastHistoricalDigit: number; lastHistoricalEpoch?: number; }
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; digitPcts: number[]; topDigits: number[]; losingTopCount: number; trailingOpposite: number; lastEpoch?: number; }
 const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
@@ -267,7 +267,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                     const trigger = findWinningDigitTrigger(digits.slice(-AUTOMATED_TRIGGER_WINDOW), winningDigits);
                     if (!trigger) return null;
                     const pairPct = lowDigits.reduce((sum, digit) => sum + digitPcts[digit], 0);
-                    return { symbol, pairPct, digitPcts, lowDigits, triggerDigit: trigger.triggerDigit, triggerOccurrences: trigger.occurrences, triggerConfidence: trigger.confidence } as QualifiedMarket;
+                    return { symbol, pairPct, digitPcts, lowDigits, triggerDigit: trigger.triggerDigit, triggerOccurrences: trigger.occurrences, triggerConfidence: trigger.confidence, lastHistoricalDigit: digits.at(-1) as number, lastHistoricalEpoch: Number(response?.history?.times?.at(-1)) || undefined } as QualifiedMarket;
                 } catch { return null; }
             }));
             if (!runningRef.current || !automatedRef.current || autoStageRef.current !== stage) return;
@@ -277,7 +277,9 @@ export const UnderEvenOddAuto: React.FC = () => {
             setQualifiedMarkets(qualified);
             qualifiedMarketsRef.current = new Set(qualified.map(item => item.symbol));
             automatedMarketsRef.current = Object.fromEntries(qualified.map(item => [item.symbol, item]));
-            automatedTriggerPendingRef.current = {};
+            automatedTriggerPendingRef.current = Object.fromEntries(qualified
+                .filter(item => item.lastHistoricalDigit === item.triggerDigit)
+                .map(item => [item.symbol, item.lastHistoricalEpoch || 0]));
             if (!qualified.length) {
                 notify(`${contractLabel}: no volatility passed the low-digit and 30-tick trigger rules; retrying in 5 seconds`);
                 setTimeout(() => {
@@ -512,20 +514,24 @@ export const UnderEvenOddAuto: React.FC = () => {
                             }
                         } else if (qualifiedMarketsRef.current.has(sym)) {
                             const market = automatedMarketsRef.current[sym];
+                            if (!market || market.symbol !== sym) {
+                                notify(`AUTOMATED LIVE IGNORED — no active market record for ${sym}`);
+                                return;
+                            }
                             const pendingTriggerEpoch = automatedTriggerPendingRef.current[sym];
                             const winning = stage === 'over1' ? digit >= 2 : digit <= 7;
-                            if (pendingTriggerEpoch && tickEpoch > pendingTriggerEpoch) {
+                            if (pendingTriggerEpoch !== undefined && (pendingTriggerEpoch === 0 || tickEpoch > pendingTriggerEpoch)) {
                                 delete automatedTriggerPendingRef.current[sym];
                                 if (winning) {
-                                    notify(`${labelsRef.current[sym] || sym}: trigger ${market.triggerDigit} followed immediately by winning digit ${digit} — buying ${stage === 'over1' ? 'Over 1' : 'Under 8'}`);
+                                    notify(`${labelsRef.current[sym] || sym}: LIVE ${sym} quote ${String(data.tick.quote)} → digit ${digit} at epoch ${tickEpoch}; trigger ${market.triggerDigit} followed immediately by winning digit — buying ${stage === 'over1' ? 'Over 1' : 'Under 8'} on ${sym}`);
                                     void buy(sym, stage === 'over1' ? 'DIGITOVER' : 'DIGITUNDER', currentStakeRef.current, 'automated', stage === 'over1' ? '1' : '8');
                                 } else {
-                                    notify(`${labelsRef.current[sym] || sym}: trigger ${market.triggerDigit} was not followed by a winning digit; waiting for the next trigger`);
+                                    notify(`${labelsRef.current[sym] || sym}: LIVE ${sym} quote ${String(data.tick.quote)} → digit ${digit} at epoch ${tickEpoch}; trigger ${market.triggerDigit} was not followed by a winning digit; waiting for the next trigger`);
                                 }
                             }
-                            if (!pendingTriggerEpoch && digit === market.triggerDigit) {
+                            if (pendingTriggerEpoch === undefined && digit === market.triggerDigit) {
                                 automatedTriggerPendingRef.current[sym] = tickEpoch;
-                                notify(`${labelsRef.current[sym] || sym}: trigger digit ${digit} touched — checking the next tick for ${stage === 'over1' ? '2–9' : '0–7'}`);
+                                notify(`${labelsRef.current[sym] || sym}: LIVE ${sym} quote ${String(data.tick.quote)} → digit ${digit} at epoch ${tickEpoch}; trigger digit touched — checking the next live tick for ${stage === 'over1' ? '2–9' : '0–7'}`);
                             }
                         }
                     }
