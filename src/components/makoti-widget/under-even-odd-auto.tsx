@@ -72,6 +72,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const digitStreaksRef = useRef<Record<string, { digit: number; count: number }>>({});
     const automatedMarketsRef = useRef<Record<string, QualifiedMarket>>({});
     const automatedTriggerPendingRef = useRef<Record<string, number>>({});
+    const lastProcessedTickEpochRef = useRef<Record<string, number>>({});
     const automatedTickIndexRef = useRef<Record<string, number>>({});
     const qualifiedMarketsRef = useRef<Set<string>>(new Set());
     const autoScanRunningRef = useRef(false);
@@ -473,9 +474,14 @@ export const UnderEvenOddAuto: React.FC = () => {
                 const data = JSON.parse(event.data);
                 if ((data.msg_type === 'history' || data.msg_type === 'ticks_history') && data.history?.prices) updateBuffer(data.echo_req?.ticks_history, data.history.prices);
                 if (data.msg_type === 'tick' && data.tick?.symbol) {
-                    const sym = data.tick.symbol; const digit = manualTradeDigitOf(data.tick.quote, sym, pipSizesRef.current); const tickEpoch = Number(data.tick.epoch) || Date.now(); const buf = buffersRef.current[sym] || [];
+                    const sym = data.tick.symbol;
+                    const tickEpoch = Number(data.tick.epoch);
+                    if (!Number.isFinite(tickEpoch)) return;
+                    if (lastProcessedTickEpochRef.current[sym] !== undefined && tickEpoch <= lastProcessedTickEpochRef.current[sym]) return;
+                    lastProcessedTickEpochRef.current[sym] = tickEpoch;
+                    const digit = manualTradeDigitOf(data.tick.quote, sym, pipSizesRef.current); const buf = buffersRef.current[sym] || [];
                     buffersRef.current[sym] = [...buf, digit].slice(-1000);
-                    if (sym === normalSymbolRef.current || automatedRef.current) setLastDigit(digit);
+                    if (sym === normalSymbolRef.current || (automatedRef.current && (autoStageRef.current === 'differs' || qualifiedMarketsRef.current.has(sym)))) setLastDigit(digit);
                     const localParityTrade = localParityTradeRef.current;
                     if (recoveryEachTickRef.current && localParityTrade && localParityTrade.symbol === sym && tickEpoch > localParityTrade.entryEpoch) {
                         const localWin = localParityTrade.side === 'even' ? isEven(digit) : !isEven(digit);
@@ -527,6 +533,8 @@ export const UnderEvenOddAuto: React.FC = () => {
                                     void buy(sym, stage === 'over1' ? 'DIGITOVER' : 'DIGITUNDER', currentStakeRef.current, 'automated', stage === 'over1' ? '1' : '8');
                                 } else {
                                     notify(`${labelsRef.current[sym] || sym}: LIVE ${sym} quote ${String(data.tick.quote)} → digit ${digit} at epoch ${tickEpoch}; trigger ${market.triggerDigit} was not followed by a winning digit; waiting for the next trigger`);
+                                    notify(`${labelsRef.current[sym] || sym}: reanalyzing the updated 1,000/30-tick window for a new trigger on ${sym}`);
+                                    void scanAutomatedPair(stage);
                                 }
                             }
                             if (pendingTriggerEpoch === undefined && digit === market.triggerDigit) {
@@ -585,7 +593,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             } catch {}
         });
         return unsubscribe;
-    }, [buy, handleSettled, notify, running, updateBuffer]);
+    }, [buy, handleSettled, notify, running, scanAutomatedPair, scanRecovery, updateBuffer]);
     useEffect(() => {
         if (!running) return;
         if (automatedRef.current) {
@@ -605,7 +613,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
         normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; recoveryArmedRef.current = false;
         automatedRef.current = automated;
-        digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
+        digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; lastProcessedTickEpochRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
         setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
         if (automated) {
@@ -616,7 +624,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; lastProcessedTickEpochRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
