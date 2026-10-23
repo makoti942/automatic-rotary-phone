@@ -726,14 +726,8 @@ export const UnderEvenOddAuto: React.FC = () => {
         </div>
         <div className='mw-analyze-result' style={{ display: 'block' }}>
             <b>UNDER → EVEN/ODD AUTO</b>
-            <div>Mode: <strong>{automated ? 'Automated sequence' : 'Manual entry'}</strong>{automated ? ` · Stage: ${autoStage === 'differs' ? 'Digit Differs' : autoStage === 'over1' ? 'Over 1' : 'Under 8'}` : ''}</div>
-            <div>Phase: <strong>{phase}</strong> · Completed trades: {normalCount} · Session P/L: {sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)} · Recovery balance: ${lossBalance.toFixed(2)}</div>
-            <div>Last digit: {lastDigit ?? '—'} · Stake: ${currentStake.toFixed(2)} · Martingale: ×{Number(martingale) || 2}</div>
-            <div>Recovery trigger: <strong>{Math.max(1, Math.min(100, Number(oppositeTrigger) || 5))} opposite digits</strong> · Recovery each tick: <strong>{recoveryEachTick ? 'ON — configured gate, then local next-tick result' : 'OFF — wait for Deriv settlement'}</strong></div>
-            <div>Parity entry: <strong>{allVolatilityPattern ? 'all volatilities — first parity streak locks one market' : 'scanned volatility'}</strong> · Opposite trade: <strong>{tradeOppositeParity ? 'ON — trade the opposite parity after the gate' : 'OFF — trade the selected parity'}</strong></div>
-            {automated && <div>Automated mode ignores the manual entry digit and selected volatility.</div>}
-            {qualifiedMarkets.length > 0 && <div>Selected automated volatility ({autoStage === 'over1' ? 'digits 0 and 1' : 'digits 8 and 9'} below 10%): {qualifiedMarkets.map(item => `${labelsRef.current[item.symbol] || item.symbol} · trigger ${item.triggerDigit} → winning digits`).join(' · ')}</div>}
-            {selected && <div>{labelsRef.current[selected.symbol] || SYMBOL_LABELS[selected.symbol] || selected.symbol}: Even {evenPct.toFixed(1)}% / Odd {oddPct.toFixed(1)}% · Target: {selected.side.toUpperCase()} · Top digits: {selected.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${selected.digitPcts[d].toFixed(0)}%`).join(', ')}</div>}
+            <div>Live digit: <strong>{lastDigit ?? '—'}</strong></div>
+            <div>Current state: <strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div>
         </div>
         {riskAlert && <div className={`mw-ueo-risk-alert mw-ueo-risk-alert--${riskAlert.kind}`} role='alert'>
             <strong>{riskAlert.kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'}</strong>
