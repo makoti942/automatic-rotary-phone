@@ -75,7 +75,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const digitStreaksRef = useRef<Record<string, { digit: number; count: number }>>({});
     const automatedMarketsRef = useRef<Record<string, QualifiedMarket>>({});
     const automatedTriggerPendingRef = useRef<Record<string, number>>({});
-    const lastProcessedTickEpochRef = useRef<Record<string, number>>({});
+    const processedTickKeysRef = useRef<Record<string, Set<string>>>({});
     const automatedTickIndexRef = useRef<Record<string, number>>({});
     const qualifiedMarketsRef = useRef<Set<string>>(new Set());
     const autoScanRunningRef = useRef(false);
@@ -499,8 +499,19 @@ export const UnderEvenOddAuto: React.FC = () => {
                     const sym = data.tick.symbol;
                     const tickEpoch = Number(data.tick.epoch);
                     if (!Number.isFinite(tickEpoch)) return;
-                    if (lastProcessedTickEpochRef.current[sym] !== undefined && tickEpoch <= lastProcessedTickEpochRef.current[sym]) return;
-                    lastProcessedTickEpochRef.current[sym] = tickEpoch;
+                    const quote = String(data.tick.quote);
+                    const tickId = data.tick.id == null ? '' : String(data.tick.id);
+                    const tickKey = `${tickId}|${tickEpoch}|${quote}`;
+                    const processedKeys = processedTickKeysRef.current[sym] || new Set<string>();
+                    if (processedKeys.has(tickKey)) return;
+                    processedKeys.add(tickKey);
+                    // Bound memory while retaining enough recent keys to
+                    // reject duplicate history/live messages.
+                    if (processedKeys.size > 250) {
+                        const oldest = processedKeys.values().next().value;
+                        if (oldest) processedKeys.delete(oldest);
+                    }
+                    processedTickKeysRef.current[sym] = processedKeys;
                     const digit = manualTradeDigitOf(data.tick.quote, sym, pipSizesRef.current); const buf = buffersRef.current[sym] || [];
                     buffersRef.current[sym] = [...buf, digit].slice(-1000);
                     if (sym === normalSymbolRef.current || (automatedRef.current && (autoStageRef.current === 'differs' || qualifiedMarketsRef.current.has(sym)))) setLastDigit(digit);
@@ -669,7 +680,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
         normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; recoveryArmedRef.current = false;
         automatedRef.current = automated;
-        digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; allVolatilityStreaksRef.current = {}; lastProcessedTickEpochRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
+        digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; allVolatilityStreaksRef.current = {}; processedTickKeysRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
         setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
         if (automated) {
@@ -680,7 +691,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; lastProcessedTickEpochRef.current = {}; allVolatilityStreaksRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; processedTickKeysRef.current = {}; allVolatilityStreaksRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     return <div className='mw-killer even-odd-theme'>
         <div className='mw-killer__fields'>
             <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
