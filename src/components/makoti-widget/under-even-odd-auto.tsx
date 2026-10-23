@@ -327,6 +327,14 @@ export const UnderEvenOddAuto: React.FC = () => {
                 return;
             }
             if (recoveryBuyInFlightRef.current) return;
+            // In settlement-driven recovery, never open a second parity
+            // contract while the previous one is still unsettled. Otherwise
+            // late wins/losses can change the balance and unlock a different
+            // volatility after recovery already appeared complete.
+            if (!recoveryEachTickRef.current && Array.from(openRef.current.values()).some(openTrade => openTrade.kind === 'parity')) {
+                notify(`RECOVERY REQUEST BLOCKED — previous parity contract is still unsettled; keeping the current volatility lock`);
+                return;
+            }
             if (recoveryEachTickRef.current && Number.isFinite(entryEpoch)) {
                 if (lastRecoveryEntryEpochRef.current === Number(entryEpoch)) return;
                 lastRecoveryEntryEpochRef.current = Number(entryEpoch);
@@ -520,6 +528,12 @@ export const UnderEvenOddAuto: React.FC = () => {
                         const localWin = localParityTrade.side === 'even' ? isEven(digit) : !isEven(digit);
                         const localKey = `${sym}:${localParityTrade.entryEpoch}`;
                         localOutcomeByEntryRef.current.set(localKey, localWin ? 'win' : 'loss');
+                        for (const [contractId, openTrade] of openRef.current.entries()) {
+                            if (openTrade.kind === 'parity' && openTrade.symbol === sym && openTrade.entryEpoch === localParityTrade.entryEpoch) {
+                                openRef.current.set(contractId, { ...openTrade, localOutcome: localWin ? 'win' : 'loss' });
+                                break;
+                            }
+                        }
                         localParityTradeRef.current = null;
                         notify(`LOCAL ${localWin ? 'WIN' : 'LOSS'} — entry tick ${localParityTrade.entryEpoch}, exit tick ${tickEpoch}, digit ${digit} is ${isEven(digit) ? 'EVEN' : 'ODD'} | ${localParityTrade.side.toUpperCase()} target`);
                         if (localWin) {
