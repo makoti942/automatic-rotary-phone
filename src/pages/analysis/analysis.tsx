@@ -84,7 +84,7 @@ const Analysis = () => {
     const lastResetRef = useRef(0);
     const lastSeedAttemptRef = useRef(0);
     const seedAttemptsRef = useRef(0);
-    const seenLiveTickIdsRef = useRef<Set<string>>(new Set());
+    const seenLiveTickKeysRef = useRef<Map<string, string>>(new Map());
     const pendingHistoryOverlapRef = useRef<string | null>(null);
 
     const load = useCallback(() => {
@@ -92,7 +92,7 @@ const Analysis = () => {
         ticksRef.current = [];
         setTicks([]);
         setLive(false);
-        seenLiveTickIdsRef.current.clear();
+        seenLiveTickKeysRef.current.clear();
         pendingHistoryOverlapRef.current = null;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             setStatus('WebSocket not connected — waiting…');
@@ -195,8 +195,8 @@ const Analysis = () => {
                 const epoch = Number(tick.epoch);
                 const tickKey = `${epoch}|${quote}`;
                 const tickId = tick.id == null ? '' : String(tick.id);
-                if (tickId && seenLiveTickIdsRef.current.has(tickId)) return;
-                if (tickId) seenLiveTickIdsRef.current.add(tickId);
+                if (tickId && seenLiveTickKeysRef.current.get(tickId) === tickKey) return;
+                if (tickId) seenLiveTickKeysRef.current.set(tickId, tickKey);
                 // A subscribe response commonly repeats the final tick that
                 // was already included in the plain history seed. Do not
                 // count that boundary tick twice in Even/Odd or any other
@@ -253,13 +253,15 @@ const Analysis = () => {
                 }
                 return;
             }
-            // Data exists but OUR live stream stalled -> re-subscribe once.
-            // In passive mode (sharing the bot's stream) leave it alone.
-            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60 && subIdRef.current) {
+            // Data exists but the live stream stalled -> re-subscribe once.
+            // This also recovers passive mode when the shared stream stopped.
+            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60) {
                 lastResetRef.current = now;
-                try {
-                    ws.send(JSON.stringify({ forget: subIdRef.current }));
-                } catch {}
+                if (subIdRef.current) {
+                    try {
+                        ws.send(JSON.stringify({ forget: subIdRef.current }));
+                    } catch {}
+                }
                 subIdRef.current = null;
                 const { symbol: sym } = cfgRef.current;
                 const last = ticksRef.current[ticksRef.current.length - 1];
