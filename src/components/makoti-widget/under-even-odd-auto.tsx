@@ -67,6 +67,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [riskAlert, setRiskAlert] = useState<{ kind: 'take-profit' | 'stop-loss'; amount: number } | null>(null);
     const [currentStake, setCurrentStake] = useState(Number(stake) || 0.35);
     const [logs, setLogs] = useState<string[]>([]);
+    const [switchHelp, setSwitchHelp] = useState<string | null>(null);
     const runningRef = useRef(false);
     const phaseRef = useRef<Phase>('idle');
     const automatedRef = useRef(automated);
@@ -705,23 +706,37 @@ export const UnderEvenOddAuto: React.FC = () => {
                 <label className='mw-label' htmlFor='mw-ueo-opposite-trigger'>Opposite digits before recovery</label>
                 <input id='mw-ueo-opposite-trigger' className='mw-input' type='number' min='1' max='100' step='1' value={oppositeTrigger} onChange={e => setOppositeTrigger(e.target.value)} disabled={running} />
             </div>
-            <div className='mw-ueo-auto-toggle'>
-                <span id='mw-ueo-recovery-tick-label'>Recovery each tick</span>
-                <button type='button' role='switch' aria-checked={recoveryEachTick} aria-labelledby='mw-ueo-recovery-tick-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)} title='Keep the configured opposite-digit gate, then evaluate the next tick locally for fast recovery decisions'>
-                    <span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                </button>
-            </div>
-            <div className='mw-ueo-auto-toggle'>
-                <span id='mw-ueo-all-volatility-label'>All-volatility parity pattern</span>
-                <button type='button' role='switch' aria-checked={allVolatilityPattern} aria-labelledby='mw-ueo-all-volatility-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAllVolatilityPattern(value => !value)} title='Monitor all volatility markets simultaneously; after the parity streak, lock the first market and trade its opposite parity'>
-                    <span className={`mw-toggle__track ${allVolatilityPattern ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${allVolatilityPattern ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                </button>
-            </div>
-            <div className='mw-ueo-auto-toggle'>
-                <span id='mw-ueo-opposite-parity-label'>Trade opposite parity</span>
-                <button type='button' role='switch' aria-checked={tradeOppositeParity} aria-labelledby='mw-ueo-opposite-parity-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setTradeOppositeParity(value => !value)} title='After the opposite-tick threshold, trade the opposite parity instead of the scanned target parity'>
-                    <span className={`mw-toggle__track ${tradeOppositeParity ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${tradeOppositeParity ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                </button>
+            <div className='mw-ueo-switch-list'>
+                <div className='mw-ueo-setting-row'>
+                    <button type='button' className='mw-ueo-help' aria-label='Explain Recovery each tick' onClick={() => setSwitchHelp(switchHelp === 'each-tick' ? null : 'each-tick')}>?</button>
+                    <div className='mw-ueo-auto-toggle'>
+                        <span id='mw-ueo-recovery-tick-label'>Recovery each tick</span>
+                        <button type='button' role='switch' aria-checked={recoveryEachTick} aria-labelledby='mw-ueo-recovery-tick-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)}>
+                            <span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span>
+                        </button>
+                    </div>
+                    {switchHelp === 'each-tick' && <span className='mw-ueo-help-text'>After the opposite-tick gate, evaluate the next tick locally instead of waiting for Deriv settlement.</span>}
+                </div>
+                <div className='mw-ueo-setting-row'>
+                    <button type='button' className='mw-ueo-help' aria-label='Explain all-volatility parity pattern' onClick={() => setSwitchHelp(switchHelp === 'all-volatility' ? null : 'all-volatility')}>?</button>
+                    <div className='mw-ueo-auto-toggle'>
+                        <span id='mw-ueo-all-volatility-label'>All-volatility parity pattern</span>
+                        <button type='button' role='switch' aria-checked={allVolatilityPattern} aria-labelledby='mw-ueo-all-volatility-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAllVolatilityPattern(value => !value)}>
+                            <span className={`mw-toggle__track ${allVolatilityPattern ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${allVolatilityPattern ? 'mw-toggle__thumb--on' : ''}`} /></span>
+                        </button>
+                    </div>
+                    {switchHelp === 'all-volatility' && <span className='mw-ueo-help-text'>Watch every volatility at once; the first market reaching the parity streak is locked and used for the trade.</span>}
+                </div>
+                <div className='mw-ueo-setting-row'>
+                    <button type='button' className='mw-ueo-help' aria-label='Explain trade opposite parity' onClick={() => setSwitchHelp(switchHelp === 'opposite-parity' ? null : 'opposite-parity')}>?</button>
+                    <div className='mw-ueo-auto-toggle'>
+                        <span id='mw-ueo-opposite-parity-label'>Trade opposite parity</span>
+                        <button type='button' role='switch' aria-checked={tradeOppositeParity} aria-labelledby='mw-ueo-opposite-parity-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setTradeOppositeParity(value => !value)}>
+                            <span className={`mw-toggle__track ${tradeOppositeParity ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${tradeOppositeParity ? 'mw-toggle__thumb--on' : ''}`} /></span>
+                        </button>
+                    </div>
+                    {switchHelp === 'opposite-parity' && <span className='mw-ueo-help-text'>After the configured opposite-tick threshold, trade that opposite parity instead of the scanned target parity.</span>}
+                </div>
             </div>
         </div>
         <div className='mw-analyze-result' style={{ display: 'block' }}>

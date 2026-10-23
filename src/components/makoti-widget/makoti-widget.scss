@@ -1161,12 +1161,59 @@ $mw-radius:   10px;
 
 .mw-ueo-recovery-row {
     display: flex;
-    align-items: center;
+    flex-direction: column;
+    align-items: stretch;
     justify-content: flex-start;
+    gap: 6px;
     width: 100%;
     min-width: 0;
     margin-top: -4px;
     padding: 0 2px 2px;
+}
+
+.mw-ueo-switch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+}
+
+.mw-ueo-setting-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    min-height: 27px;
+    padding: 4px 6px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    background: rgba(255,255,255,0.025);
+}
+
+.mw-ueo-help {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 17px;
+    width: 17px;
+    height: 17px;
+    padding: 0;
+    border: 1px solid rgba(255,255,255,0.35);
+    border-radius: 50%;
+    color: $mw-text;
+    background: rgba(255,255,255,0.08);
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.mw-ueo-help-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    color: rgba(255,255,255,0.65);
+    font-size: 9px;
+    line-height: 1.35;
 }
 
 .mw-ueo-risk-alert {
@@ -1224,6 +1271,7 @@ $mw-radius:   10px;
     display: inline-flex;
     align-items: center;
     gap: 5px;
+    flex: 0 0 auto;
     color: $mw-text;
     font-size: 9px;
     font-weight: 800;
