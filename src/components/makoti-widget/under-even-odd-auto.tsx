@@ -717,69 +717,37 @@ export const UnderEvenOddAuto: React.FC = () => {
         }
     };
     const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; processedTickKeysRef.current = {}; allVolatilityStreaksRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
-    return <div className='mw-killer even-odd-theme'>
-        <div className='mw-killer__fields'>
-            <div className='mw-field mw-field--grow'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
-            <div className='mw-field mw-field--grow'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div>
-            <div className='mw-field mw-field--grow'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div>
-            <div className='mw-field mw-field--grow'><label className='mw-label'>Take profit ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={takeProfit} onChange={e => setTakeProfit(e.target.value)} disabled={running} /></div>
-            <div className='mw-field mw-field--grow'><label className='mw-label'>Stop loss ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={stopLoss} onChange={e => setStopLoss(e.target.value)} disabled={running} /></div>
-            <div className='mw-field mw-field--grow mw-ueo-entry-field'>
-                <label className='mw-label' htmlFor='mw-ueo-entry-digit'>Entry digit</label>
-                <div className='mw-ueo-entry-controls'>
-                    <input id='mw-ueo-entry-digit' className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running || automated} />
-                    <div className='mw-ueo-auto-toggle'>
-                        <span id='mw-ueo-auto-label'>Automated</span>
-                        <button type='button' role='switch' aria-checked={automated} aria-labelledby='mw-ueo-auto-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAutomated(value => !value)} title='Scan volatility indices and run the automatic contract sequence'>
-                            <span className={`mw-toggle__track ${automated ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${automated ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                        </button>
-                    </div>
+    const helpText = switchHelp === 'each-tick'
+        ? 'After the opposite-tick gate, evaluate the next tick locally instead of waiting for Deriv settlement.'
+        : switchHelp === 'all-volatility'
+            ? 'Watch every volatility at once; the first market reaching the parity streak is locked and used for the trade.'
+            : 'After the configured opposite-tick threshold, trade that opposite parity instead of the scanned target parity.';
+    return <div className='mw-killer even-odd-theme mw-ueo-panel'>
+        <div className='mw-ueo-header'><div><span className='mw-ueo-eyebrow'>DIGIT STRATEGY</span><h3>UNDER <span>→</span> EVEN / ODD</h3></div><span className={`mw-ueo-status ${running ? 'is-live' : ''}`}><i />{running ? phase.toUpperCase() : 'READY'}</span></div>
+        <section className='mw-ueo-section'>
+            <div className='mw-ueo-section-title'>Trade setup <span>Core entry and risk parameters</span></div>
+            <div className='mw-ueo-grid mw-ueo-grid--three'>
+                <div className='mw-field'><label className='mw-label'>Normal volatility</label><select className='mw-input' value={normalSymbol} onChange={e => setNormalSymbol(e.target.value)} disabled={running || automated}>{availableSymbols.map(symbol => <option key={symbol} value={symbol}>{labelsRef.current[symbol] || SYMBOL_LABELS[symbol] || symbol}</option>)}</select></div>
+                <div className='mw-field'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min='0.35' step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div>
+                <div className='mw-field'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div>
+                <div className='mw-field'><label className='mw-label'>Take profit ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={takeProfit} onChange={e => setTakeProfit(e.target.value)} disabled={running} /></div>
+                <div className='mw-field'><label className='mw-label'>Stop loss ($)</label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={stopLoss} onChange={e => setStopLoss(e.target.value)} disabled={running} /></div>
+                <div className='mw-field mw-ueo-entry-field'><label className='mw-label' htmlFor='mw-ueo-entry-digit'>Entry digit</label><div className='mw-ueo-entry-controls'><input id='mw-ueo-entry-digit' className='mw-input' type='number' min='1' max='9' step='1' value={entryDigit} onChange={e => setEntryDigit(e.target.value)} disabled={running || automated} /><div className='mw-ueo-auto-toggle'><span id='mw-ueo-auto-label'>Automated</span><button type='button' role='switch' aria-checked={automated} aria-labelledby='mw-ueo-auto-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAutomated(value => !value)} title='Scan volatility indices and run the automatic contract sequence'><span className={`mw-toggle__track ${automated ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${automated ? 'mw-toggle__thumb--on' : ''}`} /></span></button></div></div></div>
+            </div>
+        </section>
+        <section className='mw-ueo-section'>
+            <div className='mw-ueo-section-title'>Recovery controls <span>Configure how the next entry is triggered</span></div>
+            <div className='mw-ueo-recovery-grid'>
+                <div className='mw-field'><label className='mw-label' htmlFor='mw-ueo-opposite-trigger'>Opposite digits before recovery</label><input id='mw-ueo-opposite-trigger' className='mw-input' type='number' min='1' max='100' step='1' value={oppositeTrigger} onChange={e => setOppositeTrigger(e.target.value)} disabled={running} /><span className='mw-ueo-field-hint'>Consecutive opposite-parity ticks</span></div>
+                <div className='mw-ueo-switch-list'>
+                    <div className='mw-ueo-setting-row'><button type='button' className='mw-ueo-help' aria-label='Explain Recovery each tick' onClick={() => setSwitchHelp(switchHelp === 'each-tick' ? null : 'each-tick')}>?</button><span className='mw-ueo-switch-label'>Recovery each tick</span><button type='button' role='switch' aria-checked={recoveryEachTick} aria-label='Recovery each tick' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)}><span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span></button></div>
+                    <div className='mw-ueo-setting-row'><button type='button' className='mw-ueo-help' aria-label='Explain all-volatility parity pattern' onClick={() => setSwitchHelp(switchHelp === 'all-volatility' ? null : 'all-volatility')}>?</button><span className='mw-ueo-switch-label'>All-volatility parity pattern</span><button type='button' role='switch' aria-checked={allVolatilityPattern} aria-label='All-volatility parity pattern' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAllVolatilityPattern(value => !value)}><span className={`mw-toggle__track ${allVolatilityPattern ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${allVolatilityPattern ? 'mw-toggle__thumb--on' : ''}`} /></span></button></div>
+                    <div className='mw-ueo-setting-row'><button type='button' className='mw-ueo-help' aria-label='Explain trade opposite parity' onClick={() => setSwitchHelp(switchHelp === 'opposite-parity' ? null : 'opposite-parity')}>?</button><span className='mw-ueo-switch-label'>Trade opposite parity</span><button type='button' role='switch' aria-checked={tradeOppositeParity} aria-label='Trade opposite parity' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setTradeOppositeParity(value => !value)}><span className={`mw-toggle__track ${tradeOppositeParity ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${tradeOppositeParity ? 'mw-toggle__thumb--on' : ''}`} /></span></button></div>
                 </div>
             </div>
-        </div>
-        <div className='mw-ueo-recovery-row'>
-            <div className='mw-field mw-field--grow'>
-                <label className='mw-label' htmlFor='mw-ueo-opposite-trigger'>Opposite digits before recovery</label>
-                <input id='mw-ueo-opposite-trigger' className='mw-input' type='number' min='1' max='100' step='1' value={oppositeTrigger} onChange={e => setOppositeTrigger(e.target.value)} disabled={running} />
-            </div>
-            <div className='mw-ueo-switch-list'>
-                <div className='mw-ueo-setting-row'>
-                    <button type='button' className='mw-ueo-help' aria-label='Explain Recovery each tick' onClick={() => setSwitchHelp(switchHelp === 'each-tick' ? null : 'each-tick')}>?</button>
-                    <div className='mw-ueo-auto-toggle'>
-                        <span id='mw-ueo-recovery-tick-label'>Recovery each tick</span>
-                        <button type='button' role='switch' aria-checked={recoveryEachTick} aria-labelledby='mw-ueo-recovery-tick-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setRecoveryEachTick(value => !value)}>
-                            <span className={`mw-toggle__track ${recoveryEachTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${recoveryEachTick ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                        </button>
-                    </div>
-                    {switchHelp === 'each-tick' && <span className='mw-ueo-help-text'>After the opposite-tick gate, evaluate the next tick locally instead of waiting for Deriv settlement.</span>}
-                </div>
-                <div className='mw-ueo-setting-row'>
-                    <button type='button' className='mw-ueo-help' aria-label='Explain all-volatility parity pattern' onClick={() => setSwitchHelp(switchHelp === 'all-volatility' ? null : 'all-volatility')}>?</button>
-                    <div className='mw-ueo-auto-toggle'>
-                        <span id='mw-ueo-all-volatility-label'>All-volatility parity pattern</span>
-                        <button type='button' role='switch' aria-checked={allVolatilityPattern} aria-labelledby='mw-ueo-all-volatility-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setAllVolatilityPattern(value => !value)}>
-                            <span className={`mw-toggle__track ${allVolatilityPattern ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${allVolatilityPattern ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                        </button>
-                    </div>
-                    {switchHelp === 'all-volatility' && <span className='mw-ueo-help-text'>Watch every volatility at once; the first market reaching the parity streak is locked and used for the trade.</span>}
-                </div>
-                <div className='mw-ueo-setting-row'>
-                    <button type='button' className='mw-ueo-help' aria-label='Explain trade opposite parity' onClick={() => setSwitchHelp(switchHelp === 'opposite-parity' ? null : 'opposite-parity')}>?</button>
-                    <div className='mw-ueo-auto-toggle'>
-                        <span id='mw-ueo-opposite-parity-label'>Trade opposite parity</span>
-                        <button type='button' role='switch' aria-checked={tradeOppositeParity} aria-labelledby='mw-ueo-opposite-parity-label' className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setTradeOppositeParity(value => !value)}>
-                            <span className={`mw-toggle__track ${tradeOppositeParity ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${tradeOppositeParity ? 'mw-toggle__thumb--on' : ''}`} /></span>
-                        </button>
-                    </div>
-                    {switchHelp === 'opposite-parity' && <span className='mw-ueo-help-text'>After the configured opposite-tick threshold, trade that opposite parity instead of the scanned target parity.</span>}
-                </div>
-            </div>
-        </div>
-        <div className='mw-analyze-result' style={{ display: 'block' }}>
-            <b>UNDER → EVEN/ODD AUTO</b>
-            <div>Live digit: <strong>{lastDigit ?? '—'}</strong></div>
-            <div>Current state: <strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div>
-        </div>
+        </section>
+        {switchHelp && <div className='mw-ueo-help-popover' role='dialog' aria-label='Setting explanation'><button type='button' className='mw-ueo-help-popover__close' onClick={() => setSwitchHelp(null)} aria-label='Close explanation'>×</button><strong>How this setting works</strong><span>{helpText}</span></div>}
+        <div className='mw-ueo-status-card'><div><span>LIVE DIGIT</span><strong>{lastDigit ?? '—'}</strong></div><div><span>SESSION P/L</span><strong className={sessionProfit >= 0 ? 'is-positive' : 'is-negative'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div><div><span>STATE</span><strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div></div>
         {riskAlert && <div className={`mw-ueo-risk-alert mw-ueo-risk-alert--${riskAlert.kind}`} role='alert'>
             <strong>{riskAlert.kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'}</strong>
             <span>Realized P/L: {riskAlert.amount >= 0 ? '+' : ''}${riskAlert.amount.toFixed(2)}</span>
