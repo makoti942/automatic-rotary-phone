@@ -3454,8 +3454,20 @@ $mw-radius:   10px;
 @keyframes mw-ueo-pop { from { opacity: 0; transform: translateY(6px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 @media (max-width: 520px) {
-    .mw-ueo-panel .mw-ueo-grid--three { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .mw-ueo-panel .mw-ueo-recovery-grid { grid-template-columns: 1fr; gap: 12px; }
+    .mw-ueo-panel { padding: 10px !important; }
+    .mw-ueo-panel .mw-ueo-header { align-items: flex-start; padding-bottom: 11px; }
+    .mw-ueo-panel .mw-ueo-header h3 { font-size: 13px; }
+    .mw-ueo-panel .mw-ueo-status { flex: 0 0 auto; font-size: 8px; }
+    .mw-ueo-panel .mw-ueo-section { margin-top: 10px; padding: 10px; }
+    .mw-ueo-panel .mw-ueo-section-title { display: block; line-height: 1.35; }
+    .mw-ueo-panel .mw-ueo-section-title span { display: block; margin-top: 3px; }
+    .mw-ueo-panel .mw-ueo-grid--three { grid-template-columns: minmax(0, 1fr); gap: 9px; }
+    .mw-ueo-panel .mw-ueo-recovery-grid { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+    .mw-ueo-panel .mw-ueo-setting-row { min-width: 0; padding: 7px; }
+    .mw-ueo-panel .mw-ueo-switch-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mw-ueo-panel .mw-ueo-status-card { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; padding: 8px; }
+    .mw-ueo-panel .mw-ueo-status-card span { font-size: 7px; letter-spacing: 0.35px; }
+    .mw-ueo-panel .mw-ueo-status-card strong { font-size: 10px; }
 }
 
 @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
