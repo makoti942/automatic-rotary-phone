@@ -160,13 +160,15 @@ export default class TicksService {
     }
 
     unsubscribeAllAndSubscribeListeners(symbol) {
+        const tickSubscription = this.subscriptions.getIn(['tick', symbol]);
         const ohlcSubscriptions = this.subscriptions.getIn(['ohlc', symbol]);
+        const subscriptions = [
+            ...(tickSubscription ? [tickSubscription] : []),
+            ...(ohlcSubscriptions ? Array.from(ohlcSubscriptions.values()) : []),
+        ];
 
-        const subscription = [...(ohlcSubscriptions ? Array.from(ohlcSubscriptions.values()) : [])];
-
-        Promise.all(subscription.map(id => doUntilDone(() => api_base.api.forget(id))));
-
-        this.subscriptions = new Map();
+        Promise.all(subscriptions.map(id => doUntilDone(() => api_base.api.forget(id)).catch(() => undefined)));
+        this.subscriptions = this.subscriptions.deleteIn(['tick', symbol]).deleteIn(['ohlc', symbol]);
     }
 
     updateTicksAndCallListeners(symbol, ticks) {
@@ -200,18 +202,16 @@ export default class TicksService {
             const subscription = api_base.api.onMessage().subscribe(({ data }) => {
                 if (data?.msg_type === 'tick' && data?.tick) {
                     const { tick } = data;
-                    const { symbol, id } = tick;
+                    const { symbol } = tick;
                     if (this.ticks.has(symbol)) {
-                        this.subscriptions = this.subscriptions.setIn(['tick', symbol], id);
                         this.updateTicksAndCallListeners(symbol, updateTicks(this.ticks.get(symbol), parseTick(tick)));
                     }
                 }
 
                 if (data.msg_type === 'ohlc') {
                     const { ohlc } = data;
-                    const { symbol, granularity, id } = ohlc;
+                    const { symbol, granularity } = ohlc;
                     if (this.candles.hasIn([symbol, Number(granularity)])) {
-                        this.subscriptions = this.subscriptions.setIn(['ohlc', symbol, Number(granularity)], id);
                         const address = [symbol, Number(granularity)];
                         this.updateCandlesAndCallListeners(
                             address,
@@ -272,10 +272,18 @@ export default class TicksService {
                     if (style === 'ticks') {
                         const ticks = historyToTicks(r.history);
 
+                        if (r.subscription?.id) {
+                            this.subscriptions = this.subscriptions.setIn(['tick', symbol], r.subscription.id);
+                        }
+
                         this.updateTicksAndCallListeners(symbol, ticks);
                         resolve(ticks);
                     } else {
                         const candles = parseCandles(r.candles);
+
+                        if (r.subscription?.id) {
+                            this.subscriptions = this.subscriptions.setIn(['ohlc', symbol, Number(granularity)], r.subscription.id);
+                        }
 
                         this.updateCandlesAndCallListeners([symbol, Number(granularity)], candles);
 
@@ -306,14 +314,19 @@ export default class TicksService {
         return new Promise((resolve, reject) => {
             if (api_base?.api) {
                 try {
-                    api_base.api
-                        .forgetAll('ticks')
+                    const tickSubscriptions = this.subscriptions.get('tick');
+                    const ids = tickSubscriptions
+                        ? Array.from(tickSubscriptions.values()).filter(Boolean)
+                        : [];
+                    Promise.all(ids.map(id => doUntilDone(() => api_base.api.forget(id)).catch(() => undefined)))
                         .then(() => {
+                            this.subscriptions = this.subscriptions.delete('tick');
                             resolve();
                         })
                         .catch(reject);
                 } catch (e) {
                     console.log('Error in forget ticks', e);
+                    resolve();
                 }
             } else {
                 resolve();
@@ -325,14 +338,22 @@ export default class TicksService {
         return new Promise((resolve, reject) => {
             if (api_base?.api) {
                 try {
-                    api_base.api
-                        .forgetAll('candles')
+                    const candleSubscriptions = this.subscriptions.get('ohlc');
+                    const ids = [];
+                    if (candleSubscriptions) {
+                        candleSubscriptions.forEach(symbolSubscriptions => {
+                            Array.from(symbolSubscriptions.values()).forEach(id => { if (id) ids.push(id); });
+                        });
+                    }
+                    Promise.all(ids.map(id => doUntilDone(() => api_base.api.forget(id)).catch(() => undefined)))
                         .then(() => {
+                            this.subscriptions = this.subscriptions.delete('ohlc');
                             resolve();
                         })
                         .catch(reject);
                 } catch (e) {
                     console.log('Error in forget candles', e);
+                    resolve();
                 }
             } else {
                 resolve();

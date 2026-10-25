@@ -4,6 +4,7 @@ export const isPurchaseBlock = block =>
     block?.type === 'purchase' ||
     block?.type === 'directional_contract_automation' ||
     block?.type === 'apollo_purchase2' ||
+    block?.type === 'automated_trade_purchase' ||
     block?.getField?.('PURCHASE_LIST');
 
 export const hasAllRequiredBlocks = () => {

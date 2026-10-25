@@ -334,7 +334,7 @@ function isValidDerivBot(content: string): boolean {
     const blockCount = (trimmed.match(/<block\b/gi) || []).length;
     if (blockCount < 5) return false;
     const hasTradeDefinition = /<block\b[^>]*type=["']trade_definition["']/i.test(trimmed);
-    const hasPurchase = /<block\b[^>]*type=["'](?:purchase|apollo_purchase|apollo_purchase2)["']/i.test(trimmed);
+    const hasPurchase = /<block\b[^>]*type=["'](?:purchase|apollo_purchase|apollo_purchase2|automated_trade_purchase)["']/i.test(trimmed);
     const hasTradeFlow = /<block\b[^>]*type=["'](?:before_purchase|during_purchase|after_purchase|trade_again)["']/i.test(trimmed)
         || /<statement\s+name=["'](?:BEFOREPURCHASE_STACK|DURINGPURCHASE_STACK|AFTERPURCHASE_STACK)["']/i.test(trimmed);
     return hasTradeDefinition && hasPurchase && hasTradeFlow;

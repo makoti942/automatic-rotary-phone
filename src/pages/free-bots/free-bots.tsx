@@ -67,6 +67,8 @@ const FreeBots = observer(() => {
                 'Entry point strategy bot trading Under 7 and Over 4 with automatic recovery. Uses digit pattern analysis to find optimal entry points and recovers losses with smart position sizing.',
             'NEW BOT WITH ENTRY POINT':
                 'Trades Under 7 on the first trade, then switches to Under 8 for subsequent trades. Uses Over 4 or Over 5 as recovery predictions. Features entry digit detection, martingale recovery, and take profit/stop loss management.',
+            'UNDER AUTOMATED EVEN OFD':
+                'Entry-point Under strategy with fast parity recovery. Scans all available volatility indices using 200 ticks, selects the strongest even/odd signal from the latest 100 ticks, waits for the three-opposite-digits pattern, and sizes recovery from the full accumulated loss.',
             'SPLIT MARTINGALE BOT PREMIUM':
                 'Advanced split martingale strategy. Tracks losses in a pool and splits recovery across trades using a configurable split factor. Uses entry digit detection with Under 7/8 barrier switching. Includes max stake cap for risk management.',
                         };
@@ -102,6 +104,7 @@ const FreeBots = observer(() => {
             'UNDER7 R56 PRO': '/robot-images/bot13.png',
             'MAKOTIV3RISE FALL': '/robot-images/bot14.png',
             'MAKOTI RISE/FALL V4': '/robot-images/bot15.png',
+            'ONLY UPS AND DOWNS BOT': '/robot-images/bot7.png',
             'FREE BOT WITH MARTINGALE': '/robot-images/bot7.png',
             'ONLY DOWNS FALL AUTOMATION': '/robot-images/bot10.png',
             'ENTRY POINT BOT UNDER7 OVER4 RECOVERY': '/robot-images/bot9.png',
@@ -139,11 +142,13 @@ const FreeBots = observer(() => {
             'UNDER7_R56 PRO.xml',
             'MAKOTIV3RISE_FALL.xml',
             'MAKOTIRISE_FALLV4.xml',
+            'ONLY UPS AND DOWNS BOT.xml',
             'FREE BOT WITH MARTINGALE.xml',
             'ONLY_DOWNS_FALL_AUTOMATION.xml',
             'ENTRY_POINT_BOT_UNDER7_OVER4_RECOVERY.xml',
             'NEW_BOT_WITH_ENTRY_POINT.xml',
             'SPLIT_MARTINGALE_BOT_PREMIUM.xml',
+            'UNDER AUTOMATED EVEN OFD.xml',
         ];
     };
 

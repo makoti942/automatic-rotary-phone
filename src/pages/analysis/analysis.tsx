@@ -84,12 +84,16 @@ const Analysis = () => {
     const lastResetRef = useRef(0);
     const lastSeedAttemptRef = useRef(0);
     const seedAttemptsRef = useRef(0);
+    const seenLiveTickKeysRef = useRef<Map<string, string>>(new Map());
+    const pendingHistoryOverlapRef = useRef<string | null>(null);
 
     const load = useCallback(() => {
         const ws = window._newSystemWS;
         ticksRef.current = [];
         setTicks([]);
         setLive(false);
+        seenLiveTickKeysRef.current.clear();
+        pendingHistoryOverlapRef.current = null;
         if (!ws || ws.readyState !== WebSocket.OPEN) {
             setStatus('WebSocket not connected — waiting…');
             return;
@@ -178,6 +182,8 @@ const Analysis = () => {
                 }));
                 ticksRef.current = arr;
                 setTicks(arr);
+                const last = arr[arr.length - 1];
+                pendingHistoryOverlapRef.current = last ? `${last.t}|${last.quote}` : null;
                 setLive(true);
                 setStatus('');
             } else if (mt === 'tick') {
@@ -185,6 +191,22 @@ const Analysis = () => {
                 // Accept any tick for our symbol regardless of which
                 // subscription produced it (ours or the bot's shared one).
                 if (!tick || tick.symbol !== cfgRef.current.symbol) return;
+                const quote = String(tick.quote);
+                const epoch = Number(tick.epoch);
+                const tickKey = `${epoch}|${quote}`;
+                const tickId = tick.id == null ? '' : String(tick.id);
+                if (tickId && seenLiveTickKeysRef.current.get(tickId) === tickKey) return;
+                if (tickId) seenLiveTickKeysRef.current.set(tickId, tickKey);
+                // A subscribe response commonly repeats the final tick that
+                // was already included in the plain history seed. Do not
+                // count that boundary tick twice in Even/Odd or any other
+                // analysis window.
+                if (pendingHistoryOverlapRef.current === tickKey) {
+                    pendingHistoryOverlapRef.current = null;
+                    lastLiveRef.current = Date.now() / 1000;
+                    return;
+                }
+                pendingHistoryOverlapRef.current = null;
                 lastLiveRef.current = Date.now() / 1000;
                 // Capture the subscription id ONLY for a subscription we own,
                 // so we never forget the bot's stream on cleanup.
@@ -194,7 +216,7 @@ const Analysis = () => {
                 const max = cfgRef.current.tickCount;
                 const arr = [
                     ...ticksRef.current.slice(-(max - 1)),
-                    { p: Number(tick.quote), t: Number(tick.epoch) || Math.floor(Date.now() / 1000), quote: String(tick.quote) },
+                    { p: Number(tick.quote), t: epoch || Math.floor(Date.now() / 1000), quote },
                 ];
                 ticksRef.current = arr;
                 setTicks(arr);
@@ -231,15 +253,19 @@ const Analysis = () => {
                 }
                 return;
             }
-            // Data exists but OUR live stream stalled -> re-subscribe once.
-            // In passive mode (sharing the bot's stream) leave it alone.
-            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60 && subIdRef.current) {
+            // Data exists but the live stream stalled -> re-subscribe once.
+            // This also recovers passive mode when the shared stream stopped.
+            if (now - lastLiveRef.current > 30 && now - lastResetRef.current > 60) {
                 lastResetRef.current = now;
-                try {
-                    ws.send(JSON.stringify({ forget: subIdRef.current }));
-                } catch {}
+                if (subIdRef.current) {
+                    try {
+                        ws.send(JSON.stringify({ forget: subIdRef.current }));
+                    } catch {}
+                }
                 subIdRef.current = null;
                 const { symbol: sym } = cfgRef.current;
+                const last = ticksRef.current[ticksRef.current.length - 1];
+                pendingHistoryOverlapRef.current = last ? `${last.t}|${last.quote}` : null;
                 const subGen = ++genRef.current;
                 subReqIdRef.current = subGen;
                 setStatus('Reconnecting live stream…');

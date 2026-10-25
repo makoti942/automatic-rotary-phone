@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import classNames from 'classnames';
 import { observer } from 'mobx-react-lite';
 /* [AI] - Analytics removed - rudderstack event tracking removed */
@@ -37,6 +37,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
     const { isDesktop, isMobile } = useDevice();
     const { is_drawer_open } = run_panel;
     const { is_chart_modal_visible } = dashboard;
+    const chartWrapperRef = useRef<HTMLDivElement>(null);
 
     const settings = {
         assetInformation: false, // ui.is_chart_asset_info_visible,
@@ -67,6 +68,37 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
         if (!symbol) updateSymbol();
     }, [symbol, updateSymbol]);
 
+    // SmartCharts keeps its canvas and indicator panes internally sized. The
+    // run/results drawer changes the available width through a CSS transform,
+    // which does not reliably reach SmartCharts' own resize listener. Observe
+    // the real wrapper and also reflow after the drawer transition completes.
+    useEffect(() => {
+        const wrapper = chartWrapperRef.current;
+        if (!wrapper) return;
+
+        let frame = 0;
+        const requestReflow = () => {
+            if (frame) cancelAnimationFrame(frame);
+            frame = requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+        };
+
+        const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(requestReflow) : null;
+        observer?.observe(wrapper);
+        requestReflow();
+
+        return () => {
+            observer?.disconnect();
+            if (frame) cancelAnimationFrame(frame);
+        };
+    }, []);
+
+    useEffect(() => {
+        const timers = [0, 120, 450].map(delay =>
+            window.setTimeout(() => window.dispatchEvent(new Event('resize')), delay)
+        );
+        return () => timers.forEach(timer => window.clearTimeout(timer));
+    }, [is_drawer_open, is_chart_modal_visible]);
+
     const is_connection_opened = !!chart_api?.api;
 
     const handleStateChange: TStateChangeListener = (state, options) => {
@@ -84,6 +116,7 @@ const Chart = observer(({ show_digits_stats }: { show_digits_stats: boolean }) =
 
     return (
         <div
+            ref={chartWrapperRef}
             className={classNames('dashboard__chart-wrapper', {
                 'dashboard__chart-wrapper--expanded': is_drawer_open && isDesktop,
                 'dashboard__chart-wrapper--modal': is_chart_modal_visible && isDesktop,
