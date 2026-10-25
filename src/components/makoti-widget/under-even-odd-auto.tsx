@@ -180,15 +180,21 @@ export const UnderEvenOddAuto: React.FC = () => {
         if (!runningRef.current || scanRunningRef.current) return;
         scanRunningRef.current = true;
         setPhaseSafe('scanning');
-        if (allVolatilityPatternRef.current && !recoveryLockedSymbolRef.current) {
-            const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
-            selectedRef.current = null;
-            setSelected(null);
-            oppositeRef.current = 0;
-            allVolatilityStreaksRef.current = {};
+        if (allVolatilityPatternRef.current) {
+            const symbols = recoveryLockedSymbolRef.current
+                ? [recoveryLockedSymbolRef.current]
+                : (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS);
+            if (!recoveryLockedSymbolRef.current) {
+                selectedRef.current = null;
+                setSelected(null);
+                oppositeRef.current = 0;
+                allVolatilityStreaksRef.current = {};
+            }
             symbols.forEach(symbol => sendTickSubscription(symbol, RECOVERY_SAMPLE_SIZE));
             setPhaseSafe('pattern');
-            notify(`RECOVERY PATTERN: monitoring ${symbols.length} volatilities simultaneously; after ${Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5))} consecutive same-parity ticks, trading the opposite parity and locking that volatility`);
+            notify(recoveryLockedSymbolRef.current
+                ? `RECOVERY PATTERN: continuing live monitoring on locked volatility ${recoveryLockedSymbolRef.current}; percentage scan bypassed`
+                : `RECOVERY PATTERN: monitoring ${symbols.length} volatilities simultaneously; after ${Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5))} consecutive same-parity ticks, trading the opposite parity and locking that volatility`);
             scanRunningRef.current = false;
             return;
         }
