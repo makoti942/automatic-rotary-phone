@@ -56,6 +56,13 @@ export const MakotiWidget: React.FC = () => {
     const tabDropRef = useRef<HTMLDivElement>(null);
     const tabBtnRef = useRef<HTMLButtonElement>(null);
     const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
+    const isMobileViewport = window.innerWidth <= 600;
+    // Keep the original compact footprint on phones. The enlarged defaults are
+    // useful on desktop, but a fixed 380px width overflows most phone screens.
+    const renderedWinWidth = isMobileViewport
+        ? Math.min(260, Math.max(0, window.innerWidth - PAD * 2))
+        : winSize.w;
+    const renderedWinHeight = isMobileViewport ? Math.min(300, Math.max(0, window.innerHeight - PAD * 2)) : winSize.h;
 
     useEffect(() => {
         const check = () => setLoggedIn(isLoggedIn());
@@ -290,12 +297,15 @@ export const MakotiWidget: React.FC = () => {
         e.preventDefault();
         e.stopPropagation();
         resizing.current = true;
-        resizeStart.current = { x: e.clientX, y: e.clientY, w: winSize.w, h: winSize.h };
+        resizeStart.current = { x: e.clientX, y: e.clientY, w: renderedWinWidth, h: renderedWinHeight };
         const onMove = (ev: PointerEvent) => {
             if (!resizing.current) return;
             const dx = ev.clientX - resizeStart.current.x;
             const dy = ev.clientY - resizeStart.current.y;
-            const newW = Math.max(320, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
+            const minWidth = isMobileViewport
+                ? Math.min(260, Math.max(0, window.innerWidth - PAD * 2))
+                : 320;
+            const newW = Math.max(minWidth, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
             const newH = Math.max(300, Math.min(window.innerHeight - 60, resizeStart.current.h + dy));
             setWinSize({ w: newW, h: newH });
         };
@@ -350,8 +360,8 @@ export const MakotiWidget: React.FC = () => {
                     position: 'fixed',
                     left: winPosRef.current.x + 'px',
                     top: winPosRef.current.y + 'px',
-                    width: winSize.w + 'px',
-                    maxHeight: winSize.h + 'px',
+                    width: renderedWinWidth + 'px',
+                    maxHeight: renderedWinHeight + 'px',
                 }}
                 onPointerDown={onWinPointerDown}
             >
