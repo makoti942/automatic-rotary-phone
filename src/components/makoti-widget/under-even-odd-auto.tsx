@@ -12,6 +12,7 @@ import {
     RECOVERY_SAMPLE_SIZE,
     TOP_DIGIT_COUNT,
     nextAutomatedStage,
+    selectNearestRecoveryCandidate,
     selectRecoveryCandidate,
 } from './under-even-odd-utils.mjs';
 
@@ -240,11 +241,15 @@ export const UnderEvenOddAuto: React.FC = () => {
                 setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
                 return;
             }
-            const best = selectRecoveryCandidate(lockedUsable) as RecoveryPick | null;
+            const strictBest = selectRecoveryCandidate(lockedUsable) as RecoveryPick | null;
+            const best = strictBest || selectNearestRecoveryCandidate(lockedUsable) as RecoveryPick | null;
             if (!best) {
-                notify(`RECOVERY SCAN: no index passed both the 60%/closest-parity ranking and the top-${TOP_DIGIT_COUNT} digit majority check; no trade, retrying in 3 seconds`);
+                notify(`RECOVERY SCAN: no usable nearest market was available; retrying in 3 seconds`);
                 setTimeout(() => { if (runningRef.current && lossRef.current > 0) void scanRecovery(); }, 3000);
                 return;
+            }
+            if (!strictBest) {
+                notify(`RECOVERY FALLBACK: no market passed the strict 60%/top-${TOP_DIGIT_COUNT} filter; using nearest parity candidate ${best.symbol} at ${Math.max(best.evenPct, best.oddPct).toFixed(1)}%`);
             }
             if (!recoveryLockedSymbolRef.current) recoveryLockedSymbolRef.current = best.symbol;
             selectedRef.current = best;

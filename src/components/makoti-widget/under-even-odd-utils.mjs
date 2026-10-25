@@ -64,3 +64,16 @@ export function selectRecoveryCandidate(samples) {
   const maxOppositeDigits = TOP_DIGIT_COUNT - REQUIRED_TARGET_DIGITS_IN_TOP;
   return ordered.find(item => Number(item.losingTopCount) <= maxOppositeDigits) || null;
 }
+
+/** Select the closest usable market when no candidate passes the strict filter. */
+export function selectNearestRecoveryCandidate(samples) {
+  return [...(samples || [])]
+    .filter(item => item && Number.isFinite(Number(item.evenPct)) && Number.isFinite(Number(item.oddPct)))
+    .sort((a, b) => {
+      const aScore = Math.max(Number(a.evenPct) || 0, Number(a.oddPct) || 0);
+      const bScore = Math.max(Number(b.evenPct) || 0, Number(b.oddPct) || 0);
+      return Math.abs(aScore - RECOVERY_PARITY_TARGET) - Math.abs(bScore - RECOVERY_PARITY_TARGET)
+        || Number(a.losingTopCount || 0) - Number(b.losingTopCount || 0)
+        || String(a.symbol || '').localeCompare(String(b.symbol || ''));
+    })[0] || null;
+}
