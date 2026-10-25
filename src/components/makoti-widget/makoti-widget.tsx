@@ -50,7 +50,7 @@ export const MakotiWidget: React.FC = () => {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
     const [tabOpen, setTabOpen] = useState(false);
-    const [winSize, setWinSize] = useState({ w: 260, h: 300 });
+    const [winSize, setWinSize] = useState({ w: 380, h: 620 });
     const resizing = useRef(false);
     const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
@@ -257,8 +257,10 @@ export const MakotiWidget: React.FC = () => {
             const w = window.innerWidth;
             const h = window.innerHeight;
             const isMob = w <= 600;
-            const defX = Math.max(PAD, w - Math.min(isMob ? 250 : 300, w - PAD * 2) - PAD);
-            const defY = Math.max(PAD, h - (isMob ? 380 : 460));
+            const defW = Math.min(isMob ? 250 : 380, w - PAD * 2);
+            const defH = isMob ? 380 : 620;
+            const defX = Math.max(PAD, w - defW - PAD);
+            const defY = Math.max(PAD, h - defH - PAD);
             const nx = isMob ? PAD : defX;
             const ny = w <= 600 ? PAD : defY;
             winRef.current.style.left = nx + 'px';
@@ -293,7 +295,7 @@ export const MakotiWidget: React.FC = () => {
             if (!resizing.current) return;
             const dx = ev.clientX - resizeStart.current.x;
             const dy = ev.clientY - resizeStart.current.y;
-            const newW = Math.max(260, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
+            const newW = Math.max(320, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
             const newH = Math.max(300, Math.min(window.innerHeight - 60, resizeStart.current.h + dy));
             setWinSize({ w: newW, h: newH });
         };
