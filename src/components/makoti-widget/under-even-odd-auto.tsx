@@ -66,7 +66,6 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [riskAlert, setRiskAlert] = useState<{ kind: 'take-profit' | 'stop-loss'; amount: number } | null>(null);
     const [currentStake, setCurrentStake] = useState(Number(stake) || 0.35);
     const [logs, setLogs] = useState<string[]>([]);
-    const [lastActivity, setLastActivity] = useState('Ready');
     const [switchHelp, setSwitchHelp] = useState<string | null>(null);
     const runningRef = useRef(false);
     const phaseRef = useRef<Phase>('idle');
@@ -125,7 +124,6 @@ export const UnderEvenOddAuto: React.FC = () => {
     const recoveryEntrySide = (side: Side): Side => tradeOppositeParityRef.current ? oppositeSide(side) : side;
     const notify = useCallback((message: string) => {
         addLog(message);
-        setLastActivity(message);
         globalObserver.emit('ui.log.notify', {
             className: 'journal__text--info',
             message: `[UNDER→EVEN/ODD] ${message}`,
@@ -682,7 +680,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; allVolatilityStreaksRef.current = {}; processedTickKeysRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
         automatedWindowsRef.current = {};
-        setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); setLastActivity('Starting…'); runningRef.current = true; setRunning(true);
+        setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); runningRef.current = true; setRunning(true);
         if (automated) {
             setPhaseSafe('automated');
             notify(`STARTED AUTOMATED — ignoring manual entry digit and volatility; monitoring all indices for four-repeat Digit Differs signals`);
@@ -722,7 +720,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             </div>
         </section>
         {switchHelp && <div className='mw-ueo-help-popover' role='dialog' aria-label='Setting explanation'><button type='button' className='mw-ueo-help-popover__close' onClick={() => setSwitchHelp(null)} aria-label='Close explanation'>×</button><strong>How this setting works</strong><span>{helpText}</span></div>}
-        <div className='mw-ueo-status-card'><div><span>LIVE DIGIT</span><strong>{lastDigit ?? '—'}</strong></div><div><span>SESSION P/L</span><strong className={sessionProfit >= 0 ? 'is-positive' : 'is-negative'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div><div><span>STATE</span><strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div><div className='mw-ueo-status-card__activity'><span>ACTIVITY</span><strong title={lastActivity}>{lastActivity}</strong></div></div>
+        <div className='mw-ueo-status-card'><div><span>LIVE DIGIT</span><strong>{lastDigit ?? '—'}</strong></div><div><span>SESSION P/L</span><strong className={sessionProfit >= 0 ? 'is-positive' : 'is-negative'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div><div><span>STATE</span><strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div></div>
         {riskAlert && <div className={`mw-ueo-risk-alert mw-ueo-risk-alert--${riskAlert.kind}`} role='alert'>
             <strong>{riskAlert.kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'}</strong>
             <span>Realized P/L: {riskAlert.amount >= 0 ? '+' : ''}${riskAlert.amount.toFixed(2)}</span>
