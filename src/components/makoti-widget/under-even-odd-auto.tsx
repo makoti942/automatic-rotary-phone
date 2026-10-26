@@ -48,8 +48,11 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [normalSymbol, setNormalSymbol] = useState(() => localStorage.getItem('mw_ueo_market') || '1HZ25V');
     const [availableSymbols, setAvailableSymbols] = useState<string[]>(FALLBACK_SYMBOLS);
     const [automated, setAutomated] = useState(() => localStorage.getItem('mw_ueo_automated') === 'true');
-    const [recoveryEachTick, setRecoveryEachTick] = useState(() => localStorage.getItem('mw_ueo_recovery_each_tick') === 'true');
-    const [oppositeTrigger, setOppositeTrigger] = useState(() => localStorage.getItem('mw_ueo_opposite_trigger') || '5');
+    const [recoveryEachTick, setRecoveryEachTick] = useState(() => {
+        const saved = localStorage.getItem('mw_ueo_recovery_each_tick');
+        return saved === null ? true : saved === 'true';
+    });
+    const [oppositeTrigger, setOppositeTrigger] = useState(() => localStorage.getItem('mw_ueo_opposite_trigger') || '17');
     const [allVolatilityPattern, setAllVolatilityPattern] = useState(() => localStorage.getItem('mw_ueo_all_volatility_pattern') === 'true');
     const [tradeOppositeParity, setTradeOppositeParity] = useState(() => localStorage.getItem('mw_ueo_trade_opposite_parity') === 'true');
     const [running, setRunning] = useState(false);
