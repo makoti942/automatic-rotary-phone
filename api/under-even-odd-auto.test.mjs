@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   AUTOMATED_FREQUENCY_WINDOW,
   AUTOMATED_TRIGGER_WINDOW,
+  AUTOMATED_DIFFERS_REPEAT,
   AUTOMATED_TRIGGER_MIN_OCCURRENCES,
   AUTOMATED_LOW_DIGIT_PERCENT,
   RECOVERY_SAMPLE_SIZE,
@@ -53,6 +54,7 @@ test('does not select a market when the top-five digit majority disagrees with t
 test('automated scanning uses 1,000 ticks and a 30-tick trigger window', () => {
   assert.equal(AUTOMATED_FREQUENCY_WINDOW, 1000);
   assert.equal(AUTOMATED_TRIGGER_WINDOW, 30);
+  assert.equal(AUTOMATED_DIFFERS_REPEAT, 4);
   assert.equal(AUTOMATED_TRIGGER_MIN_OCCURRENCES, 4);
   assert.equal(AUTOMATED_LOW_DIGIT_PERCENT, 10);
 });

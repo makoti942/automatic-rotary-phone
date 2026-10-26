@@ -5,6 +5,7 @@ import { useStore } from '@/hooks/useStore';
 import { observer as globalObserver } from '@/external/bot-skeleton/utils/observer';
 import {
     AUTOMATED_FREQUENCY_WINDOW,
+    AUTOMATED_DIFFERS_REPEAT,
     hasThreeTickPairPattern,
     RECOVERY_SAMPLE_SIZE,
     TOP_DIGIT_COUNT,
@@ -535,7 +536,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                             const previous = digitStreaksRef.current[sym];
                             const streak = previous?.digit === digit ? previous.count + 1 : 1;
                             digitStreaksRef.current[sym] = { digit, count: streak };
-                            if (streak >= 3) {
+                            if (streak >= AUTOMATED_DIFFERS_REPEAT) {
                                 notify(`${labelsRef.current[sym] || sym}: digit ${digit} has repeated ${streak} live ticks — buying Digit Differs ${digit}`);
                                 void buy(sym, 'DIGITDIFF', currentStakeRef.current, 'automated', String(digit));
                             }
@@ -684,7 +685,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         setNormalCount(0); setLossBalance(0); setSessionProfit(0); setRiskAlert(null); setCurrentStake(amount); setSelected(null); setLastDigit(null); setLastActivity('Starting…'); runningRef.current = true; setRunning(true);
         if (automated) {
             setPhaseSafe('automated');
-            notify(`STARTED AUTOMATED — ignoring manual entry digit and volatility; monitoring all indices for three-repeat Digit Differs signals`);
+            notify(`STARTED AUTOMATED — ignoring manual entry digit and volatility; monitoring all indices for four-repeat Digit Differs signals`);
         } else {
             setPhaseSafe('entry');
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
