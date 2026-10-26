@@ -50,7 +50,9 @@ export const MakotiWidget: React.FC = () => {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
     const [tabOpen, setTabOpen] = useState(false);
-    const [winSize, setWinSize] = useState({ w: 380, h: 620 });
+    // Keep the desktop window compact: about 2 cm less breathing room above
+    // and below the content than the previous 620px default.
+    const [winSize, setWinSize] = useState({ w: 380, h: 470 });
     const resizing = useRef(false);
     const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
@@ -265,7 +267,7 @@ export const MakotiWidget: React.FC = () => {
             const h = window.innerHeight;
             const isMob = w <= 600;
             const defW = Math.min(isMob ? 250 : 380, w - PAD * 2);
-            const defH = isMob ? 380 : 620;
+            const defH = isMob ? 380 : 470;
             const defX = Math.max(PAD, w - defW - PAD);
             const defY = Math.max(PAD, h - defH - PAD);
             const nx = isMob ? PAD : defX;

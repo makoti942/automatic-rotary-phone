@@ -12,6 +12,16 @@ export function nextAutomatedStage(stage) {
   return stage === 'differs' ? 'over1' : stage === 'over1' ? 'under8' : 'differs';
 }
 
+/** An entry needs both boundary digits in the latest three ticks, in any order. */
+export function hasThreeTickPairPattern(digits, pair) {
+  const window = (digits || []).slice(-3).map(Number);
+  const target = new Set((pair || []).map(Number));
+  return window.length === 3
+    && target.size === 2
+    && window.every(digit => target.has(digit))
+    && target.size === new Set(window).size;
+}
+
 /** Manual Trade's digit percentage formula: digit count divided by valid digit total. */
 export function calculateDigitPercentages(digits) {
   const counts = Array(10).fill(0);

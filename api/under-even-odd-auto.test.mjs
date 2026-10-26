@@ -9,6 +9,7 @@ import {
   REQUIRED_TARGET_DIGITS_IN_TOP,
   calculateDigitPercentages,
   findWinningDigitTrigger,
+  hasThreeTickPairPattern,
   nextAutomatedStage,
   selectAutomatedMarkets,
   selectRecoveryCandidate,
@@ -65,6 +66,13 @@ test('digit percentages use count divided by valid digit total', () => {
 test('finds a trigger whose following digits are always winners', () => {
   const trigger = findWinningDigitTrigger([4, 2, 4, 9, 4, 8, 4, 3, 4, 7], [2, 3, 4, 5, 6, 7, 8, 9]);
   assert.deepEqual(trigger, { triggerDigit: 4, occurrences: 5, winningNext: 5, confidence: 100 });
+});
+
+test('recognizes a three-tick 0/1 or 8/9 entry pattern in either order', () => {
+  assert.equal(hasThreeTickPairPattern([7, 1, 1, 0], [0, 1]), true);
+  assert.equal(hasThreeTickPairPattern([0, 1, 0], [0, 1]), true);
+  assert.equal(hasThreeTickPairPattern([1, 1, 1], [0, 1]), false);
+  assert.equal(hasThreeTickPairPattern([8, 9, 8], [8, 9]), true);
 });
 
 test('rejects a trigger when one of its following digits is not a winner', () => {
