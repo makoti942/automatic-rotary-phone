@@ -101,7 +101,7 @@ export default class RunPanelStore {
         this.timer = null;
     }
 
-    active_index = 0;
+    active_index = run_panel.TRANSACTIONS;
     contract_stage: TContractStage = contract_stages.NOT_RUNNING;
     dialog_options = {};
     has_open_contract = false;

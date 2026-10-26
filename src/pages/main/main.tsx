@@ -374,7 +374,7 @@ const AppWrapper = observer(() => {
     // [/AI]
     return (
         <React.Fragment>
-            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS || active_tab === CHART_ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING })}>
+            <div className={classNames('main', { 'main--manual-trade-active': active_tab === MANUAL_TRADE || active_tab === ANALYSIS || active_tab === CHART_ANALYSIS, 'main--copy-trading-active': active_tab === COPY_TRADING, 'main--trading-bots-active': active_tab === TRADING_BOTS })}>
                 <div
                     className={classNames('main__container', {
                         'main__container--active': active_tour && active_tab === DASHBOARD && !isDesktop,
