@@ -601,7 +601,12 @@ export const UnderEvenOddAuto: React.FC = () => {
                             }
                         }
                     }
-                    if (!automatedRef.current && allVolatilityPatternRef.current && !recoveryLockedSymbolRef.current && phaseRef.current === 'pattern' && lossRef.current > 0) {
+                    // Automated mode also enters this live all-volatility recovery
+                    // path after an automated contract loses. The previous
+                    // automated-mode exclusion allowed the opposite-tick counter
+                    // to be configured/displayed but prevented it from ever
+                    // locking a market and dispatching the parity buy.
+                    if (allVolatilityPatternRef.current && !recoveryLockedSymbolRef.current && phaseRef.current === 'pattern' && lossRef.current > 0) {
                         const side: Side = isEven(digit) ? 'even' : 'odd';
                         const previous = allVolatilityStreaksRef.current[sym];
                         const count = previous?.side === side ? previous.count + 1 : 1;
