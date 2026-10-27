@@ -174,16 +174,38 @@ const FreeBots = observer(() => {
         });
     };
 
+    const waitForBotBlocks = (xml: string, maxAttempts = 40, delay = 100) => {
+        return new Promise<void>((resolve, reject) => {
+            let attempts = 0;
+            const requiredTypes = [...new Set([...xml.matchAll(/<(?:block|shadow)\b[^>]*\btype=["']([^"']+)["']/g)].map(match => match[1]))];
+            const checkBlocks = () => {
+                attempts++;
+                const registered = window.Blockly?.Blocks || {};
+                const missing = requiredTypes.filter(type => !registered[type]);
+                if (!missing.length) {
+                    resolve();
+                } else if (attempts >= maxAttempts) {
+                    reject(new Error(`Blockly blocks not registered: ${missing.join(', ')}`));
+                } else {
+                    setTimeout(checkBlocks, delay);
+                }
+            };
+            checkBlocks();
+        });
+    };
+
     // Load bot into builder
     const loadBotIntoBuilder = async (bot: BotData) => {
         if (!bot.xml) return;
         try {
             await waitForWorkspace(40, 100);
+            await waitForBotBlocks(bot.xml);
             const tempId = `freebot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            await load_modal.loadStrategyToBuilder(
+            const result = await load_modal.loadStrategyToBuilder(
                 { id: tempId, xml: bot.xml, name: bot.name, save_type: 'pending' },
                 true
             );
+            if (result?.error) throw new Error(result.error);
             setActiveTab(DBOT_TABS.BOT_BUILDER);
         } catch (error) {
             console.error(`Failed to import Free Bot ${bot.name}:`, error);
