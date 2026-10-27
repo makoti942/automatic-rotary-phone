@@ -27,6 +27,8 @@ const FreeBots = observer(() => {
     const [availableBots, setAvailableBots] = useState<BotData[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
+    const [loadingBotName, setLoadingBotName] = useState<string | null>(null);
+    const [botLoadError, setBotLoadError] = useState<string | null>(null);
 
     // Bot descriptions mapping
     const getBotDescription = (botName: string): string => {
@@ -196,8 +198,13 @@ const FreeBots = observer(() => {
 
     // Load bot into builder
     const loadBotIntoBuilder = async (bot: BotData) => {
-        if (!bot.xml) return;
+        if (!bot.xml || loadingBotName) return;
+        setLoadingBotName(bot.name);
+        setBotLoadError(null);
         try {
+            // The builder owns the Blockly workspace. Switch tabs first so its
+            // initialization can run; waiting while Free Bots is active deadlocks.
+            setActiveTab(DBOT_TABS.BOT_BUILDER);
             await waitForWorkspace(40, 100);
             await waitForBotBlocks(bot.xml);
             const tempId = `freebot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -206,10 +213,12 @@ const FreeBots = observer(() => {
                 true
             );
             if (result?.error) throw new Error(result.error);
-            setActiveTab(DBOT_TABS.BOT_BUILDER);
         } catch (error) {
             console.error(`Failed to import Free Bot ${bot.name}:`, error);
+            setBotLoadError(`Could not launch ${bot.name}. Please return to Free Bots and try again.`);
             globalThis.dispatchEvent(new CustomEvent('ui.log.error', { detail: `Failed to import ${bot.name}. Please retry after the Bot Builder finishes loading.` }));
+        } finally {
+            setLoadingBotName(null);
         }
     };
 
@@ -319,6 +328,8 @@ const FreeBots = observer(() => {
                         </Text>
                     </div>
                 ) : (
+                    <>
+                    {botLoadError && <div className='free-bots__error'><Text size='s' color='general'>{botLoadError}</Text></div>}
                     <div className='free-bots__grid'>
                         {availableBots.map((bot, index) => {
                             const robotImage = getRobotImage(bot.name);
@@ -370,15 +381,16 @@ const FreeBots = observer(() => {
                                         primary
                                         has_effect
                                         type='button'
-                                        disabled={!bot.xml}
+                                        disabled={!bot.xml || Boolean(loadingBotName)}
                                     >
-                                        {bot.xml ? 'LAUNCH BOT' : 'LOADING...'}
+                                        {loadingBotName === bot.name ? 'OPENING BUILDER...' : bot.xml ? 'LAUNCH BOT' : 'LOADING...'}
                                     </Button>
                                 </div>
                             </div>
                         );
                         })}
                     </div>
+                    </>
                 )}
             </div>
         </div>
