@@ -196,6 +196,23 @@ const FreeBots = observer(() => {
         });
     };
 
+    const waitForImportedBot = (xml: string, maxAttempts = 30, delay = 100) => {
+        return new Promise<void>((resolve, reject) => {
+            let attempts = 0;
+            const checkWorkspace = () => {
+                attempts++;
+                if (window.Blockly?.derivWorkspace?.strategy_to_load === xml) {
+                    resolve();
+                } else if (attempts >= maxAttempts) {
+                    reject(new Error('The selected XML was not loaded into the Bot Builder workspace.'));
+                } else {
+                    setTimeout(checkWorkspace, delay);
+                }
+            };
+            checkWorkspace();
+        });
+    };
+
     // Load bot into builder
     const loadBotIntoBuilder = async (bot: BotData) => {
         if (!bot.xml || loadingBotName) return;
@@ -205,6 +222,7 @@ const FreeBots = observer(() => {
             // The builder owns the Blockly workspace. Switch tabs first so its
             // initialization can run; waiting while Free Bots is active deadlocks.
             setActiveTab(DBOT_TABS.BOT_BUILDER);
+            await new Promise(resolve => setTimeout(resolve, 250));
             await waitForWorkspace(40, 100);
             await waitForBotBlocks(bot.xml);
             const tempId = `freebot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -213,6 +231,7 @@ const FreeBots = observer(() => {
                 true
             );
             if (result?.error) throw new Error(result.error);
+            await waitForImportedBot(bot.xml);
         } catch (error) {
             console.error(`Failed to import Free Bot ${bot.name}:`, error);
             setBotLoadError(`Could not launch ${bot.name}. Please return to Free Bots and try again.`);
