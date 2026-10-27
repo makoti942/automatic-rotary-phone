@@ -1,11 +1,18 @@
 const memoryCache = new Map<string, string>();
-const XML_BASE = '/xml/';
 const CACHE_BUST = Date.now();
+
+export const buildFreeBotXmlUrl = (file: string, publicPath = '/') => {
+    const base = publicPath.endsWith('/') ? publicPath : `${publicPath}/`;
+    return `${base}xml/${encodeURIComponent(file)}?v=${CACHE_BUST}`;
+};
 
 export const fetchXmlWithCache = async (file: string): Promise<string | null> => {
     if (memoryCache.has(file)) return memoryCache.get(file) || null;
     try {
-        const response = await fetch(`${XML_BASE}${file}?v=${CACHE_BUST}`);
+        const publicPath = typeof window !== 'undefined' && window.__webpack_public_path__
+            ? window.__webpack_public_path__
+            : '/';
+        const response = await fetch(buildFreeBotXmlUrl(file, publicPath));
         if (!response.ok) return null;
         const xml = await response.text();
         memoryCache.set(file, xml);

@@ -176,13 +176,18 @@ const FreeBots = observer(() => {
 
     // Load bot into builder
     const loadBotIntoBuilder = async (bot: BotData) => {
-        if (bot.xml) {
+        if (!bot.xml) return;
+        try {
+            await waitForWorkspace(40, 100);
             const tempId = `freebot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             await load_modal.loadStrategyToBuilder(
                 { id: tempId, xml: bot.xml, name: bot.name, save_type: 'pending' },
                 true
             );
             setActiveTab(DBOT_TABS.BOT_BUILDER);
+        } catch (error) {
+            console.error(`Failed to import Free Bot ${bot.name}:`, error);
+            globalThis.dispatchEvent(new CustomEvent('ui.log.error', { detail: `Failed to import ${bot.name}. Please retry after the Bot Builder finishes loading.` }));
         }
     };
 
