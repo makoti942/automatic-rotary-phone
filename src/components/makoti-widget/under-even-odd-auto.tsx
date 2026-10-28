@@ -424,8 +424,9 @@ export const UnderEvenOddAuto: React.FC = () => {
                     if (automatedRef.current) {
                         setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
                         automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {};
-                        setPhaseSafe('automated');
-                        notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
+                        recoveryCandidatesRef.current = {};
+                        notify('RECOVERY COMPLETE — restarting automated all-volatility monitoring at Digit Differs');
+                        void scanAutomatedPair('differs');
                     } else {
                         notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
                         setPhaseSafe('normal');
