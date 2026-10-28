@@ -68,6 +68,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const [normalCount, setNormalCount] = useState(0);
     const [selected, setSelected] = useState<RecoveryPick | null>(null);
     const [lastDigit, setLastDigit] = useState<number | null>(null);
+    const [recoveryWindowStatus, setRecoveryWindowStatus] = useState('—');
     const [evenPct, setEvenPct] = useState(0);
     const [oddPct, setOddPct] = useState(0);
     const [lossBalance, setLossBalance] = useState(0);
@@ -198,6 +199,7 @@ export const UnderEvenOddAuto: React.FC = () => {
         if (!runningRef.current || scanRunningRef.current) return;
         scanRunningRef.current = true;
         setPhaseSafe('scanning');
+        setRecoveryWindowStatus('WAITING · SCANNING VOLATILITIES');
         if (allVolatilityPatternRef.current) {
             const symbols = recoveryLockedSymbolRef.current
                 ? [recoveryLockedSymbolRef.current]
@@ -210,6 +212,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             }
             symbols.forEach(symbol => sendTickSubscription(symbol, RECOVERY_SAMPLE_SIZE));
             setPhaseSafe('pattern');
+            setRecoveryWindowStatus(`WAITING · MONITORING ${symbols.length} VOLATILITIES`);
             notify(recoveryLockedSymbolRef.current
                 ? `RECOVERY PATTERN: continuing live monitoring on locked volatility ${recoveryLockedSymbolRef.current}; percentage scan bypassed`
                 : `RECOVERY PATTERN: monitoring ${symbols.length} volatilities simultaneously; after ${Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5))} consecutive same-parity ticks, trading the opposite parity and locking that volatility`);
@@ -282,6 +285,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             lastEpochRef.current = best.lastEpoch;
             lockedUsable.forEach(item => sendTickSubscription(item.symbol, RECOVERY_SAMPLE_SIZE));
             setPhaseSafe('pattern');
+            setRecoveryWindowStatus(`WAITING · MONITORING ${lockedUsable.length} VOLATILITIES`);
             const target = best.side.toUpperCase();
             notify(`RECOVERY SELECTED ${labelsRef.current[best.symbol] || best.symbol}: ${target} | even ${best.evenPct.toFixed(1)}% / odd ${best.oddPct.toFixed(1)}% | top digits ${best.topDigits.slice(0, TOP_DIGIT_COUNT).map(d => `${d}:${best.digitPcts[d].toFixed(0)}%`).join(',')} | opposite-top ${best.losingTopCount}/${TOP_DIGIT_COUNT} | opposite streak ${oppositeRef.current}`);
         } finally { scanRunningRef.current = false; }
@@ -420,6 +424,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                     recoveryAttemptsRef.current = 0;
                     recoveryArmedRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; lossStreakRef.current = 0;
                     selectedRef.current = null; setSelected(null);
+                    setRecoveryWindowStatus('—');
                     currentStakeRef.current = Number(stakeRef.current) || 0.35; setCurrentStake(currentStakeRef.current);
                     if (automatedRef.current) {
                         setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
@@ -485,6 +490,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 recoveryArmedRef.current = true;
                 oppositeRef.current = 0;
                 setPhaseSafe('pattern');
+                setRecoveryWindowStatus(`ARMED · ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol}`);
                 notify(`RECOVERY CONTINUES on ${labelsRef.current[selectedRef.current.symbol] || selectedRef.current.symbol} — pattern gate bypassed; next ${selectedRef.current.side.toUpperCase()} tick will execute`);
             } else if (trade.kind === 'automated') {
                 recoveryAttemptsRef.current = 0;
@@ -629,7 +635,10 @@ export const UnderEvenOddAuto: React.FC = () => {
                             setSelected(pick);
                             allVolatilityStreaksRef.current = {};
                             recoveryArmedRef.current = true;
+                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${side.toUpperCase()} → ${tradeSide.toUpperCase()}`);
                             notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${required} ticks are all ${side.toUpperCase()}; executing ${tradeSide.toUpperCase()} only on this volatility`);
+                        } else {
+                            setRecoveryWindowStatus(`WAITING · ${labelsRef.current[sym] || sym} ${liveWindow.length}/${required}${liveWindow.length >= required ? ' MIXED' : ''}`);
                         }
                     }
                     const recoveryCandidate = recoveryCandidatesRef.current[sym];
@@ -643,6 +652,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                             selectedRef.current = recoveryCandidate;
                             setSelected(recoveryCandidate);
                             recoveryArmedRef.current = true;
+                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${observedSide.toUpperCase()} → ${executionSide.toUpperCase()}`);
                             notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${requiredOpposite} ticks are all ${observedSide.toUpperCase()}; executing ${executionSide.toUpperCase()} immediately`);
                         }
                     }
@@ -667,9 +677,11 @@ export const UnderEvenOddAuto: React.FC = () => {
                                 oppositeRef.current = 0;
                                 void buy(sym, parityContractFor(executionSide), nextRecoveryStake(), 'parity', undefined, tickEpoch);
                             } else if (liveWindow.length >= requiredOpposite) {
+                                setRecoveryWindowStatus(`WAITING · ${labelsRef.current[sym] || sym} MIXED ${liveWindow.length}/${requiredOpposite}`);
                                 notify(`RECOVERY TICK ${digit} | latest ${requiredOpposite} ticks are mixed; continuing to monitor all volatilities`);
                             } else {
                                 oppositeRef.current = 0;
+                                setRecoveryWindowStatus(`WAITING · ${labelsRef.current[sym] || sym} ${liveWindow.length}/${requiredOpposite}`);
                                 notify(`RECOVERY TICK ${digit} | waiting for ${requiredOpposite} ticks in the rolling window`);
                             }
                         }
@@ -715,7 +727,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     }, [normalCount, phase, running, buy]);
     const start = () => {
         const amount = Math.max(0.35, Number(stake) || 0.35); stakeRef.current = amount; entryDigitRef.current = Math.min(9, Math.max(0, Number(entryDigit) || 2));
-        normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; recoveryAttemptsRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; recoveryCandidatesRef.current = {}; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; recoveryArmedRef.current = false;
+        normalSymbolRef.current = normalSymbol; oppositeTriggerRef.current = Math.max(1, Math.min(100, Number(oppositeTrigger) || 5)); normalStartedRef.current = false; normalCountRef.current = 0; lossRef.current = 0; lossStreakRef.current = 0; recoveryAttemptsRef.current = 0; sessionProfitRef.current = 0; riskTriggeredRef.current = false; currentStakeRef.current = amount; buffersRef.current = {}; openRef.current.clear(); localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; recoveryCandidatesRef.current = {}; selectedRef.current = null; oppositeRef.current = 0; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; recoveryArmedRef.current = false; setRecoveryWindowStatus('—');
         automatedRef.current = automated;
         digitStreaksRef.current = {}; automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; allVolatilityStreaksRef.current = {}; processedTickKeysRef.current = {}; automatedTickIndexRef.current = {}; qualifiedMarketsRef.current = new Set(); localParityTradeRef.current = null; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null;
         setQualifiedMarkets([]); setAutoStageSafe('differs');
@@ -729,7 +741,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             notify(`STARTED — waiting for entry digit ${entryDigitRef.current} on ${SYMBOL_LABELS[normalSymbol] || normalSymbol}; then Under 7 → Under 8`);
         }
     };
-    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; recoveryCandidatesRef.current = {}; recoveryAttemptsRef.current = 0; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; processedTickKeysRef.current = {}; allVolatilityStreaksRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
+    const stop = () => { runningRef.current = false; setRunning(false); setPhaseSafe('idle'); openRef.current.clear(); localParityTradeRef.current = null; localOutcomeByEntryRef.current.clear(); recoveryBuyInFlightRef.current = null; recoveryCandidatesRef.current = {}; recoveryAttemptsRef.current = 0; localRecoveryCompleteRef.current = false; lastRecoveryEntryEpochRef.current = null; processedTickKeysRef.current = {}; allVolatilityStreaksRef.current = {}; freshRecoveryPatternRef.current = false; recoveryNeedsFreshScanRef.current = false; recoveryLockedSymbolRef.current = null; selectedRef.current = null; setSelected(null); setRecoveryWindowStatus('—'); qualifiedMarketsRef.current = new Set(); automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {}; automatedTickIndexRef.current = {}; setQualifiedMarkets([]); notify('STOPPED'); };
     const helpText = switchHelp === 'each-tick'
         ? 'After the opposite-tick gate, evaluate the next tick locally instead of waiting for Deriv settlement.'
         : switchHelp === 'all-volatility'
@@ -760,7 +772,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             </div>
         </section>
         {switchHelp && <div className='mw-ueo-help-popover' role='dialog' aria-label='Setting explanation'><button type='button' className='mw-ueo-help-popover__close' onClick={() => setSwitchHelp(null)} aria-label='Close explanation'>×</button><strong>How this setting works</strong><span>{helpText}</span></div>}
-        <div className='mw-ueo-status-card'><div><span>LIVE DIGIT</span><strong>{lastDigit ?? '—'}</strong></div><div><span>SESSION P/L</span><strong className={sessionProfit >= 0 ? 'is-positive' : 'is-negative'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div><div><span>STATE</span><strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div></div>
+        <div className='mw-ueo-status-card'><div><span>LIVE DIGIT</span><strong>{lastDigit ?? '—'}</strong></div><div><span>RECOVERY WINDOW</span><strong title={recoveryWindowStatus}>{recoveryWindowStatus}</strong></div><div><span>SESSION P/L</span><strong className={sessionProfit >= 0 ? 'is-positive' : 'is-negative'}>{sessionProfit >= 0 ? '+' : ''}${sessionProfit.toFixed(2)}</strong></div><div><span>STATE</span><strong>{running ? phase.toUpperCase() : 'STOPPED'}</strong></div></div>
         {riskAlert && <div className={`mw-ueo-risk-alert mw-ueo-risk-alert--${riskAlert.kind}`} role='alert'>
             <strong>{riskAlert.kind === 'take-profit' ? 'TAKE PROFIT HIT' : 'STOP LOSS HIT'}</strong>
             <span>Realized P/L: {riskAlert.amount >= 0 ? '+' : ''}${riskAlert.amount.toFixed(2)}</span>
