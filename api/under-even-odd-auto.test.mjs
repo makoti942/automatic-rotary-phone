@@ -10,6 +10,7 @@ import {
   REQUIRED_TARGET_DIGITS_IN_TOP,
   calculateDigitPercentages,
   findWinningDigitTrigger,
+  hasFourTickThresholdPattern,
   hasThreeTickPairPattern,
   nextAutomatedStage,
   selectAutomatedMarkets,
@@ -77,6 +78,13 @@ test('recognizes a three-tick 0/1 or 8/9 entry pattern in either order', () => {
   assert.equal(hasThreeTickPairPattern([8, 9, 8], [8, 9]), true);
 });
 
+test('recognizes four live ticks below the Over 2 and Under 7 thresholds', () => {
+  assert.equal(hasFourTickThresholdPattern([2, 0, 1, 2], 3), true);
+  assert.equal(hasFourTickThresholdPattern([7, 6, 0, 2], 8), true);
+  assert.equal(hasFourTickThresholdPattern([0, 1, 3, 2], 3), false);
+  assert.equal(hasFourTickThresholdPattern([0, 1, 2], 3), false);
+});
+
 test('rejects a trigger when one of its following digits is not a winner', () => {
   assert.equal(findWinningDigitTrigger([4, 2, 4, 1, 4, 8], [2, 3, 4, 5, 6, 7, 8, 9]), null);
 });
@@ -89,9 +97,11 @@ test('automated markets require each losing digit to be below 10%', () => {
   assert.deepEqual(markets.map(item => item.symbol), ['R_25']);
 });
 
-test('automated wins advance Differs → Over 1 → Under 8 → Differs', () => {
+test('automated wins advance through the complete cycle', () => {
   const over1 = nextAutomatedStage('differs');
   const under8 = nextAutomatedStage(over1);
-  const differsAgain = nextAutomatedStage(under8);
-  assert.deepEqual([over1, under8, differsAgain], ['over1', 'under8', 'differs']);
+  const over2 = nextAutomatedStage(under8);
+  const under7 = nextAutomatedStage(over2);
+  const differsAgain = nextAutomatedStage(under7);
+  assert.deepEqual([over1, under8, over2, under7, differsAgain], ['over1', 'under8', 'over2', 'under7', 'differs']);
 });

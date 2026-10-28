@@ -10,7 +10,11 @@ export const AUTOMATED_TRIGGER_MIN_OCCURRENCES = 4;
 export const AUTOMATED_TOP_MARKETS = 1;
 
 export function nextAutomatedStage(stage) {
-  return stage === 'differs' ? 'over1' : stage === 'over1' ? 'under8' : 'differs';
+  return stage === 'differs' ? 'over1'
+    : stage === 'over1' ? 'under8'
+      : stage === 'under8' ? 'over2'
+        : stage === 'over2' ? 'under7'
+          : 'differs';
 }
 
 /** An entry needs both boundary digits in the latest three ticks, in any order. */
@@ -21,6 +25,15 @@ export function hasThreeTickPairPattern(digits, pair) {
     && target.size === 2
     && window.every(digit => target.has(digit))
     && target.size === new Set(window).size;
+}
+
+/** An entry needs four consecutive live digits below the supplied threshold. */
+export function hasFourTickThresholdPattern(digits, threshold) {
+  const window = (digits || []).slice(-4).map(Number);
+  const limit = Number(threshold);
+  return window.length === 4
+    && Number.isFinite(limit)
+    && window.every(digit => Number.isInteger(digit) && digit >= 0 && digit < limit);
 }
 
 /** Manual Trade's digit percentage formula: digit count divided by valid digit total. */

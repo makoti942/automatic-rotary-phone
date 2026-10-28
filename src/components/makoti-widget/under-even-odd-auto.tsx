@@ -7,6 +7,7 @@ import {
     AUTOMATED_FREQUENCY_WINDOW,
     AUTOMATED_DIFFERS_REPEAT,
     hasThreeTickPairPattern,
+    hasFourTickThresholdPattern,
     RECOVERY_SAMPLE_SIZE,
     TOP_DIGIT_COUNT,
     nextAutomatedStage,
@@ -16,7 +17,7 @@ import {
 
 type Phase = 'idle' | 'entry' | 'normal' | 'scanning' | 'pattern' | 'settling' | 'automated';
 type Side = 'even' | 'odd';
-type AutoStage = 'differs' | 'over1' | 'under8';
+type AutoStage = 'differs' | 'over1' | 'under8' | 'over2' | 'under7';
 interface OpenTrade { symbol: string; stake: number; kind: 'under' | 'parity' | 'automated'; contract: string; autoStage?: AutoStage; entryEpoch?: number; localOutcome?: 'win' | 'loss'; }
 interface QualifiedMarket { symbol: string; pairPct: number; digitPcts: number[]; lowDigits: number[]; triggerDigit: number; triggerOccurrences: number; triggerConfidence: number; lastHistoricalDigit: number; lastHistoricalEpoch?: number; }
 interface RecoveryPick { symbol: string; side: Side; evenPct: number; oddPct: number; digitPcts: number[]; topDigits: number[]; losingTopCount: number; trailingOpposite: number; lastEpoch?: number; }
@@ -287,8 +288,13 @@ export const UnderEvenOddAuto: React.FC = () => {
         automatedMarketsRef.current = {};
         automatedTriggerPendingRef.current = {};
         automatedTickIndexRef.current = {};
-        const lowDigits = stage === 'over1' ? [0, 1] : [8, 9];
-        const contractLabel = stage === 'over1' ? 'Over 1' : 'Under 8';
+        const lowDigits = stage === 'over1' ? [0, 1]
+            : stage === 'over2' ? [0, 1, 2]
+                : stage === 'under8' ? [8, 9]
+                    : [0, 1, 2, 3, 4, 5, 6, 7];
+        const contractLabel = stage === 'over1' ? 'Over 1'
+            : stage === 'over2' ? 'Over 2'
+                : stage === 'under8' ? 'Under 8' : 'Under 7';
         const symbols = availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS;
         symbols.forEach(symbol => sendTickSubscription(symbol, 3));
         const qualified = symbols.map(symbol => ({ symbol, pairPct: 0, digitPcts: [], lowDigits, triggerDigit: lowDigits[0], triggerOccurrences: 0, triggerConfidence: 100, lastHistoricalDigit: -1 }) as QualifiedMarket);
@@ -412,7 +418,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                         setPhaseSafe('automated');
                         notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
                     } else {
-                        notify('RECOVERY COMPLETE — returning to normal Under 8');
+                        notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
                         setPhaseSafe('normal');
                     }
                 }
@@ -445,9 +451,13 @@ export const UnderEvenOddAuto: React.FC = () => {
                 digitStreaksRef.current = {};
                 if (nextStage === 'differs') {
                     setPhaseSafe('automated');
-                    notify('UNDER 8 complete — restarting automated sequence at Digit Differs');
+                    notify(`${trade.contract} won — automated cycle complete; restarting at Digit Differs`);
                 } else {
-                    notify(`${trade.contract} won — advancing to ${nextStage === 'over1' ? 'Over 1' : 'Under 8'}`);
+                    const nextLabel = nextStage === 'over1' ? 'Over 1'
+                        : nextStage === 'over2' ? 'Over 2'
+                            : nextStage === 'under8' ? 'Under 8'
+                                : nextStage === 'under7' ? 'Under 7' : 'Digit Differs';
+                    notify(`${trade.contract} won — advancing to ${nextLabel}`);
                     void scanAutomatedPair(nextStage);
                 }
             } else {
@@ -555,13 +565,22 @@ export const UnderEvenOddAuto: React.FC = () => {
                                 notify(`AUTOMATED LIVE IGNORED — no active market record for ${sym}`);
                                 return;
                             }
-                            const window = [...(automatedWindowsRef.current[sym] || []), digit].slice(-3);
+                            const windowSize = stage === 'over1' || stage === 'under8' ? 3 : 4;
+                            const window = [...(automatedWindowsRef.current[sym] || []), digit].slice(-windowSize);
                             automatedWindowsRef.current[sym] = window;
-                            const pair = stage === 'over1' ? [0, 1] : [8, 9];
-                            if (hasThreeTickPairPattern(window, pair)) {
-                                notify(`${labelsRef.current[sym] || sym}: ${stage === 'over1' ? 'Over 1' : 'Under 8'} pattern confirmed from live digits ${window.join(',')} — entering on ${sym}`);
+                            const isOver1 = stage === 'over1';
+                            const isUnder8 = stage === 'under8';
+                            const isOver2 = stage === 'over2';
+                            const label = isOver1 ? 'Over 1' : isUnder8 ? 'Under 8' : isOver2 ? 'Over 2' : 'Under 7';
+                            const patternConfirmed = isOver1 || isUnder8
+                                ? hasThreeTickPairPattern(window, isOver1 ? [0, 1] : [8, 9])
+                                : hasFourTickThresholdPattern(window, isOver2 ? 3 : 8);
+                            if (patternConfirmed) {
+                                const contract = isOver1 || isOver2 ? 'DIGITOVER' : 'DIGITUNDER';
+                                const barrier = isOver1 ? '1' : isOver2 ? '2' : isUnder8 ? '8' : '7';
+                                notify(`${labelsRef.current[sym] || sym}: ${label} pattern confirmed from live digits ${window.join(',')} — entering immediately on tick ${window.length}`);
                                 automatedWindowsRef.current[sym] = [];
-                                void buy(sym, stage === 'over1' ? 'DIGITOVER' : 'DIGITUNDER', currentStakeRef.current, 'automated', stage === 'over1' ? '1' : '8');
+                                void buy(sym, contract, currentStakeRef.current, 'automated', barrier);
                             }
                         }
                     }
