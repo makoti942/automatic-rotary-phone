@@ -135,9 +135,7 @@ export const UnderEvenOddAuto: React.FC = () => {
     const oppositeSide = (side: Side): Side => side === 'even' ? 'odd' : 'even';
     const recoveryEntrySide = (side: Side): Side => tradeOppositeParityRef.current ? oppositeSide(side) : side;
     const nextRecoveryStake = () => {
-        const amount = recoveryAttemptsRef.current === 0
-            ? (Number(stakeRef.current) || 0.35)
-            : currentStakeRef.current;
+        const amount = currentStakeRef.current;
         recoveryAttemptsRef.current += 1;
         return amount;
     };
@@ -209,6 +207,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 setSelected(null);
                 oppositeRef.current = 0;
                 allVolatilityStreaksRef.current = {};
+                recoveryNeedsFreshScanRef.current = false;
             }
             symbols.forEach(symbol => sendTickSubscription(symbol, RECOVERY_SAMPLE_SIZE));
             setPhaseSafe('pattern');
