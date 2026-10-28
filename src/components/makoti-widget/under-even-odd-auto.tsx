@@ -24,6 +24,11 @@ const FALLBACK_SYMBOLS = ALL_SYMBOLS;
 const BASE = { stake: '0.35', entryDigit: '2', martingale: '2' };
 const isEven = (d: number) => d % 2 === 0;
 const parityContractFor = (side: Side) => (side === 'even' ? 'DIGITEVEN' : 'DIGITODD');
+const uniformParity = (digits: number[]): Side | null => {
+    if (!digits.length) return null;
+    const side: Side = isEven(digits[0]) ? 'even' : 'odd';
+    return digits.every(digit => (side === 'even' ? isEven(digit) : !isEven(digit))) ? side : null;
+};
 const manualTradeDigitOf = (quote: unknown, symbol: string, pipSizes: Record<string, number>) => {
     const pip = pipSizes[symbol] || PIP_SIZES[symbol] || 2;
     return Number(Number(quote).toFixed(pip).slice(-1));
@@ -602,45 +607,41 @@ export const UnderEvenOddAuto: React.FC = () => {
                     if (!allVolatilityPatternRef.current && recoveryCandidate && !recoveryLockedSymbolRef.current && phaseRef.current === 'pattern' && !localRecoveryCompleteRef.current && !recoveryNeedsFreshScanRef.current) {
                         const requiredOpposite = Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5));
                         const liveWindow = buffersRef.current[sym].slice(-requiredOpposite);
-                        const target = recoveryCandidate.side === 'even' ? isEven : (value: number) => !isEven(value);
-                        let trailingOpposite = 0;
-                        for (let index = liveWindow.length - 1; index >= 0 && !target(liveWindow[index]); index--) trailingOpposite++;
-                        if (liveWindow.length >= requiredOpposite && trailingOpposite >= requiredOpposite) {
-                            const executionSide = recoveryEntrySide(recoveryCandidate.side);
+                        const observedSide = liveWindow.length >= requiredOpposite ? uniformParity(liveWindow) : null;
+                        if (observedSide) {
+                            const executionSide = oppositeSide(observedSide);
                             recoveryLockedSymbolRef.current = sym;
                             selectedRef.current = recoveryCandidate;
                             setSelected(recoveryCandidate);
                             recoveryArmedRef.current = true;
-                            notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${requiredOpposite} ticks are opposite parity; executing ${executionSide.toUpperCase()} immediately`);
+                            notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${requiredOpposite} ticks are all ${observedSide.toUpperCase()}; executing ${executionSide.toUpperCase()} immediately`);
                         }
                     }
                     if (sym === selectedRef.current?.symbol) {
-                        const pick = selectedRef.current; const target = pick.side === 'even' ? isEven(digit) : !isEven(digit);
+                        const pick = selectedRef.current;
                         const ds = buffersRef.current[sym].slice(-RECOVERY_SAMPLE_SIZE); const ep = ds.filter(isEven).length / Math.max(1, ds.length) * 100;
                         setLastDigit(digit);
                         setEvenPct(ep); setOddPct(100 - ep);
-                        const targetPct = pick.side === 'even' ? ep : 100 - ep;
                         if (phaseRef.current === 'pattern' && !localRecoveryCompleteRef.current && !recoveryNeedsFreshScanRef.current) {
-                            const executionSide: Side = allVolatilityPatternRef.current ? pick.side : recoveryEntrySide(pick.side);
                             const requiredOpposite = Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5));
                             const liveWindow = buffersRef.current[sym].slice(-requiredOpposite);
-                            let trailingOpposite = 0;
-                            for (let index = liveWindow.length - 1; index >= 0 && !target(liveWindow[index]); index--) trailingOpposite++;
-                            oppositeRef.current = trailingOpposite;
+                            const observedSide = allVolatilityPatternRef.current ? null : (liveWindow.length >= requiredOpposite ? uniformParity(liveWindow) : null);
+                            const executionSide: Side = allVolatilityPatternRef.current ? pick.side : oppositeSide(observedSide || pick.side);
+                            oppositeRef.current = observedSide ? requiredOpposite : 0;
                             if (recoveryArmedRef.current) {
                                 notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${executionSide.toUpperCase()}`);
                                 oppositeRef.current = 0;
                                 void buy(sym, parityContractFor(executionSide), currentStakeRef.current, 'parity', undefined, tickEpoch);
-                            } else if (liveWindow.length >= requiredOpposite && trailingOpposite >= requiredOpposite) {
+                            } else if (observedSide) {
                                 recoveryArmedRef.current = true;
-                                notify(`RECOVERY TRIGGER | latest ${requiredOpposite} ticks are opposite parity | entering ${executionSide.toUpperCase()} immediately`);
+                                notify(`RECOVERY TRIGGER | latest ${requiredOpposite} ticks are all ${observedSide.toUpperCase()} | entering ${executionSide.toUpperCase()} immediately`);
                                 oppositeRef.current = 0;
                                 void buy(sym, parityContractFor(executionSide), currentStakeRef.current, 'parity', undefined, tickEpoch);
-                            } else if (!target) {
-                                notify(`RECOVERY TICK ${digit} = OPPOSITE | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | latest opposite streak ${oppositeRef.current}/${requiredOpposite}`);
+                            } else if (liveWindow.length >= requiredOpposite) {
+                                notify(`RECOVERY TICK ${digit} | latest ${requiredOpposite} ticks are mixed; continuing to monitor all volatilities`);
                             } else {
                                 oppositeRef.current = 0;
-                                notify(`RECOVERY TICK ${digit} = TARGET | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | pattern reset`);
+                                notify(`RECOVERY TICK ${digit} | waiting for ${requiredOpposite} ticks in the rolling window`);
                             }
                         }
                     }
