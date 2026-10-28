@@ -429,10 +429,14 @@ export const UnderEvenOddAuto: React.FC = () => {
                         setAutoStageSafe('differs'); setQualifiedMarkets([]); qualifiedMarketsRef.current = new Set();
                         automatedMarketsRef.current = {}; automatedTriggerPendingRef.current = {}; digitStreaksRef.current = {};
                         recoveryCandidatesRef.current = {};
+                        autoScanRunningRef.current = false;
                         notify('RECOVERY COMPLETE — restarting automated all-volatility monitoring at Digit Differs');
                         void scanAutomatedPair('differs');
                     } else {
                         notify('RECOVERY COMPLETE — automated sequence resumes at Digit Differs');
+                        normalStartedRef.current = false;
+                        normalCountRef.current += 1;
+                        setNormalCount(normalCountRef.current);
                         setPhaseSafe('normal');
                     }
                 }
