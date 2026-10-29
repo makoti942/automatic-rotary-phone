@@ -126,6 +126,37 @@ export function registerCompatibilityBlocks(Blockly) {
   if (!Blockly?.Blocks || !Blockly?.JavaScript?.javascriptGenerator) {
     throw new Error('Blockly block and generator registries are not available.');
   }
+  // Free Bots can be mounted after Blockly's cached block modules have already
+  // been evaluated. In that case the native root block may be absent from the
+  // active registry even though it is required by every trading bot XML.
+  if (!Blockly.Blocks.before_purchase) {
+    Blockly.Blocks.before_purchase = {
+      init() {
+        this.jsonInit({
+          message0: '%1 %2 %3',
+          message1: '%1',
+          message2: '%1',
+          args0: [
+            { type: 'field_label', text: '2. Purchase conditions' },
+            { type: 'input_dummy' },
+            { type: 'input_dummy' },
+          ],
+          args1: [{ type: 'input_statement', name: 'BEFOREPURCHASE_STACK', check: 'Purchase' }],
+          args2: [{ type: 'input_dummy' }],
+          colour: Blockly.Colours?.RootBlock?.colour,
+          colourSecondary: Blockly.Colours?.RootBlock?.colourSecondary,
+          colourTertiary: Blockly.Colours?.RootBlock?.colourTertiary,
+        });
+        this.setDeletable(false);
+      },
+    };
+  }
+  if (!Blockly.JavaScript.javascriptGenerator.forBlock.before_purchase) {
+    Blockly.JavaScript.javascriptGenerator.forBlock.before_purchase = block => {
+      const stack = Blockly.JavaScript.javascriptGenerator.statementToCode(block, 'BEFOREPURCHASE_STACK');
+      return `BinaryBotPrivateBeforePurchase = function BinaryBotPrivateBeforePurchase() {\n${stack}};\n`;
+    };
+  }
   if (!Blockly.Blocks[LOCAL_LAST_DIGITS_CONDITION]) {
     Blockly.Blocks[LOCAL_LAST_DIGITS_CONDITION] = {
       init() {
