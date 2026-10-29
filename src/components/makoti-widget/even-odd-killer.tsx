@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ALL_SYMBOLS, SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
+import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS, openMakotiWS, MakotiWS } from './makoti-ws';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 
@@ -10,6 +10,11 @@ const DOMINANCE_THRESHOLD = 58;
 const TRADES_PER_ROUND = 3;
 const LS_KEY = 'mw_eo_config';
 const DEFAULT_CFG = { stake: '0.35', martingale: '2', takeProfit: '', stopLoss: '' };
+
+const digitOfQuote = (quote: unknown, symbol: string) => {
+    const pip = PIP_SIZES[symbol] || 2;
+    return Number(Number(quote).toFixed(pip).slice(-1));
+};
 
 function loadCfg(): typeof DEFAULT_CFG {
     try { const r = localStorage.getItem(LS_KEY); return r ? { ...DEFAULT_CFG, ...JSON.parse(r) } : DEFAULT_CFG; }
@@ -62,6 +67,7 @@ export const EvenOddKiller: React.FC = () => {
     }, []);
 
     const bufRef = useRef<Record<string, number[]>>({});
+    const seenTickKeysRef = useRef<Record<string, Set<string>>>({});
     const wsRef = useRef<MakotiWS | null>(null);
     const runningRef = useRef(false);
 
@@ -372,6 +378,8 @@ export const EvenOddKiller: React.FC = () => {
         totalPnlRef.current = 0;
         losingStreakRef.current = 0;
         cmapRef.current.clear();
+        bufRef.current = {};
+        seenTickKeysRef.current = {};
         setTradesWon(0);
         setTradesLost(0);
         setTradesInRound(0);
@@ -386,12 +394,20 @@ export const EvenOddKiller: React.FC = () => {
                 if (data.msg_type === 'ticks_history' && data.ticks) {
                     const sym = data.echo_req?.ticks_history || data.ticks_history;
                     if (!sym) return;
-                    const prices: number[] = data.ticks.map((t: any) => Number(t.quote));
+                    const seen = seenTickKeysRef.current[sym] || new Set<string>();
                     if (!bufRef.current[sym]) bufRef.current[sym] = [];
-                    prices.forEach((p: number) => {
-                        const digit = parseInt(String(p).slice(-1), 10);
-                        if (!isNaN(digit)) bufRef.current[sym].push(digit);
+                    data.ticks.forEach((tick: any) => {
+                        const quote = tick?.quote;
+                        const key = `${tick?.id ?? ''}|${tick?.epoch ?? tick?.time ?? ''}|${quote}`;
+                        if (seen.has(key)) return;
+                        seen.add(key);
+                        const digit = digitOfQuote(quote, sym);
+                        if (Number.isInteger(digit) && digit >= 0 && digit <= 9) bufRef.current[sym].push(digit);
                     });
+                    if (seen.size > MAX_TICKS * 4) {
+                        const recent = Array.from(seen).slice(-MAX_TICKS * 2);
+                        seenTickKeysRef.current[sym] = new Set(recent);
+                    } else seenTickKeysRef.current[sym] = seen;
                     if (bufRef.current[sym].length > MAX_TICKS) bufRef.current[sym] = bufRef.current[sym].slice(-MAX_TICKS);
                     const { evenPct, oddPct } = calcEvenOdd(bufRef.current[sym].slice(-50));
                     setSymProgress(prev => ({ ...prev, [sym]: { evenPct, oddPct, ticks: bufRef.current[sym].length } }));
@@ -402,8 +418,13 @@ export const EvenOddKiller: React.FC = () => {
                     const sym = data.tick.symbol;
                     const q = data.tick.quote;
                     if (!sym || q === undefined) return;
-                    const digit = parseInt(String(q).slice(-1), 10);
-                    if (isNaN(digit)) return;
+                    const seen = seenTickKeysRef.current[sym] || new Set<string>();
+                    const key = `${data.tick.id ?? ''}|${data.tick.epoch ?? ''}|${q}`;
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    seenTickKeysRef.current[sym] = seen;
+                    const digit = digitOfQuote(q, sym);
+                    if (!Number.isInteger(digit) || digit < 0 || digit > 9) return;
                     if (!bufRef.current[sym]) bufRef.current[sym] = [];
                     bufRef.current[sym].push(digit);
                     if (bufRef.current[sym].length > MAX_TICKS) bufRef.current[sym] = bufRef.current[sym].slice(-MAX_TICKS);

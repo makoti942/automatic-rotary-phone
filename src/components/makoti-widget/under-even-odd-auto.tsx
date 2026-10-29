@@ -534,6 +534,15 @@ export const UnderEvenOddAuto: React.FC = () => {
                     if ((data.msg_type === 'history' || data.msg_type === 'ticks_history') && data.history?.prices) {
                         const historySymbol = data.echo_req?.ticks_history;
                         updateBuffer(historySymbol, data.history.prices);
+                        if (historySymbol) {
+                            const processedHistoryKeys = processedTickKeysRef.current[historySymbol] || new Set<string>();
+                            const historyTimes = Array.isArray(data.history.times) ? data.history.times : [];
+                            data.history.prices.forEach((price: unknown, index: number) => {
+                                const epoch = historyTimes[index];
+                                if (epoch != null) processedHistoryKeys.add(`|${epoch}|${String(price)}`);
+                            });
+                            processedTickKeysRef.current[historySymbol] = processedHistoryKeys;
+                        }
                         if (historySymbol && lossRef.current > 0 && (phaseRef.current === 'scanning' || phaseRef.current === 'pattern') && !recoveryWindowSeededRef.current.has(historySymbol)) {
                             const requiredWindow = Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5));
                             const historyDigits = data.history.prices.map((price: unknown) => manualTradeDigitOf(price, historySymbol, pipSizesRef.current)).filter((digit: number) => Number.isInteger(digit) && digit >= 0 && digit <= 9);
@@ -550,9 +559,11 @@ export const UnderEvenOddAuto: React.FC = () => {
                     const quote = String(data.tick.quote);
                     const tickId = data.tick.id == null ? '' : String(data.tick.id);
                     const tickKey = `${tickId}|${tickEpoch}|${quote}`;
+                    const tickEpochKey = `|${tickEpoch}|${quote}`;
                     const processedKeys = processedTickKeysRef.current[sym] || new Set<string>();
-                    if (processedKeys.has(tickKey)) return;
+                    if (processedKeys.has(tickKey) || processedKeys.has(tickEpochKey)) return;
                     processedKeys.add(tickKey);
+                    processedKeys.add(tickEpochKey);
                     // Bound memory while retaining enough recent keys to
                     // reject duplicate history/live messages.
                     if (processedKeys.size > 250) {
