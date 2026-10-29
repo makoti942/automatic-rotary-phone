@@ -84,7 +84,10 @@ const Analysis = () => {
     const lastResetRef = useRef(0);
     const lastSeedAttemptRef = useRef(0);
     const seedAttemptsRef = useRef(0);
-    const seenLiveTickKeysRef = useRef<Map<string, string>>(new Map());
+    // Shared streams can deliver the same tick more than once, and some tick
+    // messages do not include an id. Use epoch + quote as the canonical key so
+    // duplicates are rejected even when subscriptions provide different ids.
+    const seenLiveTickKeysRef = useRef<Set<string>>(new Set());
     const pendingHistoryOverlapRef = useRef<string | null>(null);
 
     const load = useCallback(() => {
@@ -194,9 +197,6 @@ const Analysis = () => {
                 const quote = String(tick.quote);
                 const epoch = Number(tick.epoch);
                 const tickKey = `${epoch}|${quote}`;
-                const tickId = tick.id == null ? '' : String(tick.id);
-                if (tickId && seenLiveTickKeysRef.current.get(tickId) === tickKey) return;
-                if (tickId) seenLiveTickKeysRef.current.set(tickId, tickKey);
                 // A subscribe response commonly repeats the final tick that
                 // was already included in the plain history seed. Do not
                 // count that boundary tick twice in Even/Odd or any other
@@ -206,6 +206,8 @@ const Analysis = () => {
                     lastLiveRef.current = Date.now() / 1000;
                     return;
                 }
+                if (seenLiveTickKeysRef.current.has(tickKey)) return;
+                seenLiveTickKeysRef.current.add(tickKey);
                 pendingHistoryOverlapRef.current = null;
                 lastLiveRef.current = Date.now() / 1000;
                 // Capture the subscription id ONLY for a subscription we own,
