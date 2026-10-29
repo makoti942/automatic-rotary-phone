@@ -29,7 +29,10 @@ const modifyBlocklyWorkSpaceContextMenu = () => {
 
 export const loadBlockly = async isDarkMode => {
     const BlocklyModule = await import('blockly');
-    window.Blockly = BlocklyModule.default;
+    // Keep the existing Blockly singleton when the Bot Builder is mounted again.
+    // Replacing it while the block modules are cached leaves the new registry
+    // without the definitions that those modules registered on the first mount.
+    window.Blockly = window.Blockly || BlocklyModule.default;
     window.Blockly.Colours = {};
     const BlocklyGenerator = new window.Blockly.Generator('code');
     const BlocklyJavaScriptGenerator = {
@@ -45,4 +48,40 @@ export const loadBlockly = async isDarkMode => {
     setColors(isDarkMode);
     await import('./hooks/index.js');
     await import('./blocks');
+
+    // before_purchase is mandatory in the default strategy. Some navigation
+    // paths can reuse a cached blocks module after the workspace is recreated,
+    // so restore the definition before any XML is deserialized.
+    if (!window.Blockly.Blocks.before_purchase) {
+        window.Blockly.Blocks.before_purchase = {
+            init() {
+                this.jsonInit({
+                    message0: '%1 %2 %3',
+                    message1: '%1',
+                    message2: '%1',
+                    args0: [
+                        { type: 'field_label', text: '2. Purchase conditions' },
+                        { type: 'input_dummy' },
+                        { type: 'input_dummy' },
+                    ],
+                    args1: [{ type: 'input_statement', name: 'BEFOREPURCHASE_STACK', check: 'Purchase' }],
+                    args2: [{ type: 'input_dummy' }],
+                    colour: window.Blockly.Colours.RootBlock?.colour,
+                    colourSecondary: window.Blockly.Colours.RootBlock?.colourSecondary,
+                    colourTertiary: window.Blockly.Colours.RootBlock?.colourTertiary,
+                });
+                this.setDeletable(false);
+            },
+        };
+    }
+
+    if (!window.Blockly.JavaScript.javascriptGenerator.forBlock.before_purchase) {
+        window.Blockly.JavaScript.javascriptGenerator.forBlock.before_purchase = block => {
+            const stack = window.Blockly.JavaScript.javascriptGenerator.statementToCode(
+                block,
+                'BEFOREPURCHASE_STACK'
+            );
+            return `BinaryBotPrivateBeforePurchase = function BinaryBotPrivateBeforePurchase() {\n${stack}};\n`;
+        };
+    }
 };
