@@ -213,6 +213,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                 recoveryLiveWindowsRef.current = {};
                 recoveryWindowSeededRef.current = new Set();
             }
+            subscribedTickSymbolsRef.current.clear();
             symbols.forEach(symbol => sendTickSubscription(symbol, RECOVERY_SAMPLE_SIZE));
             setPhaseSafe('pattern');
             setRecoveryWindowStatus(`WAITING · MONITORING ${symbols.length} VOLATILITIES`);
@@ -227,6 +228,7 @@ export const UnderEvenOddAuto: React.FC = () => {
             : (availableSymbolsRef.current.length ? availableSymbolsRef.current : FALLBACK_SYMBOLS);
         recoveryLiveWindowsRef.current = {};
         recoveryWindowSeededRef.current = new Set();
+        subscribedTickSymbolsRef.current.clear();
         notify(`RECOVERY SCAN: sampling ${RECOVERY_SAMPLE_SIZE} ticks from ${symbols.length === 1 ? `locked volatility ${symbols[0]}` : `${symbols.length} live Deriv volatility indices for initial selection`}`);
         try {
             const samples = await Promise.all(symbols.map(async symbol => {
@@ -664,7 +666,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                             setSelected(pick);
                             allVolatilityStreaksRef.current = {};
                             recoveryArmedRef.current = true;
-                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${side.toUpperCase()} → ${tradeSide.toUpperCase()}`);
+                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${side.toUpperCase()} → ${tradeSide.toUpperCase()} [${liveWindow.slice(-required).join(',')}]`);
                             notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${required} ticks are all ${side.toUpperCase()}; executing ${tradeSide.toUpperCase()} only on this volatility`);
                         } else {
                             setRecoveryWindowStatus(`WAITING · ${labelsRef.current[sym] || sym} ${liveWindow.length}/${required}${liveWindow.length >= required ? ' MIXED' : ''}`);
@@ -681,7 +683,7 @@ export const UnderEvenOddAuto: React.FC = () => {
                             selectedRef.current = recoveryCandidate;
                             setSelected(recoveryCandidate);
                             recoveryArmedRef.current = true;
-                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${observedSide.toUpperCase()} → ${executionSide.toUpperCase()}`);
+                            setRecoveryWindowStatus(`READY · ${labelsRef.current[sym] || sym} ALL ${observedSide.toUpperCase()} → ${executionSide.toUpperCase()} [${liveWindow.slice(-requiredOpposite).join(',')}]`);
                             notify(`RECOVERY PATTERN LOCKED ${labelsRef.current[sym] || sym}: latest ${requiredOpposite} ticks are all ${observedSide.toUpperCase()}; executing ${executionSide.toUpperCase()} immediately`);
                         }
                     }
@@ -693,10 +695,10 @@ export const UnderEvenOddAuto: React.FC = () => {
                         if (phaseRef.current === 'pattern' && !localRecoveryCompleteRef.current && !recoveryNeedsFreshScanRef.current) {
                             const requiredOpposite = Math.max(1, Math.min(100, Number(oppositeTriggerRef.current) || 5));
                             const liveWindow = (recoveryLiveWindowsRef.current[sym] || []).slice(-requiredOpposite);
-                            const observedSide = allVolatilityPatternRef.current ? null : (liveWindow.length >= requiredOpposite ? uniformParity(liveWindow) : null);
-                            const executionSide: Side = allVolatilityPatternRef.current ? pick.side : oppositeSide(observedSide || pick.side);
+                            const observedSide = liveWindow.length >= requiredOpposite ? uniformParity(liveWindow) : null;
+                            const executionSide: Side = observedSide ? oppositeSide(observedSide) : pick.side;
                             oppositeRef.current = observedSide ? requiredOpposite : 0;
-                            if (recoveryArmedRef.current) {
+                            if (recoveryArmedRef.current && observedSide) {
                                 notify(`RECOVERY TICK ${digit} | even ${ep.toFixed(1)}% / odd ${(100 - ep).toFixed(1)}% | recovery armed — executing ${executionSide.toUpperCase()}`);
                                 oppositeRef.current = 0;
                                 void buy(sym, parityContractFor(executionSide), nextRecoveryStake(), 'parity', undefined, tickEpoch);
