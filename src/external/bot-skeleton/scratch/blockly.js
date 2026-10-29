@@ -32,7 +32,9 @@ export const loadBlockly = async isDarkMode => {
     // Keep the existing Blockly singleton when the Bot Builder is mounted again.
     // Replacing it while the block modules are cached leaves the new registry
     // without the definitions that those modules registered on the first mount.
-    window.Blockly = window.Blockly || BlocklyModule.default;
+    const hasValidBlocklySingleton =
+        window.Blockly && typeof window.Blockly.Generator === 'function' && window.Blockly.Blocks;
+    window.Blockly = hasValidBlocklySingleton ? window.Blockly : BlocklyModule.default;
     window.Blockly.Colours = {};
     const BlocklyGenerator = new window.Blockly.Generator('code');
     const BlocklyJavaScriptGenerator = {
