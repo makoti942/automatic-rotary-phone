@@ -1,6 +1,8 @@
 // @ts-nocheck — vendored bot code with known upstream type gaps; see AGENTS.md
 import { action, makeObservable, observable } from 'mobx';
-import { config, load, runGroupedEvents } from '@/external/bot-skeleton';
+import { config, runGroupedEvents } from '@/external/bot-skeleton';
+import { localize } from '@deriv-com/translations';
+import { observer as globalObserver } from '@/external/bot-skeleton/utils';
 import RootStore from './root-store';
 
 interface IToolbarStore {
@@ -77,18 +79,23 @@ export default class ToolbarStore implements IToolbarStore {
 
     resetDefaultStrategy = async () => {
         const workspace = window.Blockly.derivWorkspace;
-        workspace.current_strategy_id = window?.Blockly?.utils?.idGenerator?.genUid();
-        await load({
-            block_string: workspace.cached_xml.main,
-            file_name: config().default_file_name,
-            workspace,
-            drop_event: null,
-            strategy_id: null,
-            from: null,
-            showIncompatibleStrategyDialog: null,
-        });
-        workspace.strategy_to_load = workspace.cached_xml.main;
-        this.setResetButtonState(false);
+        try {
+            workspace.current_strategy_id = window?.Blockly?.utils?.idGenerator?.genUid();
+            await workspace.asyncClear();
+            window.Blockly.Xml.clearWorkspaceAndLoadFromXml(
+                window.Blockly.utils.xml.textToDom(workspace.cached_xml.main),
+                workspace
+            );
+            workspace.strategy_to_load = workspace.cached_xml.main;
+            workspace.clearUndo();
+            workspace.cleanUp();
+            this.root_store.save_modal.updateBotName(config().default_file_name);
+        } catch (error) {
+            console.error('[BotBuilder] Failed to reset workspace:', error);
+            globalObserver.emit('ui.log.error', localize('Unable to reset the workspace. Please try again.'));
+        } finally {
+            this.setResetButtonState(false);
+        }
     };
 
     onSortClick = () => {

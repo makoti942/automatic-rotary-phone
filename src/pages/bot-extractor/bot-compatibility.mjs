@@ -35,7 +35,9 @@ export function resolveForeignBlockAdapter(type, fields = {}, hasNInput = true, 
   if (type === 'traderlegoonotify') {
     const notificationType = String(fields.NOTIFICATION_TYPE || '').trim().toLowerCase();
     const sound = String(fields.NOTIFICATION_SOUND || '').trim().toLowerCase();
-    const exactFields = Object.keys(fields).length === 2
+    const fieldNames = Object.keys(fields);
+    const hasOnlyKnownFields = fieldNames.every(field => ['NOTIFICATION_TYPE', 'NOTIFICATION_SOUND', 'TEXT', 'VAR'].includes(field));
+    const exactFields = hasOnlyKnownFields
       && Object.hasOwn(fields, 'NOTIFICATION_TYPE')
       && Object.hasOwn(fields, 'NOTIFICATION_SOUND');
     if (!exactFields || inputNames.length !== 1 || inputNames[0] !== 'MESSAGE'
@@ -95,6 +97,11 @@ export function adaptForeignBlocks(xml, Parser = globalThis.DOMParser, Serialize
       continue;
     }
     node.setAttribute('type', decision.targetType);
+    if (sourceType === 'traderlegoonotify') {
+      Array.from(node.children || [])
+        .filter(child => localName(child) === 'field' && ['TEXT', 'VAR'].includes(child.getAttribute('name')))
+        .forEach(field => field.remove());
+    }
     adaptations.push({ from: sourceType, to: decision.targetType, reason: decision.reason });
   }
 

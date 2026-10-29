@@ -6,6 +6,12 @@ import { DBOT_TABS } from '@/constants/bot-contents';
 import { useStore } from '@/hooks/useStore';
 import { localize } from '@deriv-com/translations';
 import { getBotsManifest, prefetchAllXmlInBackground, fetchXmlWithCache } from '@/utils/freebots-cache';
+import { normalizeLegacyApolloPurchases } from '../bot-extractor/legacy-apollo-purchase.mjs';
+import {
+    adaptForeignBlocks,
+    analyzeBotCompatibility,
+    registerCompatibilityBlocks,
+} from '../bot-extractor/bot-compatibility.mjs';
 import './free-bots.scss';
 
 interface BotData {
@@ -20,6 +26,20 @@ interface BotData {
 }
 
 const DEFAULT_FEATURES = ['Automated Trading', 'Risk Management', 'Profit Optimization'];
+
+const prepareFreeBotXml = (sourceXml: string, Blockly: any) => {
+    registerCompatibilityBlocks(Blockly);
+    const { xml: apolloNormalizedXml } = normalizeLegacyApolloPurchases(sourceXml);
+    const adapted = adaptForeignBlocks(apolloNormalizedXml);
+    if (adapted.rejectedAdapters.length) {
+        throw new Error(`Unsupported custom block shape: ${adapted.rejectedAdapters.join(', ')}`);
+    }
+    const compatibility = analyzeBotCompatibility(adapted.xml, Object.keys(Blockly.Blocks));
+    if (!compatibility.canLoadSafely) {
+        throw new Error(`Unsupported custom block(s): ${compatibility.unsupported.join(', ')}`);
+    }
+    return adapted.xml;
+};
 
 const FreeBots = observer(() => {
     const { dashboard, load_modal, app } = useStore();
@@ -224,14 +244,15 @@ const FreeBots = observer(() => {
             setActiveTab(DBOT_TABS.BOT_BUILDER);
             await new Promise(resolve => setTimeout(resolve, 250));
             await waitForWorkspace(40, 100);
-            await waitForBotBlocks(bot.xml);
+            const normalizedXml = prepareFreeBotXml(bot.xml, window.Blockly);
+            await waitForBotBlocks(normalizedXml);
             const tempId = `freebot_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             const result = await load_modal.loadStrategyToBuilder(
-                { id: tempId, xml: bot.xml, name: bot.name, save_type: 'pending' },
+                { id: tempId, xml: normalizedXml, name: bot.name, save_type: 'pending' },
                 true
             );
             if (result?.error) throw new Error(result.error);
-            await waitForImportedBot(bot.xml);
+            await waitForImportedBot(normalizedXml);
         } catch (error) {
             console.error(`Failed to import Free Bot ${bot.name}:`, error);
             setBotLoadError(`Could not launch ${bot.name}. Please return to Free Bots and try again.`);
