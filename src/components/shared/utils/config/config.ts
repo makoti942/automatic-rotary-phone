@@ -103,6 +103,10 @@ export const getSocketURL = async (): Promise<string> => {
         return wsUrl;
     } catch (error) {
         console.error('[DerivWS] Error in getSocketURL:', error);
+        // Do not retry a failing OTP request on every reconnect. The public
+        // socket still provides market data, ticks, and history; a fresh login
+        // resets this flag when authenticated trading is available again.
+        enablePublicSocketFallback();
         return getDefaultServerURL();
     }
 };
