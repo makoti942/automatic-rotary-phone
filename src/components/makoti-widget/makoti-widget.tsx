@@ -50,21 +50,31 @@ export const MakotiWidget: React.FC = () => {
     const [loggedIn, setLoggedIn] = useState(isLoggedIn());
     const [wsReady, setWsReady]   = useState(false);
     const [tabOpen, setTabOpen] = useState(false);
-    // Keep the desktop window compact: about 2 cm less breathing room above
-    // and below the content than the previous 620px default.
-    const [winSize, setWinSize] = useState({ w: 380, h: 470 });
+    // Keep the desktop window compact while giving phones a usable initial
+    // size. The mobile dimensions remain stateful so the resize handle works.
+    const [winSize, setWinSize] = useState(() => {
+        const mobile = window.innerWidth <= 600;
+        return mobile
+            ? {
+                  w: Math.min(260, Math.max(220, window.innerWidth - PAD * 2)),
+                  h: Math.min(300, Math.max(240, window.innerHeight - PAD * 2)),
+              }
+            : { w: 380, h: 470 };
+    });
     const resizing = useRef(false);
     const resizeStart = useRef({ x: 0, y: 0, w: 0, h: 0 });
     const tabDropRef = useRef<HTMLDivElement>(null);
     const tabBtnRef = useRef<HTMLButtonElement>(null);
     const [dropPos, setDropPos] = useState({ top: 0, left: 0, width: 0 });
     const isMobileViewport = window.innerWidth <= 600;
-    // Keep the original compact footprint on phones. The enlarged defaults are
-    // useful on desktop, but a fixed 380px width overflows most phone screens.
+    // Clamp the user-selected size to the current viewport, including after
+    // phone rotation or browser chrome changes.
     const renderedWinWidth = isMobileViewport
-        ? Math.min(260, Math.max(0, window.innerWidth - PAD * 2))
+        ? Math.min(Math.max(220, winSize.w), Math.max(220, window.innerWidth - PAD * 2))
         : winSize.w;
-    const renderedWinHeight = isMobileViewport ? Math.min(300, Math.max(0, window.innerHeight - PAD * 2)) : winSize.h;
+    const renderedWinHeight = isMobileViewport
+        ? Math.min(Math.max(240, winSize.h), Math.max(240, window.innerHeight - PAD * 2))
+        : winSize.h;
 
     useEffect(() => {
         const check = () => setLoggedIn(isLoggedIn());
@@ -304,11 +314,9 @@ export const MakotiWidget: React.FC = () => {
             if (!resizing.current) return;
             const dx = ev.clientX - resizeStart.current.x;
             const dy = ev.clientY - resizeStart.current.y;
-            const minWidth = isMobileViewport
-                ? Math.min(260, Math.max(0, window.innerWidth - PAD * 2))
-                : 320;
+            const minWidth = isMobileViewport ? 220 : 320;
             const newW = Math.max(minWidth, Math.min(window.innerWidth - 16, resizeStart.current.w + dx));
-            const newH = Math.max(300, Math.min(window.innerHeight - 60, resizeStart.current.h + dy));
+            const newH = Math.max(isMobileViewport ? 240 : 300, Math.min(window.innerHeight - 60, resizeStart.current.h + dy));
             setWinSize({ w: newW, h: newH });
         };
         const onUp = () => {
