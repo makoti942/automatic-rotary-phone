@@ -6,6 +6,7 @@ import { DBOT_TABS } from '@/constants/bot-contents';
 import { useStore } from '@/hooks/useStore';
 import { localize } from '@deriv-com/translations';
 import { getBotsManifest, prefetchAllXmlInBackground, fetchXmlWithCache } from '@/utils/freebots-cache';
+import { getCustomFreeBots } from '@/utils/custom-free-bots';
 import { normalizeLegacyApolloPurchases } from '../bot-extractor/legacy-apollo-purchase.mjs';
 import {
     adaptForeignBlocks,
@@ -333,6 +334,21 @@ const FreeBots = observer(() => {
                         console.warn(`Failed to load ${item.file}:`, err);
                     }
                 }
+
+                // Custom bots saved from Bot Extractor have their own
+                // persistent library and must survive clearing extracted bots.
+                const customBots = await getCustomFreeBots();
+                const savedBots: BotData[] = customBots.map(bot => ({
+                    name: bot.name,
+                    description: `Saved from Bot Extractor. Source: ${bot.source}`,
+                    difficulty: 'Custom',
+                    strategy: 'Imported XML',
+                    features: ['Saved on this device', 'Imported XML', 'Risk Management'],
+                    xml: bot.xml,
+                    badge_text: 'SAVED BOT',
+                    badge_class: 'saved',
+                }));
+                if (savedBots.length) setAvailableBots([...displayedBots, ...savedBots]);
             } catch (error) {
                 console.error('Error loading bots:', error);
                 setError('Failed to load bots. Please try again.');

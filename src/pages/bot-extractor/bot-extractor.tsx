@@ -5,6 +5,7 @@ import localForage from 'localforage';
 import { isBuiltInBot, isBuiltInBotName, isBuiltInBotSource } from './bot-classification';
 import { normalizeLegacyApolloPurchases } from './legacy-apollo-purchase.mjs';
 import { adaptForeignBlocks, analyzeBotCompatibility, registerCompatibilityBlocks } from './bot-compatibility.mjs';
+import { getCustomFreeBots, saveCustomFreeBot } from '@/utils/custom-free-bots';
 import './bot-extractor.scss';
 
 interface ExtractedBot {
@@ -536,6 +537,7 @@ const BotExtractor = () => {
     const [error, setError] = useState('');
     const [progress, setProgress] = useState('');
     const [loadedBots, setLoadedBots] = useState<Set<string>>(new Set());
+    const [savedFreeBotIds, setSavedFreeBotIds] = useState<Set<string>>(new Set());
     const [scanLog, setScanLog] = useState<string[]>([]);
     const [isBotDrawerOpen, setIsBotDrawerOpen] = useState(false);
     const [botSearch, setBotSearch] = useState('');
@@ -570,6 +572,10 @@ const BotExtractor = () => {
         if (!isLibraryHydrated) return;
         localForage.setItem(EXTRACTED_BOTS_DB_KEY, extractedBots).catch(() => {});
     }, [extractedBots, isLibraryHydrated]);
+
+    useEffect(() => {
+        getCustomFreeBots().then(saved => setSavedFreeBotIds(new Set(saved.map(bot => bot.id))));
+    }, []);
 
     const addLog = useCallback((msg: string) => {
         setScanLog(prev => [...prev, msg]);
@@ -1307,6 +1313,24 @@ const BotExtractor = () => {
         URL.revokeObjectURL(downloadUrl);
     }, []);
 
+    const saveBotToFreeBots = useCallback(async (bot: ExtractedBot) => {
+        if (!bot.xml || bot.catalogOnly) {
+            setError(`${bot.name} cannot be saved because its XML is not publicly available.`);
+            return;
+        }
+        try {
+            const xml = decodeMarkup(bot.xml).trim();
+            if (!isValidDerivBot(xml)) throw new Error('The extracted XML is incomplete or invalid.');
+            const id = `extracted:${bot.source}:${bot.name}`;
+            await saveCustomFreeBot({ id, name: bot.name, xml, source: bot.source, size: xml.length });
+            setSavedFreeBotIds(prev => new Set(prev).add(id));
+            setError(`${bot.name} was saved to Free Bots and will remain there if you clear Extracted Bots.`);
+            addLog(`Saved ${bot.name} to the persistent Free Bots list.`);
+        } catch (err: any) {
+            setError(`Could not save ${bot.name} to Free Bots: ${err.message}`);
+        }
+    }, [addLog]);
+
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter' && !isExtracting) extractBots();
     }, [extractBots, isExtracting]);
@@ -1565,6 +1589,14 @@ const BotExtractor = () => {
                                     <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button' disabled={bot.catalogOnly}>
                                         {bot.catalogOnly ? 'XML not public' : 'Download XML'}
                                     </button>
+                                    <button
+                                        className={`bot-extractor__btn bot-extractor__btn--save ${savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`) ? 'bot-extractor__btn--saved' : ''}`}
+                                        onClick={() => saveBotToFreeBots(bot)}
+                                        type='button'
+                                        disabled={bot.catalogOnly || savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`)}
+                                    >
+                                        {bot.catalogOnly ? 'XML not public' : savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`) ? 'Saved to Free Bots ✓' : 'Save to Free Bots'}
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -1622,6 +1654,14 @@ const BotExtractor = () => {
                                         </button>
                                         <button className='bot-extractor__btn bot-extractor__btn--download' onClick={() => downloadBot(bot)} type='button' disabled={bot.catalogOnly}>
                                             {bot.catalogOnly ? 'XML not public' : 'Download XML'}
+                                        </button>
+                                        <button
+                                            className={`bot-extractor__btn bot-extractor__btn--save ${savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`) ? 'bot-extractor__btn--saved' : ''}`}
+                                            onClick={() => saveBotToFreeBots(bot)}
+                                            type='button'
+                                            disabled={bot.catalogOnly || savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`)}
+                                        >
+                                            {bot.catalogOnly ? 'XML not public' : savedFreeBotIds.has(`extracted:${bot.source}:${bot.name}`) ? 'Saved to Free Bots ✓' : 'Save to Free Bots'}
                                         </button>
                                     </div>
                                 </div>
