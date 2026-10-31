@@ -145,16 +145,12 @@ export const MasterEntry: React.FC = () => {
 
     const localSettle = useCallback((trade: OpenTrade, exitEpoch: number, exitQuote: number) => {
         if (trade.locallySettled || exitEpoch <= trade.entryEpoch) return;
-        if (trade.entryQuoteSource !== 'deriv') {
-            addLog(`LOCAL RESULT HELD · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · waiting for Deriv entry spot before deciding win/loss`);
-            return;
-        }
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
         lastLocalOutcomeRef.current = trade.localOutcome;
         if (localWatchRef.current[trade.symbol]?.contractId === trade.contractId) delete localWatchRef.current[trade.symbol];
-        addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · exit tick ${exitEpoch}`);
+        addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · ${trade.entryQuoteSource === 'deriv' ? 'verified' : 'entry-tick fallback'} · exit tick ${exitEpoch}`);
 
         if (won) {
             // Local ticks only decide recovery timing. The contract remains
@@ -335,14 +331,14 @@ export const MasterEntry: React.FC = () => {
             }
         }));
 
+        const usableCandidates: Candidate[] = [];
         results.forEach(({ symbol, prices }) => {
             pricesRef.current[symbol] = prices;
             if (prices.length < HISTORY_COUNT) return;
             const { risePct, fallPct } = calculateTrend(prices);
-            if (risePct < 55 && fallPct < 55) return;
             const direction: Direction = risePct >= 55 ? 'rise' : 'fall';
             const macd = macdSnapshot(prices);
-            candidatesRef.current[symbol] = {
+            usableCandidates.push({
                 symbol,
                 direction,
                 risePct,
@@ -352,7 +348,16 @@ export const MasterEntry: React.FC = () => {
                 lastSignal: macd?.currentSignal || 0,
                 lastHistogram: macd?.histogram || 0,
                 status: 'qualified',
-            };
+            });
+        });
+        const strictCandidates = usableCandidates.filter(candidate => candidate.risePct >= 55 || candidate.fallPct >= 55);
+        const selectedCandidates = strictCandidates.length
+            ? strictCandidates
+            : usableCandidates
+                .sort((left, right) => Math.max(right.risePct, right.fallPct) - Math.max(left.risePct, left.fallPct))
+                .slice(0, 1);
+        selectedCandidates.forEach(candidate => {
+            candidatesRef.current[candidate.symbol] = candidate;
         });
         publishCandidates();
         symbols.forEach(symbol => {
@@ -361,9 +366,15 @@ export const MasterEntry: React.FC = () => {
             }
         });
         const count = Object.keys(candidatesRef.current).length;
-        addLog(count ? `${count} volatility candidate${count === 1 ? '' : 's'} qualified at 55%+ · waiting for MACD entry` : 'NO VOLATILITY QUALIFIED · waiting for next run');
-        setPhase(count ? 'waiting' : 'stopped');
-        if (!count) setRunning(false);
+        if (strictCandidates.length) {
+            addLog(`${count} volatility candidate${count === 1 ? '' : 's'} qualified at 55%+ · waiting for MACD entry`);
+        } else if (selectedCandidates.length) {
+            const fallback = selectedCandidates[0];
+            addLog(`STRICT FILTER EMPTY · using nearest volatility ${SYMBOL_LABELS[fallback.symbol] || fallback.symbol} · ${Math.max(fallback.risePct, fallback.fallPct).toFixed(1)}% directional movement`);
+        } else {
+            addLog('TICK HISTORY UNAVAILABLE · continuing to monitor all volatilities for the nearest usable candidate');
+        }
+        setPhase('waiting');
     }, [addLog, publishCandidates, setLock]);
     initializeRef.current = initialize;
 
@@ -398,12 +409,12 @@ export const MasterEntry: React.FC = () => {
                     const pendingRecovery = pendingRecoveryRef.current;
                     if (pendingRecovery
                         && pendingRecovery.symbol === symbol
-                        && epoch > pendingRecovery.afterEpoch
+                        && epoch >= pendingRecovery.afterEpoch
                         && !openTradeRef.current
                         && !buyInFlightRef.current
                         && lockedSymbolRef.current === symbol) {
                         pendingRecoveryRef.current = null;
-                        addLog(`NEXT-TICK RECOVERY · ${SYMBOL_LABELS[symbol] || symbol} · ${pendingRecovery.direction.toUpperCase()} · stake $${pendingRecovery.stake.toFixed(2)}`);
+                        addLog(`IMMEDIATE RECOVERY · ${SYMBOL_LABELS[symbol] || symbol} · ${pendingRecovery.direction.toUpperCase()} · stake $${pendingRecovery.stake.toFixed(2)} · entry uses loss exit tick`);
                         void buy(symbol, pendingRecovery.direction, pendingRecovery.stake, epoch, quote);
                     }
                     const oldPrices = pricesRef.current[symbol] || [];
