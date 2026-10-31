@@ -25,6 +25,7 @@ type OpenTrade = {
     entryEpoch: number;
     entryQuote: number;
     contractId: string;
+    entryQuoteSource?: 'deriv' | 'tick-fallback';
     locallySettled?: boolean;
     localOutcome?: 'win' | 'loss';
     officialSettled?: boolean;
@@ -123,6 +124,7 @@ export const MasterEntry: React.FC = () => {
     const initializeRef = useRef<(() => void | Promise<void>) | null>(null);
     const buyInFlightRef = useRef(false);
     const processedTicksRef = useRef<Record<string, Set<string>>>({});
+    const lastTickEpochRef = useRef<Record<string, number>>({});
     const logsRef = useRef<string[]>([]);
 
     const addLog = useCallback((message: string) => {
@@ -143,6 +145,10 @@ export const MasterEntry: React.FC = () => {
 
     const localSettle = useCallback((trade: OpenTrade, exitEpoch: number, exitQuote: number) => {
         if (trade.locallySettled || exitEpoch <= trade.entryEpoch) return;
+        if (trade.entryQuoteSource !== 'deriv') {
+            addLog(`LOCAL RESULT HELD · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · waiting for Deriv entry spot before deciding win/loss`);
+            return;
+        }
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
@@ -220,11 +226,29 @@ export const MasterEntry: React.FC = () => {
             });
             const contractId = response?.buy?.contract_id ?? response?.contract_id;
             if (!contractId) throw new Error('Deriv did not return a contract id');
-            const trade: OpenTrade = { symbol, direction, stake: amount, entryEpoch, entryQuote, contractId: String(contractId) };
+            const derivEntryQuote = quoteNumber(response?.buy?.entry_tick ?? response?.buy?.entry_spot);
+            const derivEntryEpoch = Number(response?.buy?.entry_tick_time ?? response?.buy?.entry_time);
+            const trade: OpenTrade = {
+                symbol,
+                direction,
+                stake: amount,
+                entryEpoch: Number.isFinite(derivEntryEpoch) ? derivEntryEpoch : entryEpoch,
+                entryQuote: derivEntryQuote ?? entryQuote,
+                contractId: String(contractId),
+                entryQuoteSource: derivEntryQuote == null ? 'tick-fallback' : 'deriv',
+            };
             openTradeRef.current = trade;
             // This watch is independent from official settlement ordering.
             // It remains available until the next full quote is evaluated.
             localWatchRef.current[symbol] = trade;
+            if (derivEntryQuote == null) {
+                addLog(`ENTRY SPOT PENDING · ${SYMBOL_LABELS[symbol] || symbol} · using request tick until Deriv reports the actual entry`);
+            } else {
+                addLog(`ENTRY SPOT CONFIRMED · ${SYMBOL_LABELS[symbol] || symbol} · ${derivEntryQuote}`);
+            }
+            if (window._newSystemWS?.readyState === WebSocket.OPEN) {
+                window._newSystemWS.send(JSON.stringify({ proposal_open_contract: 1, contract_id: String(contractId), subscribe: 1 }));
+            }
             try {
                 transactions.onBotContractEvent({
                     contract_id: contractId,
@@ -292,6 +316,7 @@ export const MasterEntry: React.FC = () => {
         pricesRef.current = {};
         candidatesRef.current = {};
         processedTicksRef.current = {};
+        lastTickEpochRef.current = {};
         pendingRecoveryRef.current = null;
         awaitingLocalResultRef.current = null;
         localWatchRef.current = {};
@@ -353,6 +378,9 @@ export const MasterEntry: React.FC = () => {
                     const epoch = Number(data.tick.epoch);
                     const quote = quoteNumber(data.tick.quote);
                     if (!Number.isFinite(epoch) || quote == null) return;
+                    const previousEpoch = lastTickEpochRef.current[symbol];
+                    if (previousEpoch != null && epoch <= previousEpoch) return;
+                    lastTickEpochRef.current[symbol] = epoch;
                     const key = `${epoch}|${quote}|${data.tick.id || ''}`;
                     const keys = processedTicksRef.current[symbol] || new Set<string>();
                     if (keys.has(key)) return;
@@ -387,15 +415,25 @@ export const MasterEntry: React.FC = () => {
                     // wins must both wait for the next fresh tick.
                     if (!settledLocallyThisTick) evaluateEntry(symbol, prices, epoch, quote);
                 }
-                if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract?.is_sold) {
-                    const contractId = String(data.proposal_open_contract.contract_id);
+                if (data.msg_type === 'proposal_open_contract') {
+                    const poc = data.proposal_open_contract;
+                    if (!poc?.contract_id) return;
+                    const contractId = String(poc.contract_id);
                     const pendingTrade = pendingSettlementsRef.current.get(contractId);
                     const currentTrade = openTradeRef.current?.contractId === contractId ? openTradeRef.current : null;
                     const trade = pendingTrade || currentTrade;
                     if (!trade) return;
+                    const actualEntryQuote = quoteNumber(poc.entry_tick ?? poc.entry_spot ?? poc.start_spot);
+                    const actualEntryEpoch = Number(poc.entry_tick_time ?? poc.entry_time ?? poc.start_time);
+                    if (actualEntryQuote != null) {
+                        trade.entryQuote = actualEntryQuote;
+                        trade.entryQuoteSource = 'deriv';
+                    }
+                    if (Number.isFinite(actualEntryEpoch)) trade.entryEpoch = actualEntryEpoch;
+                    if (!poc.is_sold) return;
                     pendingSettlementsRef.current.delete(contractId);
                     if (currentTrade) openTradeRef.current = null;
-                    const profit = Number(data.proposal_open_contract.profit) || 0;
+                    const profit = Number(poc.profit) || 0;
                     setSessionProfit(value => value + profit);
                     const localOutcome = trade.localOutcome;
                     // With Every-tick recovery, the local next-tick result is
