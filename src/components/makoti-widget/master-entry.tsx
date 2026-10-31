@@ -350,11 +350,13 @@ export const MasterEntry: React.FC = () => {
                     keys.add(key);
                     if (keys.size > 250) keys.delete(keys.values().next().value as string);
                     processedTicksRef.current[symbol] = keys;
+                    let settledLocallyThisTick = false;
                     const watchedTrade = localWatchRef.current[symbol];
                     if (watchedTrade && !watchedTrade.locallySettled && epoch > watchedTrade.entryEpoch && everyTickRef.current) {
                         awaitingLocalResultRef.current = null;
                         addLog(`LOCAL RESULT CHECK · ${SYMBOL_LABELS[symbol] || symbol} · entry ${watchedTrade.entryQuote} → next full quote ${quote}`);
                         localSettle(watchedTrade, epoch, quote);
+                        settledLocallyThisTick = true;
                     }
                     const pendingRecovery = pendingRecoveryRef.current;
                     if (pendingRecovery
@@ -370,7 +372,11 @@ export const MasterEntry: React.FC = () => {
                     const oldPrices = pricesRef.current[symbol] || [];
                     const prices = [...oldPrices, quote].slice(-HISTORY_COUNT);
                     pricesRef.current[symbol] = prices;
-                    evaluateEntry(symbol, prices, epoch, quote);
+                    // Consume the settlement tick. A local win can unlock the
+                    // symbol synchronously, so evaluating here would open a
+                    // new unrelated contract on the same tick. Losses and
+                    // wins must both wait for the next fresh tick.
+                    if (!settledLocallyThisTick) evaluateEntry(symbol, prices, epoch, quote);
                 }
                 if (data.msg_type === 'proposal_open_contract' && data.proposal_open_contract?.is_sold) {
                     const contractId = String(data.proposal_open_contract.contract_id);
