@@ -26,6 +26,8 @@ type OpenTrade = {
     entryQuote: number;
     contractId: string;
     locallySettled?: boolean;
+    localOutcome?: 'win' | 'loss';
+    officialSettled?: boolean;
 };
 
 type PendingRecovery = {
@@ -113,6 +115,10 @@ export const MasterEntry: React.FC = () => {
     const pendingSettlementsRef = useRef<Map<string, OpenTrade>>(new Map());
     const unlockAfterSettlementsRef = useRef(false);
     const pendingRecoveryRef = useRef<PendingRecovery | null>(null);
+    const awaitingLocalResultRef = useRef<OpenTrade | null>(null);
+    const localWinCountRef = useRef(0);
+    const rescanRequestedRef = useRef(false);
+    const initializeRef = useRef<(() => void | Promise<void>) | null>(null);
     const buyInFlightRef = useRef(false);
     const processedTicksRef = useRef<Record<string, Set<string>>>({});
     const logsRef = useRef<string[]>([]);
@@ -137,6 +143,7 @@ export const MasterEntry: React.FC = () => {
         if (trade.locallySettled || exitEpoch <= trade.entryEpoch) return;
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
+        trade.localOutcome = won ? 'win' : 'loss';
         addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · exit tick ${exitEpoch}`);
 
         if (won) {
@@ -144,13 +151,31 @@ export const MasterEntry: React.FC = () => {
             // active until Deriv sends its final, authoritative profit.
             currentStakeRef.current = stakeRef.current;
             setCurrentStake(currentStakeRef.current);
-            addLog(`LOCAL WIN · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked until official settlement`);
+            localWinCountRef.current += 1;
+            if (localWinCountRef.current >= 5) {
+                localWinCountRef.current = 0;
+                rescanRequestedRef.current = true;
+                addLog('FIVE LOCAL WINS · qualification rescan queued after active settlements complete');
+            }
+            if (trade.officialSettled && !pendingSettlementsRef.current.size && lockedSymbolRef.current === trade.symbol) {
+                const candidate = candidatesRef.current[trade.symbol];
+                if (candidate) {
+                    candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
+                    publishCandidates();
+                }
+                setLock(null);
+                const shouldRescan = rescanRequestedRef.current;
+                rescanRequestedRef.current = false;
+                addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
+                if (shouldRescan) setTimeout(() => initializeRef.current?.(), 0);
+            }
+            if (!trade.officialSettled) addLog(`LOCAL WIN · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked until official settlement`);
             return;
         }
 
         // Keep the losing contract so its later official result is accounted
         // for once, even after the next recovery buy is sent.
-        pendingSettlementsRef.current.set(trade.contractId, trade);
+        if (!trade.officialSettled) pendingSettlementsRef.current.set(trade.contractId, trade);
         openTradeRef.current = null;
         currentStakeRef.current = Math.max(MIN_STAKE, Math.ceil(trade.stake * martingaleRef.current * 100) / 100);
         setCurrentStake(currentStakeRef.current);
@@ -215,7 +240,7 @@ export const MasterEntry: React.FC = () => {
     }, [addLog, setLock, transactions]);
 
     const evaluateEntry = useCallback((symbol: string, prices: number[], epoch: number, quote: number) => {
-        if (!runningRef.current || (lockedSymbolRef.current && lockedSymbolRef.current !== symbol) || openTradeRef.current || buyInFlightRef.current) return;
+        if (!runningRef.current || lockedSymbolRef.current || openTradeRef.current || buyInFlightRef.current) return;
         const candidate = candidatesRef.current[symbol];
         if (!candidate) return;
         const state = macdSnapshot(prices);
@@ -248,6 +273,7 @@ export const MasterEntry: React.FC = () => {
         candidatesRef.current = {};
         processedTicksRef.current = {};
         pendingRecoveryRef.current = null;
+        awaitingLocalResultRef.current = null;
         setCandidates([]);
         setLock(null);
         setPhase('scanning');
@@ -293,6 +319,7 @@ export const MasterEntry: React.FC = () => {
         setPhase(count ? 'waiting' : 'stopped');
         if (!count) setRunning(false);
     }, [addLog, publishCandidates, setLock]);
+    initializeRef.current = initialize;
 
     useEffect(() => {
         if (!running) return;
@@ -314,6 +341,11 @@ export const MasterEntry: React.FC = () => {
                     const priorTrade = openTradeRef.current;
                     if (priorTrade?.symbol === symbol && epoch > priorTrade.entryEpoch && everyTickRef.current) {
                         localSettle(priorTrade, epoch, quote);
+                    }
+                    const awaitingLocalResult = awaitingLocalResultRef.current;
+                    if (awaitingLocalResult?.symbol === symbol && epoch > awaitingLocalResult.entryEpoch && everyTickRef.current) {
+                        awaitingLocalResultRef.current = null;
+                        localSettle(awaitingLocalResult, epoch, quote);
                     }
                     const pendingRecovery = pendingRecoveryRef.current;
                     if (pendingRecovery
@@ -341,6 +373,40 @@ export const MasterEntry: React.FC = () => {
                     if (currentTrade) openTradeRef.current = null;
                     const profit = Number(data.proposal_open_contract.profit) || 0;
                     setSessionProfit(value => value + profit);
+                    const localOutcome = trade.localOutcome;
+                    // With Every-tick recovery, the local next-tick result is
+                    // authoritative for the recovery sequence. Official
+                    // messages update money only and must not overwrite the
+                    // locked volatility's stake or direction.
+                    if (!localOutcome && everyTickRef.current) {
+                        trade.officialSettled = true;
+                        awaitingLocalResultRef.current = trade;
+                        addLog(`OFFICIAL SETTLEMENT RECEIVED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · waiting for the next full quote to calculate the local result`);
+                        return;
+                    }
+                    if (localOutcome) {
+                        if (localOutcome === 'win') unlockAfterSettlementsRef.current = true;
+                        const hasPendingContracts = pendingSettlementsRef.current.size > 0;
+                        if (unlockAfterSettlementsRef.current && !openTradeRef.current && !hasPendingContracts && lockedSymbolRef.current === trade.symbol) {
+                            const candidate = candidatesRef.current[trade.symbol];
+                            if (candidate) {
+                                candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
+                                publishCandidates();
+                            }
+                            setLock(null);
+                            const shouldRescan = rescanRequestedRef.current;
+                            unlockAfterSettlementsRef.current = false;
+                            addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
+                            if (shouldRescan) {
+                                rescanRequestedRef.current = false;
+                                addLog('RESCANNING ALL VOLATILITIES AFTER FIVE LOCAL WINS');
+                                setTimeout(() => initializeRef.current?.(), 0);
+                            }
+                        } else {
+                            addLog(`OFFICIAL SETTLEMENT RECORDED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${profit >= 0 ? 'WIN' : 'LOSS'} · recovery state unchanged`);
+                        }
+                        return;
+                    }
                     if (profit >= 0) {
                         pendingRecoveryRef.current = null;
                         currentStakeRef.current = stakeRef.current;
@@ -348,8 +414,7 @@ export const MasterEntry: React.FC = () => {
                         unlockAfterSettlementsRef.current = true;
                         // A different volatility must never start while the
                         // locked volatility still has an active recovery buy.
-                        const hasPendingForSymbol = Array.from(pendingSettlementsRef.current.values()).some(item => item.symbol === trade.symbol);
-                        if (!openTradeRef.current && !hasPendingForSymbol && lockedSymbolRef.current === trade.symbol) {
+                        if (!openTradeRef.current && pendingSettlementsRef.current.size === 0 && lockedSymbolRef.current === trade.symbol) {
                             const candidate = candidatesRef.current[trade.symbol];
                             if (candidate) {
                                 candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
@@ -370,8 +435,7 @@ export const MasterEntry: React.FC = () => {
                             stake: currentStakeRef.current,
                             afterEpoch: trade.entryEpoch,
                         };
-                        const hasPendingForSymbol = Array.from(pendingSettlementsRef.current.values()).some(item => item.symbol === trade.symbol);
-                        if (unlockAfterSettlementsRef.current && !openTradeRef.current && !hasPendingForSymbol && lockedSymbolRef.current === trade.symbol) {
+                        if (unlockAfterSettlementsRef.current && !openTradeRef.current && pendingSettlementsRef.current.size === 0 && lockedSymbolRef.current === trade.symbol) {
                             const candidate = candidatesRef.current[trade.symbol];
                             if (candidate) {
                                 candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
@@ -418,6 +482,9 @@ export const MasterEntry: React.FC = () => {
         pendingSettlementsRef.current.clear();
         unlockAfterSettlementsRef.current = false;
         pendingRecoveryRef.current = null;
+        awaitingLocalResultRef.current = null;
+        localWinCountRef.current = 0;
+        rescanRequestedRef.current = false;
         buyInFlightRef.current = false;
         setRunning(false);
         setLock(null);
