@@ -28,6 +28,13 @@ type OpenTrade = {
     locallySettled?: boolean;
 };
 
+type PendingRecovery = {
+    symbol: string;
+    direction: Direction;
+    stake: number;
+    afterEpoch: number;
+};
+
 const HISTORY_COUNT = 100;
 const MIN_STAKE = 0.35;
 const MIN_MACD_PRICES = 40;
@@ -105,6 +112,7 @@ export const MasterEntry: React.FC = () => {
     const openTradeRef = useRef<OpenTrade | null>(null);
     const pendingSettlementsRef = useRef<Map<string, OpenTrade>>(new Map());
     const unlockAfterSettlementsRef = useRef(false);
+    const pendingRecoveryRef = useRef<PendingRecovery | null>(null);
     const buyInFlightRef = useRef(false);
     const processedTicksRef = useRef<Record<string, Set<string>>>({});
     const logsRef = useRef<string[]>([]);
@@ -149,9 +157,12 @@ export const MasterEntry: React.FC = () => {
         setPhase('locked');
         addLog(`LOCAL LOSS · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked · next stake $${currentStakeRef.current.toFixed(2)}`);
 
-        if (everyTickRef.current) {
-            void buy(trade.symbol, trade.direction, currentStakeRef.current, exitEpoch, exitQuote);
-        }
+        if (everyTickRef.current) pendingRecoveryRef.current = {
+            symbol: trade.symbol,
+            direction: trade.direction,
+            stake: currentStakeRef.current,
+            afterEpoch: exitEpoch,
+        };
     }, [addLog, publishCandidates, setLock]);
 
     const buy = useCallback(async (symbol: string, direction: Direction, amount: number, entryEpoch: number, entryQuote: number) => {
@@ -192,7 +203,12 @@ export const MasterEntry: React.FC = () => {
             } catch {}
         } catch (error: any) {
             addLog(`BUY ERROR · ${error?.error?.message || error?.message || 'request failed'}`);
-            setLock(null);
+            if (everyTickRef.current && runningRef.current && lockedSymbolRef.current === symbol) {
+                pendingRecoveryRef.current = { symbol, direction, stake: amount, afterEpoch: entryEpoch };
+                setPhase('locked');
+            } else {
+                setLock(null);
+            }
         } finally {
             buyInFlightRef.current = false;
         }
@@ -231,6 +247,7 @@ export const MasterEntry: React.FC = () => {
         pricesRef.current = {};
         candidatesRef.current = {};
         processedTicksRef.current = {};
+        pendingRecoveryRef.current = null;
         setCandidates([]);
         setLock(null);
         setPhase('scanning');
@@ -298,6 +315,17 @@ export const MasterEntry: React.FC = () => {
                     if (priorTrade?.symbol === symbol && epoch > priorTrade.entryEpoch && everyTickRef.current) {
                         localSettle(priorTrade, epoch, quote);
                     }
+                    const pendingRecovery = pendingRecoveryRef.current;
+                    if (pendingRecovery
+                        && pendingRecovery.symbol === symbol
+                        && epoch > pendingRecovery.afterEpoch
+                        && !openTradeRef.current
+                        && !buyInFlightRef.current
+                        && lockedSymbolRef.current === symbol) {
+                        pendingRecoveryRef.current = null;
+                        addLog(`NEXT-TICK RECOVERY · ${SYMBOL_LABELS[symbol] || symbol} · ${pendingRecovery.direction.toUpperCase()} · stake $${pendingRecovery.stake.toFixed(2)}`);
+                        void buy(symbol, pendingRecovery.direction, pendingRecovery.stake, epoch, quote);
+                    }
                     const oldPrices = pricesRef.current[symbol] || [];
                     const prices = [...oldPrices, quote].slice(-HISTORY_COUNT);
                     pricesRef.current[symbol] = prices;
@@ -314,6 +342,7 @@ export const MasterEntry: React.FC = () => {
                     const profit = Number(data.proposal_open_contract.profit) || 0;
                     setSessionProfit(value => value + profit);
                     if (profit >= 0) {
+                        pendingRecoveryRef.current = null;
                         currentStakeRef.current = stakeRef.current;
                         setCurrentStake(currentStakeRef.current);
                         unlockAfterSettlementsRef.current = true;
@@ -335,6 +364,12 @@ export const MasterEntry: React.FC = () => {
                     } else {
                         currentStakeRef.current = Math.max(MIN_STAKE, Math.ceil(trade.stake * martingaleRef.current * 100) / 100);
                         setCurrentStake(currentStakeRef.current);
+                        if (everyTickRef.current && !openTradeRef.current) pendingRecoveryRef.current = {
+                            symbol: trade.symbol,
+                            direction: trade.direction,
+                            stake: currentStakeRef.current,
+                            afterEpoch: trade.entryEpoch,
+                        };
                         const hasPendingForSymbol = Array.from(pendingSettlementsRef.current.values()).some(item => item.symbol === trade.symbol);
                         if (unlockAfterSettlementsRef.current && !openTradeRef.current && !hasPendingForSymbol && lockedSymbolRef.current === trade.symbol) {
                             const candidate = candidatesRef.current[trade.symbol];
@@ -382,6 +417,7 @@ export const MasterEntry: React.FC = () => {
         openTradeRef.current = null;
         pendingSettlementsRef.current.clear();
         unlockAfterSettlementsRef.current = false;
+        pendingRecoveryRef.current = null;
         buyInFlightRef.current = false;
         setRunning(false);
         setLock(null);
