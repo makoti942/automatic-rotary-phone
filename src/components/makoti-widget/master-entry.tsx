@@ -153,8 +153,12 @@ export const MasterEntry: React.FC = () => {
         addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · ${trade.entryQuoteSource === 'deriv' ? 'verified' : 'post-buy tick'} · exit tick ${exitEpoch}`);
 
         if (won) {
-            // Local ticks only decide recovery timing. The contract remains
-            // active until Deriv sends its final, authoritative profit.
+            // A verified local win is enough to release the strategy for the
+            // next MACD crossing. Keep the contract in the pending map so the
+            // later Deriv settlement can update accounting, but never let a
+            // delayed settlement freeze new signal evaluation.
+            if (!trade.officialSettled) pendingSettlementsRef.current.set(trade.contractId, trade);
+            if (openTradeRef.current?.contractId === trade.contractId) openTradeRef.current = null;
             currentStakeRef.current = stakeRef.current;
             setCurrentStake(currentStakeRef.current);
             localWinCountRef.current += 1;
@@ -163,7 +167,7 @@ export const MasterEntry: React.FC = () => {
                 rescanRequestedRef.current = true;
                 addLog('FIVE LOCAL WINS · qualification rescan queued after active settlements complete');
             }
-            if (trade.officialSettled && !pendingSettlementsRef.current.size && lockedSymbolRef.current === trade.symbol) {
+            if (lockedSymbolRef.current === trade.symbol) {
                 const candidate = candidatesRef.current[trade.symbol];
                 if (candidate) {
                     candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
@@ -175,7 +179,6 @@ export const MasterEntry: React.FC = () => {
                 addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
                 if (shouldRescan) setTimeout(() => initializeRef.current?.(), 0);
             }
-            if (!trade.officialSettled) addLog(`LOCAL WIN · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked until official settlement`);
             return;
         }
 
@@ -283,7 +286,7 @@ export const MasterEntry: React.FC = () => {
         if (!runningRef.current
             || lockedSymbolRef.current
             || pendingRecoveryRef.current
-            || pendingSettlementsRef.current.size > 0
+            || Array.from(pendingSettlementsRef.current.values()).some(trade => trade.localOutcome !== 'win')
             || openTradeRef.current
             || buyInFlightRef.current) return;
         const candidate = candidatesRef.current[symbol];
