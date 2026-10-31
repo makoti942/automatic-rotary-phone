@@ -119,6 +119,7 @@ export const MasterEntry: React.FC = () => {
     const awaitingLocalResultRef = useRef<OpenTrade | null>(null);
     const localWinCountRef = useRef(0);
     const rescanRequestedRef = useRef(false);
+    const lastLocalOutcomeRef = useRef<'win' | 'loss' | null>(null);
     const initializeRef = useRef<(() => void | Promise<void>) | null>(null);
     const buyInFlightRef = useRef(false);
     const processedTicksRef = useRef<Record<string, Set<string>>>({});
@@ -145,6 +146,7 @@ export const MasterEntry: React.FC = () => {
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
+        lastLocalOutcomeRef.current = trade.localOutcome;
         if (localWatchRef.current[trade.symbol]?.contractId === trade.contractId) delete localWatchRef.current[trade.symbol];
         addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · exit tick ${exitEpoch}`);
 
@@ -175,6 +177,9 @@ export const MasterEntry: React.FC = () => {
             return;
         }
 
+        // A loss always cancels a previously queued qualification rescan.
+        // Recovery must finish with a win before a new qualification scan.
+        rescanRequestedRef.current = false;
         // Keep the losing contract so its later official result is accounted
         // for once, even after the next recovery buy is sent.
         if (!trade.officialSettled) pendingSettlementsRef.current.set(trade.contractId, trade);
@@ -398,8 +403,9 @@ export const MasterEntry: React.FC = () => {
                                 publishCandidates();
                             }
                             setLock(null);
-                            const shouldRescan = rescanRequestedRef.current;
+                            const shouldRescan = rescanRequestedRef.current && localOutcome === 'win' && lastLocalOutcomeRef.current === 'win';
                             unlockAfterSettlementsRef.current = false;
+                            if (!shouldRescan) rescanRequestedRef.current = false;
                             addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
                             if (shouldRescan) {
                                 rescanRequestedRef.current = false;
@@ -490,6 +496,7 @@ export const MasterEntry: React.FC = () => {
         awaitingLocalResultRef.current = null;
         localWinCountRef.current = 0;
         rescanRequestedRef.current = false;
+        lastLocalOutcomeRef.current = null;
         buyInFlightRef.current = false;
         setRunning(false);
         setLock(null);
