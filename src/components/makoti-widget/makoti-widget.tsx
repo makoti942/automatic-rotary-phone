@@ -12,12 +12,13 @@ import { DigitHunter } from './digit-hunter';
 import { EvenOddKiller } from './even-odd-killer';
 import { UnderEvenOddAuto } from './under-even-odd-auto';
 import { TradeSignal } from './trade-signal';
+import { MasterEntry } from './master-entry';
 import { ALL_SYMBOLS } from './makoti-ws';
 import './makoti-widget.scss';
 
-type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer' | 'digit_hunter' | 'even_odd' | 'under_even_odd_auto' | 'trade_signal';
+type Tab = 'scanner' | 'market_killer' | 'over_under' | 'high_low' | 'under_under_market' | 'differs_auto' | 'ai_analyst' | 'multi_killer' | 'digit_hunter' | 'even_odd' | 'under_even_odd_auto' | 'trade_signal' | 'master_entry';
 const PAD = 8;
-const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer', 'digit_hunter', 'even_odd', 'under_even_odd_auto', 'trade_signal'];
+const TRADING_TABS: Tab[] = ['market_killer', 'over_under', 'high_low', 'under_under_market', 'differs_auto', 'ai_analyst', 'multi_killer', 'digit_hunter', 'even_odd', 'under_even_odd_auto', 'trade_signal', 'master_entry'];
 
 const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'scanner', label: 'Scanner' },
@@ -32,6 +33,7 @@ const TAB_OPTIONS: { value: Tab; label: string }[] = [
     { value: 'even_odd', label: 'EVEN & ODD' },
     { value: 'under_even_odd_auto', label: 'UNDER → EVEN/ODD AUTO' },
     { value: 'trade_signal', label: 'Trade Signal' },
+    { value: 'master_entry', label: 'MASTER ENTRY' },
 ];
 
 function isLoggedIn(): boolean {
@@ -457,6 +459,7 @@ export const MakotiWidget: React.FC = () => {
                     {tab === 'even_odd' && <EvenOddKiller />}
                     {tab === 'under_even_odd_auto' && <UnderEvenOddAuto />}
                     {tab === 'trade_signal' && <TradeSignal />}
+                    {tab === 'master_entry' && <MasterEntry />}
                 </div>
 
                 <div className='mw-resize-handle' onPointerDown={onResizePointerDown}>
