@@ -112,6 +112,7 @@ export const MasterEntry: React.FC = () => {
     const candidatesRef = useRef<Record<string, Candidate>>({});
     const lockedSymbolRef = useRef<string | null>(null);
     const openTradeRef = useRef<OpenTrade | null>(null);
+    const localWatchRef = useRef<Record<string, OpenTrade>>({});
     const pendingSettlementsRef = useRef<Map<string, OpenTrade>>(new Map());
     const unlockAfterSettlementsRef = useRef(false);
     const pendingRecoveryRef = useRef<PendingRecovery | null>(null);
@@ -144,6 +145,7 @@ export const MasterEntry: React.FC = () => {
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
+        if (localWatchRef.current[trade.symbol]?.contractId === trade.contractId) delete localWatchRef.current[trade.symbol];
         addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · exit tick ${exitEpoch}`);
 
         if (won) {
@@ -212,7 +214,11 @@ export const MasterEntry: React.FC = () => {
             });
             const contractId = response?.buy?.contract_id ?? response?.contract_id;
             if (!contractId) throw new Error('Deriv did not return a contract id');
-            openTradeRef.current = { symbol, direction, stake: amount, entryEpoch, entryQuote, contractId: String(contractId) };
+            const trade: OpenTrade = { symbol, direction, stake: amount, entryEpoch, entryQuote, contractId: String(contractId) };
+            openTradeRef.current = trade;
+            // This watch is independent from official settlement ordering.
+            // It remains available until the next full quote is evaluated.
+            localWatchRef.current[symbol] = trade;
             try {
                 transactions.onBotContractEvent({
                     contract_id: contractId,
@@ -274,6 +280,7 @@ export const MasterEntry: React.FC = () => {
         processedTicksRef.current = {};
         pendingRecoveryRef.current = null;
         awaitingLocalResultRef.current = null;
+        localWatchRef.current = {};
         setCandidates([]);
         setLock(null);
         setPhase('scanning');
@@ -338,14 +345,11 @@ export const MasterEntry: React.FC = () => {
                     keys.add(key);
                     if (keys.size > 250) keys.delete(keys.values().next().value as string);
                     processedTicksRef.current[symbol] = keys;
-                    const priorTrade = openTradeRef.current;
-                    if (priorTrade?.symbol === symbol && epoch > priorTrade.entryEpoch && everyTickRef.current) {
-                        localSettle(priorTrade, epoch, quote);
-                    }
-                    const awaitingLocalResult = awaitingLocalResultRef.current;
-                    if (awaitingLocalResult?.symbol === symbol && epoch > awaitingLocalResult.entryEpoch && everyTickRef.current) {
+                    const watchedTrade = localWatchRef.current[symbol];
+                    if (watchedTrade && !watchedTrade.locallySettled && epoch > watchedTrade.entryEpoch && everyTickRef.current) {
                         awaitingLocalResultRef.current = null;
-                        localSettle(awaitingLocalResult, epoch, quote);
+                        addLog(`LOCAL RESULT CHECK · ${SYMBOL_LABELS[symbol] || symbol} · entry ${watchedTrade.entryQuote} → next full quote ${quote}`);
+                        localSettle(watchedTrade, epoch, quote);
                     }
                     const pendingRecovery = pendingRecoveryRef.current;
                     if (pendingRecovery
@@ -479,6 +483,7 @@ export const MasterEntry: React.FC = () => {
     const stop = () => {
         runningRef.current = false;
         openTradeRef.current = null;
+        localWatchRef.current = {};
         pendingSettlementsRef.current.clear();
         unlockAfterSettlementsRef.current = false;
         pendingRecoveryRef.current = null;
