@@ -25,7 +25,7 @@ type OpenTrade = {
     entryEpoch: number;
     entryQuote: number;
     contractId: string;
-    entryQuoteSource?: 'deriv' | 'tick-fallback';
+    entryQuoteSource?: 'deriv' | 'post-buy-tick';
     locallySettled?: boolean;
     localOutcome?: 'win' | 'loss';
     officialSettled?: boolean;
@@ -150,7 +150,7 @@ export const MasterEntry: React.FC = () => {
         trade.localOutcome = won ? 'win' : 'loss';
         lastLocalOutcomeRef.current = trade.localOutcome;
         if (localWatchRef.current[trade.symbol]?.contractId === trade.contractId) delete localWatchRef.current[trade.symbol];
-        addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · ${trade.entryQuoteSource === 'deriv' ? 'verified' : 'entry-tick fallback'} · exit tick ${exitEpoch}`);
+        addLog(`LOCAL ${won ? 'WIN' : 'LOSS'} · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${trade.direction.toUpperCase()} · ${trade.entryQuoteSource === 'deriv' ? 'verified' : 'post-buy tick'} · exit tick ${exitEpoch}`);
 
         if (won) {
             // Local ticks only decide recovery timing. The contract remains
@@ -224,21 +224,26 @@ export const MasterEntry: React.FC = () => {
             if (!contractId) throw new Error('Deriv did not return a contract id');
             const derivEntryQuote = quoteNumber(response?.buy?.entry_tick ?? response?.buy?.entry_spot);
             const derivEntryEpoch = Number(response?.buy?.entry_tick_time ?? response?.buy?.entry_time);
+            const hasDerivEntry = derivEntryQuote != null && Number.isFinite(derivEntryEpoch);
             const trade: OpenTrade = {
                 symbol,
                 direction,
                 stake: amount,
-                entryEpoch: Number.isFinite(derivEntryEpoch) ? derivEntryEpoch : entryEpoch,
-                entryQuote: derivEntryQuote ?? entryQuote,
+                // entryEpoch/entryQuote are never taken from the previous
+                // contract's exit tick. If Deriv does not include entry data
+                // in the buy response, the tick listener captures the first
+                // tick received after this buy is acknowledged.
+                entryEpoch: hasDerivEntry && Number.isFinite(derivEntryEpoch) ? derivEntryEpoch : 0,
+                entryQuote: hasDerivEntry ? derivEntryQuote : Number.NaN,
                 contractId: String(contractId),
-                entryQuoteSource: derivEntryQuote == null ? 'tick-fallback' : 'deriv',
+                entryQuoteSource: hasDerivEntry ? 'deriv' : undefined,
             };
             openTradeRef.current = trade;
             // This watch is independent from official settlement ordering.
             // It remains available until the next full quote is evaluated.
             localWatchRef.current[symbol] = trade;
             if (derivEntryQuote == null) {
-                addLog(`ENTRY SPOT PENDING · ${SYMBOL_LABELS[symbol] || symbol} · using request tick until Deriv reports the actual entry`);
+                addLog(`ENTRY SPOT PENDING · ${SYMBOL_LABELS[symbol] || symbol} · capturing the new contract's first post-buy tick`);
             } else {
                 addLog(`ENTRY SPOT CONFIRMED · ${SYMBOL_LABELS[symbol] || symbol} · ${derivEntryQuote}`);
             }
@@ -400,7 +405,15 @@ export const MasterEntry: React.FC = () => {
                     processedTicksRef.current[symbol] = keys;
                     let settledLocallyThisTick = false;
                     const watchedTrade = localWatchRef.current[symbol];
-                    if (watchedTrade && !watchedTrade.locallySettled && epoch > watchedTrade.entryEpoch && everyTickRef.current) {
+                    if (watchedTrade && !watchedTrade.locallySettled && watchedTrade.entryQuoteSource !== 'deriv' && everyTickRef.current) {
+                        watchedTrade.entryEpoch = epoch;
+                        watchedTrade.entryQuote = quote;
+                        watchedTrade.entryQuoteSource = 'post-buy-tick';
+                        addLog(`ENTRY SPOT CAPTURED · ${SYMBOL_LABELS[symbol] || symbol} · ${quote} · new contract post-buy tick`);
+                        // This tick establishes the new contract's entry. It
+                        // must not also be used as its exit tick.
+                        settledLocallyThisTick = true;
+                    } else if (watchedTrade && !watchedTrade.locallySettled && epoch > watchedTrade.entryEpoch && everyTickRef.current) {
                         awaitingLocalResultRef.current = null;
                         addLog(`LOCAL RESULT CHECK · ${SYMBOL_LABELS[symbol] || symbol} · entry ${watchedTrade.entryQuote} → next full quote ${quote}`);
                         localSettle(watchedTrade, epoch, quote);
@@ -436,11 +449,11 @@ export const MasterEntry: React.FC = () => {
                     if (!trade) return;
                     const actualEntryQuote = quoteNumber(poc.entry_tick ?? poc.entry_spot ?? poc.start_spot);
                     const actualEntryEpoch = Number(poc.entry_tick_time ?? poc.entry_time ?? poc.start_time);
-                    if (actualEntryQuote != null) {
+                    if (actualEntryQuote != null && Number.isFinite(actualEntryEpoch)) {
                         trade.entryQuote = actualEntryQuote;
                         trade.entryQuoteSource = 'deriv';
+                        trade.entryEpoch = actualEntryEpoch;
                     }
-                    if (Number.isFinite(actualEntryEpoch)) trade.entryEpoch = actualEntryEpoch;
                     if (!poc.is_sold) return;
                     pendingSettlementsRef.current.delete(contractId);
                     if (currentTrade) openTradeRef.current = null;
