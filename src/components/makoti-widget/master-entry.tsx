@@ -195,6 +195,7 @@ export const MasterEntry: React.FC = () => {
             stake: currentStakeRef.current,
             afterEpoch: exitEpoch,
         };
+        if (everyTickRef.current) addLog(`RECOVERY QUEUED LOCALLY · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked until recovery wins`);
     }, [addLog, publishCandidates, setLock]);
 
     const buy = useCallback(async (symbol: string, direction: Direction, amount: number, entryEpoch: number, entryQuote: number) => {
@@ -251,7 +252,15 @@ export const MasterEntry: React.FC = () => {
     }, [addLog, setLock, transactions]);
 
     const evaluateEntry = useCallback((symbol: string, prices: number[], epoch: number, quote: number) => {
-        if (!runningRef.current || lockedSymbolRef.current || openTradeRef.current || buyInFlightRef.current) return;
+        // A local loss queues recovery before Deriv sends official settlement.
+        // Keep that sequence on the same volatility and block unrelated entry
+        // signals until the sequence is resolved.
+        if (!runningRef.current
+            || lockedSymbolRef.current
+            || pendingRecoveryRef.current
+            || pendingSettlementsRef.current.size > 0
+            || openTradeRef.current
+            || buyInFlightRef.current) return;
         const candidate = candidatesRef.current[symbol];
         if (!candidate) return;
         const state = macdSnapshot(prices);
