@@ -207,12 +207,15 @@ export const MasterEntry: React.FC = () => {
         if (!state) return;
         const risingEntry = candidate.direction === 'rise'
             && state.crossUp
-            && state.histogram < 0
-            && state.histogram < state.previousHistogram;
+            // A bullish line cross normally moves the current histogram
+            // through zero. Therefore the meaningful confirmation is that
+            // the histogram was below zero immediately before the cross.
+            && state.previousHistogram < 0;
         const fallingEntry = candidate.direction === 'fall'
             && state.crossDown
-            && state.histogram > 0
-            && state.histogram > state.previousHistogram;
+            // Likewise, a bearish cross is confirmed by a histogram that
+            // was above zero immediately before the cross.
+            && state.previousHistogram > 0;
         setLastSignal(`${SYMBOL_LABELS[symbol] || symbol} ${candidate.direction.toUpperCase()} · MACD ${state.histogram.toFixed(6)}`);
         if (!risingEntry && !fallingEntry) return;
         lockedSymbolRef.current = symbol;
