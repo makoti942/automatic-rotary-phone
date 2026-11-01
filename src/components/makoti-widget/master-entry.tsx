@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { onNewSystemMessage, sendViaNewSystemWithPromise } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { ALL_SYMBOLS, PIP_SIZES, SYMBOL_LABELS, calcEMA } from './makoti-ws';
+import { canRunQueuedQualificationRescan, getOfficialSettlementAction } from './master-entry-recovery';
+import { getOfficialSettlementAction } from './master-entry-recovery';
 
 type Direction = 'rise' | 'fall';
 type Phase = 'idle' | 'scanning' | 'waiting' | 'locked' | 'stopped';
@@ -42,6 +44,7 @@ type PendingRecovery = {
 const HISTORY_COUNT = 100;
 const MIN_STAKE = 0.35;
 const MIN_MACD_PRICES = 40;
+const RESCAN_AFTER_LOCAL_WINS = 3;
 
 const quoteNumber = (value: unknown) => {
     const n = Number(value);
@@ -176,6 +179,25 @@ export const MasterEntry: React.FC = () => {
         setCandidates(Object.values(candidatesRef.current));
     }, []);
 
+    const maybeRunQueuedRescan = useCallback(() => {
+        if (!runningRef.current || !rescanRequestedRef.current) return;
+        const hasUnsettledLocalWatch = Object.values(localWatchRef.current).some(trade => !trade.locallySettled);
+        if (!canRunQueuedQualificationRescan({
+            hasOpenTrade: Boolean(openTradeRef.current),
+            buyInFlight: buyInFlightRef.current,
+            hasPendingRecovery: Boolean(pendingRecoveryRef.current),
+            pendingSettlementCount: pendingSettlementsRef.current.size,
+            awaitingLocalResult: Boolean(awaitingLocalResultRef.current),
+            hasUnsettledLocalWatch,
+        })) return;
+
+        rescanRequestedRef.current = false;
+        addLog('RESCANNING ALL VOLATILITIES AFTER ACTIVE SETTLEMENTS COMPLETE');
+        Promise.resolve().then(() => {
+            if (runningRef.current) void initializeRef.current?.();
+        });
+    }, [addLog]);
+
     const localSettle = useCallback((trade: OpenTrade, exitEpoch: number, exitQuote: number) => {
         if (trade.locallySettled || exitEpoch < trade.entryEpoch) return;
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
@@ -195,10 +217,10 @@ export const MasterEntry: React.FC = () => {
             currentStakeRef.current = stakeRef.current;
             setCurrentStake(currentStakeRef.current);
             localWinCountRef.current += 1;
-            if (localWinCountRef.current >= 5) {
+            if (localWinCountRef.current >= RESCAN_AFTER_LOCAL_WINS) {
                 localWinCountRef.current = 0;
                 rescanRequestedRef.current = true;
-                addLog('FIVE LOCAL WINS · qualification rescan queued after active settlements complete');
+                addLog('THREE LOCAL WINS · qualification rescan queued after active settlements complete');
             }
             if (lockedSymbolRef.current === trade.symbol) {
                 const candidate = candidatesRef.current[trade.symbol];
@@ -216,30 +238,27 @@ export const MasterEntry: React.FC = () => {
                 if (shouldRescan) {
                     rescanRequestedRef.current = true;
                     addLog(onlyOneCandidateRemains
-                        ? 'ONE VOLATILITY REMAINS · rescanning all volatilities now'
-                        : 'LOCAL WIN CONFIRMED · qualification rescan queued');
-                    Promise.resolve().then(() => {
-                        if (!runningRef.current || !rescanRequestedRef.current) return;
-                        rescanRequestedRef.current = false;
-                        void initializeRef.current?.();
-                    });
+                        ? 'ONE VOLATILITY REMAINS · qualification rescan queued after active settlements complete'
+                        : 'LOCAL WIN CONFIRMED · qualification rescan queued after active settlements complete');
                 } else {
                     addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
                 }
             }
+            maybeRunQueuedRescan();
             return;
         }
 
         // A loss always cancels a previously queued qualification rescan.
         // Recovery must finish with a win before a new qualification scan.
         rescanRequestedRef.current = false;
+        unlockAfterSettlementsRef.current = false;
         // Keep the losing contract so its later official result is accounted
         // for once, even after the next recovery buy is sent.
         if (!trade.officialSettled) pendingSettlementsRef.current.set(trade.contractId, trade);
         openTradeRef.current = null;
         currentStakeRef.current = Math.max(MIN_STAKE, Math.ceil(trade.stake * martingaleRef.current * 100) / 100);
         setCurrentStake(currentStakeRef.current);
-        setPhase('locked');
+        setLock(trade.symbol);
         addLog(`LOCAL LOSS · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked · next stake $${currentStakeRef.current.toFixed(2)}`);
 
         if (everyTickRef.current) pendingRecoveryRef.current = {
@@ -249,7 +268,7 @@ export const MasterEntry: React.FC = () => {
             afterEpoch: exitEpoch,
         };
         if (everyTickRef.current) addLog(`RECOVERY QUEUED LOCALLY · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked until recovery wins`);
-    }, [addLog, publishCandidates, setLock]);
+    }, [addLog, maybeRunQueuedRescan, publishCandidates, setLock]);
 
     const buy = useCallback(async (symbol: string, direction: Direction, amount: number, entryEpoch: number, entryQuote: number) => {
         if (!runningRef.current || buyInFlightRef.current || openTradeRef.current) return;
@@ -337,6 +356,7 @@ export const MasterEntry: React.FC = () => {
         if (!runningRef.current
             || lockedSymbolRef.current
             || pendingRecoveryRef.current
+            || rescanRequestedRef.current
             || Array.from(pendingSettlementsRef.current.values()).some(trade => trade.localOutcome !== 'win')
             || openTradeRef.current
             || buyInFlightRef.current) return;
@@ -536,34 +556,18 @@ export const MasterEntry: React.FC = () => {
                     // authoritative for the recovery sequence. Official
                     // messages update money only and must not overwrite the
                     // locked volatility's stake or direction.
-                    if (!localOutcome && everyTickRef.current) {
+                    const settlementAction = getOfficialSettlementAction(localOutcome, everyTickRef.current);
+                    if (settlementAction === 'await-local-result') {
                         trade.officialSettled = true;
                         awaitingLocalResultRef.current = trade;
                         addLog(`OFFICIAL SETTLEMENT RECEIVED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · waiting for the next full quote to calculate the local result`);
+                        maybeRunQueuedRescan();
                         return;
                     }
-                    if (localOutcome) {
-                        if (localOutcome === 'win') unlockAfterSettlementsRef.current = true;
-                        const hasPendingContracts = pendingSettlementsRef.current.size > 0;
-                        if (unlockAfterSettlementsRef.current && !openTradeRef.current && !hasPendingContracts && lockedSymbolRef.current === trade.symbol) {
-                            const candidate = candidatesRef.current[trade.symbol];
-                            if (candidate) {
-                                candidatesRef.current[trade.symbol] = { ...candidate, status: 'qualified' };
-                                publishCandidates();
-                            }
-                            setLock(null);
-                            const shouldRescan = rescanRequestedRef.current && localOutcome === 'win' && lastLocalOutcomeRef.current === 'win';
-                            unlockAfterSettlementsRef.current = false;
-                            if (!shouldRescan) rescanRequestedRef.current = false;
-                            addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
-                            if (shouldRescan) {
-                                rescanRequestedRef.current = false;
-                                addLog('RESCANNING ALL VOLATILITIES AFTER FIVE LOCAL WINS');
-                                setTimeout(() => initializeRef.current?.(), 0);
-                            }
-                        } else {
-                            addLog(`OFFICIAL SETTLEMENT RECORDED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${profit >= 0 ? 'WIN' : 'LOSS'} · recovery state unchanged`);
-                        }
+                    if (settlementAction === 'account-only') {
+                        trade.officialSettled = true;
+                        addLog(`OFFICIAL SETTLEMENT RECORDED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} · ${profit >= 0 ? 'WIN' : 'LOSS'} · recovery state unchanged`);
+                        maybeRunQueuedRescan();
                         return;
                     }
                     if (profit >= 0) {
@@ -607,11 +611,12 @@ export const MasterEntry: React.FC = () => {
                             addLog(`LOSS CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} remains locked · next stake $${currentStakeRef.current.toFixed(2)}`);
                         }
                     }
+                    maybeRunQueuedRescan();
                 }
             } catch {}
         });
         return unsubscribe;
-    }, [addLog, evaluateEntry, localSettle, publishCandidates, running, setLock]);
+    }, [addLog, evaluateEntry, localSettle, maybeRunQueuedRescan, publishCandidates, running, setLock]);
 
     useEffect(() => {
         stakeRef.current = Math.max(MIN_STAKE, Number(stake) || MIN_STAKE);
