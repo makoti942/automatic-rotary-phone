@@ -103,6 +103,7 @@ export const MasterEntry: React.FC = () => {
     const [currentStake, setCurrentStake] = useState(Number(stake) || MIN_STAKE);
     const [sessionProfit, setSessionProfit] = useState(0);
     const [logs, setLogs] = useState<string[]>([]);
+    const [copyStatus, setCopyStatus] = useState<'idle' | 'copied' | 'failed'>('idle');
     const [lastSignal, setLastSignal] = useState('—');
 
     const runningRef = useRef(false);
@@ -132,6 +133,31 @@ export const MasterEntry: React.FC = () => {
         const line = `${new Date().toLocaleTimeString()} ${message}`;
         logsRef.current = [...logsRef.current.slice(-99), line];
         setLogs(logsRef.current);
+    }, []);
+
+    const copyLogs = useCallback(async () => {
+        const text = logsRef.current.join('\n');
+        if (!text) return;
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                const textarea = document.createElement('textarea');
+                textarea.value = text;
+                textarea.style.position = 'fixed';
+                textarea.style.opacity = '0';
+                document.body.appendChild(textarea);
+                textarea.focus();
+                textarea.select();
+                document.execCommand('copy');
+                textarea.remove();
+            }
+            setCopyStatus('copied');
+            window.setTimeout(() => setCopyStatus('idle'), 2000);
+        } catch {
+            setCopyStatus('failed');
+            window.setTimeout(() => setCopyStatus('idle'), 3000);
+        }
     }, []);
 
     const setLock = useCallback((symbol: string | null) => {
@@ -391,7 +417,9 @@ export const MasterEntry: React.FC = () => {
         if (!running) return;
         const unsubscribe = onNewSystemMessage((event: MessageEvent) => {
             try {
-                const data = JSON.parse(event.data);
+                const raw = (event as any)?.data ?? (event as any)?.detail?.data ?? event;
+                const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+                if (!data || typeof data !== 'object') return;
                 if (data.msg_type === 'tick' && data.tick?.symbol) {
                     const symbol = String(data.tick.symbol);
                     if (!ALL_SYMBOLS.includes(symbol)) return;
@@ -401,7 +429,8 @@ export const MasterEntry: React.FC = () => {
                     const previousEpoch = lastTickEpochRef.current[symbol];
                     if (previousEpoch != null && epoch < previousEpoch) return;
                     lastTickEpochRef.current[symbol] = epoch;
-                    const key = `${epoch}|${quote}|${data.tick.id || ''}`;
+                    const tickId = data.tick.id ?? data.tick.tick_id ?? '';
+                    const key = `${epoch}|${quote}|${tickId}`;
                     const keys = processedTicksRef.current[symbol] || new Set<string>();
                     if (keys.has(key)) return;
                     keys.add(key);
@@ -609,7 +638,7 @@ export const MasterEntry: React.FC = () => {
             </div>
         </section>
         <div className='mw-killer__actions'>{running ? <button className='mw-btn mw-btn--stop' onClick={stop}>STOP · {phase.toUpperCase()}</button> : <button className='mw-btn mw-btn--run' onClick={start}>RUN MASTER ENTRY</button>}</div>
-        <div className='mw-killer__logs'><div className='mw-killer__logs-head'>Master Entry log</div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, index) => <div key={index} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Configure stake and martingale, then run</div>}</div></div>
+        <div className='mw-killer__logs'><div className='mw-killer__logs-head mw-ueo-log-heading'><span>Master Entry log</span><button type='button' className='mw-btn-clear' onClick={() => void copyLogs()} disabled={!logs.length}>{copyStatus === 'copied' ? 'Copied' : copyStatus === 'failed' ? 'Copy failed' : 'Copy logs'}</button></div><div className='mw-killer__log-list'>{logs.length ? logs.map((line, index) => <div key={index} className='mw-killer__log-line'>{line}</div>) : <div className='mw-killer__log-empty'>Configure stake and martingale, then run</div>}</div></div>
     </div>;
 };
 

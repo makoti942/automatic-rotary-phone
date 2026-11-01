@@ -3419,6 +3419,8 @@ $mw-radius:   10px;
     .mw-ueo-section { margin-top: 14px; padding: 12px; background: var(--ueo-card); border: 1px solid var(--ueo-line); border-radius: 10px; }
     .mw-ueo-section-title { display: flex; align-items: baseline; gap: 8px; margin-bottom: 11px; color: var(--ueo-ink); font-size: 11px; font-weight: 800; }
     .mw-ueo-section-title span { color: var(--ueo-muted); font-size: 9px; font-weight: 500; }
+    .mw-ueo-log-heading { align-items: center; justify-content: space-between; }
+    .mw-ueo-log-heading .mw-btn-clear { margin: 0; padding: 4px 8px; font-size: 9px; }
     .mw-ueo-grid { display: grid; gap: 10px; }
     .mw-ueo-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
     .mw-ueo-panel .mw-field { display: flex !important; flex-direction: column !important; align-items: stretch !important; gap: 5px !important; min-width: 0 !important; width: auto !important; }
