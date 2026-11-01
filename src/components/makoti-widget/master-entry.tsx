@@ -95,6 +95,8 @@ export const MasterEntry: React.FC = () => {
     const { transactions } = useStore();
     const [stake, setStake] = useState(() => localStorage.getItem('mw_master_stake') || '0.35');
     const [martingale, setMartingale] = useState(() => localStorage.getItem('mw_master_martingale') || '2');
+    const [stopLoss, setStopLoss] = useState(() => localStorage.getItem('mw_master_stop_loss') || '');
+    const [takeProfit, setTakeProfit] = useState(() => localStorage.getItem('mw_master_take_profit') || '');
     const [everyTick, setEveryTick] = useState(() => localStorage.getItem('mw_master_every_tick') !== 'false');
     const [running, setRunning] = useState(false);
     const [phase, setPhase] = useState<Phase>('idle');
@@ -110,7 +112,10 @@ export const MasterEntry: React.FC = () => {
     const everyTickRef = useRef(everyTick);
     const stakeRef = useRef(Number(stake) || MIN_STAKE);
     const martingaleRef = useRef(Number(martingale) || 2);
+    const stopLossRef = useRef(Number(stopLoss) || 0);
+    const takeProfitRef = useRef(Number(takeProfit) || 0);
     const currentStakeRef = useRef(Number(stake) || MIN_STAKE);
+    const sessionProfitRef = useRef(0);
     const pricesRef = useRef<Record<string, number[]>>({});
     const candidatesRef = useRef<Record<string, Candidate>>({});
     const lockedSymbolRef = useRef<string | null>(null);
@@ -124,6 +129,7 @@ export const MasterEntry: React.FC = () => {
     const rescanRequestedRef = useRef(false);
     const lastLocalOutcomeRef = useRef<'win' | 'loss' | null>(null);
     const initializeRef = useRef<(() => void | Promise<void>) | null>(null);
+    const stopRef = useRef<(() => void) | null>(null);
     const buyInFlightRef = useRef(false);
     const processedTicksRef = useRef<Record<string, Set<string>>>({});
     const lastTickEpochRef = useRef<Record<string, number>>({});
@@ -250,9 +256,10 @@ export const MasterEntry: React.FC = () => {
         if (lockedSymbolRef.current && lockedSymbolRef.current !== symbol) return;
         buyInFlightRef.current = true;
         const contractType = direction === 'rise' ? 'CALL' : 'PUT';
-        addLog(`BUY ${direction.toUpperCase()} · ${SYMBOL_LABELS[symbol] || symbol} · stake $${amount.toFixed(2)} · entry tick ${entryEpoch}`);
+        // Start the network request before diagnostic/state updates. React
+        // rendering must never sit in front of the contract request.
         try {
-            const response: any = await sendViaNewSystemWithPromise({
+            const buyRequest = sendViaNewSystemWithPromise({
                 buy: 1,
                 price: amount,
                 parameters: {
@@ -265,6 +272,8 @@ export const MasterEntry: React.FC = () => {
                     contract_type: contractType,
                 },
             });
+            addLog(`BUY ${direction.toUpperCase()} · ${SYMBOL_LABELS[symbol] || symbol} · stake $${amount.toFixed(2)} · entry tick ${entryEpoch}`);
+            const response: any = await buyRequest;
             const contractId = response?.buy?.contract_id ?? response?.contract_id;
             if (!contractId) throw new Error('Deriv did not return a contract id');
             const derivEntryQuote = quoteNumber(response?.buy?.entry_tick ?? response?.buy?.entry_spot);
@@ -336,25 +345,20 @@ export const MasterEntry: React.FC = () => {
         const state = macdSnapshot(prices);
         if (!state) return;
         const risingEntry = candidate.direction === 'rise'
-            && state.crossUp
-            // A bullish line cross normally moves the current histogram
-            // through zero. Therefore the meaningful confirmation is that
-            // the histogram was below zero immediately before the cross.
-            && state.previousHistogram < 0;
+            && state.crossUp;
         const fallingEntry = candidate.direction === 'fall'
-            && state.crossDown
-            // Likewise, a bearish cross is confirmed by a histogram that
-            // was above zero immediately before the cross.
-            && state.previousHistogram > 0;
-        setLastSignal(`${SYMBOL_LABELS[symbol] || symbol} ${candidate.direction.toUpperCase()} · MACD ${state.histogram.toFixed(6)}`);
+            && state.crossDown;
         if (!risingEntry && !fallingEntry) return;
+        setLastSignal(`${SYMBOL_LABELS[symbol] || symbol} ${candidate.direction.toUpperCase()} · MACD ${state.histogram.toFixed(6)}`);
         lockedSymbolRef.current = symbol;
         setLockedSymbol(symbol);
         setPhase('locked');
         candidatesRef.current[symbol] = { ...candidate, status: 'locked', lastMacd: state.currentMacd, lastSignal: state.currentSignal, lastHistogram: state.histogram };
         publishCandidates();
-        addLog(`MACD CROSS · ${SYMBOL_LABELS[symbol] || symbol} locked first · ${candidate.direction.toUpperCase()} contract entering immediately`);
+        // This is intentionally the first side effect after the crossing
+        // lock. The buy request starts before the diagnostic state update.
         void buy(symbol, candidate.direction, currentStakeRef.current, epoch, quote);
+        addLog(`MACD CROSS · ${SYMBOL_LABELS[symbol] || symbol} locked first · ${candidate.direction.toUpperCase()} contract entering immediately`);
     }, [addLog, buy, publishCandidates]);
 
     const initialize = useCallback(async () => {
@@ -513,7 +517,20 @@ export const MasterEntry: React.FC = () => {
                     pendingSettlementsRef.current.delete(contractId);
                     if (currentTrade) openTradeRef.current = null;
                     const profit = Number(poc.profit) || 0;
-                    setSessionProfit(value => value + profit);
+                    const nextSessionProfit = sessionProfitRef.current + profit;
+                    sessionProfitRef.current = nextSessionProfit;
+                    setSessionProfit(nextSessionProfit);
+                    const stopLossLimit = Math.max(0, Number(stopLossRef.current) || 0);
+                    const takeProfitLimit = Math.max(0, Number(takeProfitRef.current) || 0);
+                    const hitStopLoss = stopLossLimit > 0 && nextSessionProfit <= -stopLossLimit;
+                    const hitTakeProfit = takeProfitLimit > 0 && nextSessionProfit >= takeProfitLimit;
+                    if (hitStopLoss || hitTakeProfit) {
+                        addLog(hitStopLoss
+                            ? `STOP LOSS HIT · session P/L ${nextSessionProfit.toFixed(2)} · trading stopped`
+                            : `TAKE PROFIT HIT · session P/L ${nextSessionProfit.toFixed(2)} · trading stopped`);
+                        stopRef.current?.();
+                        return;
+                    }
                     const localOutcome = trade.localOutcome;
                     // With Every-tick recovery, the local next-tick result is
                     // authoritative for the recovery sequence. Official
@@ -599,15 +616,19 @@ export const MasterEntry: React.FC = () => {
     useEffect(() => {
         stakeRef.current = Math.max(MIN_STAKE, Number(stake) || MIN_STAKE);
         martingaleRef.current = Math.max(1, Number(martingale) || 2);
+        stopLossRef.current = Math.max(0, Number(stopLoss) || 0);
+        takeProfitRef.current = Math.max(0, Number(takeProfit) || 0);
         everyTickRef.current = everyTick;
         localStorage.setItem('mw_master_stake', stake);
         localStorage.setItem('mw_master_martingale', martingale);
+        localStorage.setItem('mw_master_stop_loss', stopLoss);
+        localStorage.setItem('mw_master_take_profit', takeProfit);
         localStorage.setItem('mw_master_every_tick', String(everyTick));
         if (!runningRef.current) {
             currentStakeRef.current = stakeRef.current;
             setCurrentStake(stakeRef.current);
         }
-    }, [everyTick, martingale, running, stake]);
+    }, [everyTick, martingale, running, stake, stopLoss, takeProfit]);
 
     const start = () => {
         if (runningRef.current) return;
@@ -635,6 +656,7 @@ export const MasterEntry: React.FC = () => {
         setPhase('idle');
         addLog('STOPPED · volatility lock released');
     };
+    stopRef.current = stop;
 
     return <div className='mw-killer even-odd-theme mw-ueo-panel'>
         <div className='mw-ueo-header'>
@@ -646,6 +668,8 @@ export const MasterEntry: React.FC = () => {
             <div className='mw-ueo-grid mw-ueo-grid--three'>
                 <div className='mw-field'><label className='mw-label'>Initial stake</label><input className='mw-input' type='number' min={MIN_STAKE} step='0.01' value={stake} onChange={e => setStake(e.target.value)} disabled={running} /></div>
                 <div className='mw-field'><label className='mw-label'>Martingale multiplier</label><input className='mw-input' type='number' min='1' step='0.1' value={martingale} onChange={e => setMartingale(e.target.value)} disabled={running} /></div>
+                <div className='mw-field'><label className='mw-label'>Stop Loss <span>(0 = off)</span></label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={stopLoss} onChange={e => setStopLoss(e.target.value)} disabled={running} /></div>
+                <div className='mw-field'><label className='mw-label'>Take Profit <span>(0 = off)</span></label><input className='mw-input' type='number' min='0' step='0.01' placeholder='0 = off' value={takeProfit} onChange={e => setTakeProfit(e.target.value)} disabled={running} /></div>
                 <div className='mw-field mw-ueo-entry-field'><label className='mw-label'>Every-tick recovery</label><div className='mw-ueo-entry-controls'><span className='mw-ueo-field-hint'>Local next-tick result</span><button type='button' role='switch' aria-checked={everyTick} className='mw-toggle mw-ueo-auto-toggle__button' disabled={running} onClick={() => setEveryTick(value => !value)}><span className={`mw-toggle__track ${everyTick ? 'mw-toggle__track--on' : ''}`}><span className={`mw-toggle__thumb ${everyTick ? 'mw-toggle__thumb--on' : ''}`} /></span></button></div></div>
             </div>
         </section>
