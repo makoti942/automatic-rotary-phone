@@ -26,6 +26,7 @@ type OpenTrade = {
     entryQuote: number;
     contractId: string;
     entryQuoteSource?: 'deriv' | 'post-buy-tick';
+    entryTickKey?: string;
     locallySettled?: boolean;
     localOutcome?: 'win' | 'loss';
     officialSettled?: boolean;
@@ -144,7 +145,7 @@ export const MasterEntry: React.FC = () => {
     }, []);
 
     const localSettle = useCallback((trade: OpenTrade, exitEpoch: number, exitQuote: number) => {
-        if (trade.locallySettled || exitEpoch < trade.entryEpoch || (exitEpoch === trade.entryEpoch && exitQuote === trade.entryQuote)) return;
+        if (trade.locallySettled || exitEpoch < trade.entryEpoch) return;
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
@@ -412,12 +413,13 @@ export const MasterEntry: React.FC = () => {
                         watchedTrade.entryEpoch = epoch;
                         watchedTrade.entryQuote = quote;
                         watchedTrade.entryQuoteSource = 'post-buy-tick';
-                        addLog(`ENTRY SPOT CAPTURED · ${SYMBOL_LABELS[symbol] || symbol} · ${quote} · new contract post-buy tick`);
+                        watchedTrade.entryTickKey = key;
+                        addLog(`ENTRY SPOT CAPTURED · ${SYMBOL_LABELS[symbol] || symbol} · ${quote} · new contract post-buy tick; waiting for next tick`);
                         // This tick establishes the new contract's entry. It
                         // must not also be used as its exit tick.
                         settledLocallyThisTick = true;
                     } else if (watchedTrade && !watchedTrade.locallySettled
-                        && (epoch > watchedTrade.entryEpoch || quote !== watchedTrade.entryQuote)
+                        && key !== watchedTrade.entryTickKey
                         && everyTickRef.current) {
                         awaitingLocalResultRef.current = null;
                         addLog(`LOCAL RESULT CHECK · ${SYMBOL_LABELS[symbol] || symbol} · entry ${watchedTrade.entryQuote} → next full quote ${quote}`);
