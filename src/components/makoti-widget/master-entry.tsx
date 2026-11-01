@@ -429,8 +429,12 @@ export const MasterEntry: React.FC = () => {
                     const previousEpoch = lastTickEpochRef.current[symbol];
                     if (previousEpoch != null && epoch < previousEpoch) return;
                     lastTickEpochRef.current[symbol] = epoch;
-                    const tickId = data.tick.id ?? data.tick.tick_id ?? '';
-                    const key = `${epoch}|${quote}|${tickId}`;
+                    // A shared socket can deliver the same market tick more
+                    // than once when another widget has also subscribed.
+                    // Epoch + quote is the stable market-tick identity; the
+                    // contract must not treat a duplicate delivery as a new
+                    // entry or exit tick.
+                    const key = `${epoch}|${quote}`;
                     const keys = processedTicksRef.current[symbol] || new Set<string>();
                     if (keys.has(key)) return;
                     keys.add(key);
@@ -438,7 +442,7 @@ export const MasterEntry: React.FC = () => {
                     processedTicksRef.current[symbol] = keys;
                     let settledLocallyThisTick = false;
                     const watchedTrade = localWatchRef.current[symbol];
-                    if (watchedTrade && !watchedTrade.locallySettled && watchedTrade.entryQuoteSource !== 'deriv' && everyTickRef.current) {
+                    if (watchedTrade && !watchedTrade.locallySettled && watchedTrade.entryQuoteSource !== 'deriv' && !watchedTrade.entryTickKey && everyTickRef.current) {
                         watchedTrade.entryEpoch = epoch;
                         watchedTrade.entryQuote = quote;
                         watchedTrade.entryQuoteSource = 'post-buy-tick';
