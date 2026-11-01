@@ -144,7 +144,7 @@ export const MasterEntry: React.FC = () => {
     }, []);
 
     const localSettle = useCallback((trade: OpenTrade, exitEpoch: number, exitQuote: number) => {
-        if (trade.locallySettled || exitEpoch <= trade.entryEpoch) return;
+        if (trade.locallySettled || exitEpoch < trade.entryEpoch || (exitEpoch === trade.entryEpoch && exitQuote === trade.entryQuote)) return;
         const won = trade.direction === 'rise' ? exitQuote > trade.entryQuote : exitQuote < trade.entryQuote;
         trade.locallySettled = true;
         trade.localOutcome = won ? 'win' : 'loss';
@@ -398,7 +398,7 @@ export const MasterEntry: React.FC = () => {
                     const quote = quoteNumber(data.tick.quote);
                     if (!Number.isFinite(epoch) || quote == null) return;
                     const previousEpoch = lastTickEpochRef.current[symbol];
-                    if (previousEpoch != null && epoch <= previousEpoch) return;
+                    if (previousEpoch != null && epoch < previousEpoch) return;
                     lastTickEpochRef.current[symbol] = epoch;
                     const key = `${epoch}|${quote}|${data.tick.id || ''}`;
                     const keys = processedTicksRef.current[symbol] || new Set<string>();
@@ -416,7 +416,9 @@ export const MasterEntry: React.FC = () => {
                         // This tick establishes the new contract's entry. It
                         // must not also be used as its exit tick.
                         settledLocallyThisTick = true;
-                    } else if (watchedTrade && !watchedTrade.locallySettled && epoch > watchedTrade.entryEpoch && everyTickRef.current) {
+                    } else if (watchedTrade && !watchedTrade.locallySettled
+                        && (epoch > watchedTrade.entryEpoch || quote !== watchedTrade.entryQuote)
+                        && everyTickRef.current) {
                         awaitingLocalResultRef.current = null;
                         addLog(`LOCAL RESULT CHECK · ${SYMBOL_LABELS[symbol] || symbol} · entry ${watchedTrade.entryQuote} → next full quote ${quote}`);
                         localSettle(watchedTrade, epoch, quote);
@@ -430,7 +432,7 @@ export const MasterEntry: React.FC = () => {
                         && !buyInFlightRef.current
                         && lockedSymbolRef.current === symbol) {
                         pendingRecoveryRef.current = null;
-                        addLog(`IMMEDIATE RECOVERY · ${SYMBOL_LABELS[symbol] || symbol} · ${pendingRecovery.direction.toUpperCase()} · stake $${pendingRecovery.stake.toFixed(2)} · entry uses loss exit tick`);
+                        addLog(`IMMEDIATE RECOVERY · ${SYMBOL_LABELS[symbol] || symbol} · ${pendingRecovery.direction.toUpperCase()} · stake $${pendingRecovery.stake.toFixed(2)} · entry captured after buy`);
                         void buy(symbol, pendingRecovery.direction, pendingRecovery.stake, epoch, quote);
                     }
                     const oldPrices = pricesRef.current[symbol] || [];
@@ -452,7 +454,7 @@ export const MasterEntry: React.FC = () => {
                     if (!trade) return;
                     const actualEntryQuote = quoteNumber(poc.entry_tick ?? poc.entry_spot ?? poc.start_spot);
                     const actualEntryEpoch = Number(poc.entry_tick_time ?? poc.entry_time ?? poc.start_time);
-                    if (actualEntryQuote != null && Number.isFinite(actualEntryEpoch)) {
+                    if (trade.entryQuoteSource !== 'post-buy-tick' && actualEntryQuote != null && Number.isFinite(actualEntryEpoch)) {
                         trade.entryQuote = actualEntryQuote;
                         trade.entryQuoteSource = 'deriv';
                         trade.entryEpoch = actualEntryEpoch;
