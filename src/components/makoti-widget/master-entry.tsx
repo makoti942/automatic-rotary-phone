@@ -201,10 +201,25 @@ export const MasterEntry: React.FC = () => {
                     publishCandidates();
                 }
                 setLock(null);
-                const shouldRescan = rescanRequestedRef.current;
-                rescanRequestedRef.current = false;
-                addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
-                if (shouldRescan) setTimeout(() => initializeRef.current?.(), 0);
+                // When qualification leaves only one volatility, do not keep
+                // trading it indefinitely. Refresh the full candidate set
+                // immediately after every completed local trade so another
+                // usable volatility can re-enter the rotation.
+                const onlyOneCandidateRemains = Object.keys(candidatesRef.current).length <= 1;
+                const shouldRescan = rescanRequestedRef.current || onlyOneCandidateRemains;
+                if (shouldRescan) {
+                    rescanRequestedRef.current = true;
+                    addLog(onlyOneCandidateRemains
+                        ? 'ONE VOLATILITY REMAINS · rescanning all volatilities now'
+                        : 'LOCAL WIN CONFIRMED · qualification rescan queued');
+                    Promise.resolve().then(() => {
+                        if (!runningRef.current || !rescanRequestedRef.current) return;
+                        rescanRequestedRef.current = false;
+                        void initializeRef.current?.();
+                    });
+                } else {
+                    addLog(`LOCAL WIN CONFIRMED · ${SYMBOL_LABELS[trade.symbol] || trade.symbol} unlocked; waiting for a fresh MACD cross`);
+                }
             }
             return;
         }
