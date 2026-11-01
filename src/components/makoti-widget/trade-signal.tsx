@@ -3,6 +3,7 @@ import { ALL_SYMBOLS, SYMBOL_LABELS, PIP_SIZES } from './makoti-ws';
 import { sendViaNewSystemWithPromise, onNewSystemMessage } from '@/auth/NewDerivAuth';
 import { useStore } from '@/hooks/useStore';
 import { analyzeDigits, predictContract, getDigit, calcFreq, type SignalResult, type SymbolState } from './trade-signal-engine';
+import { getNextTradeSignalStake, normalizeTradeSignalMartingale, normalizeTradeSignalStake } from './trade-signal-stakes';
 import './trade-signal.scss';
 
 interface TradeLog { time: string; msg: string; type: 'signal' | 'trade' | 'win' | 'loss' | 'info'; }
@@ -11,7 +12,9 @@ export const TradeSignal: React.FC = () => {
     const { transactions } = useStore();
 
     const [stake, setStake] = useState(() => localStorage.getItem('mw_ts_stake') || '1');
+    const [martingale, setMartingale] = useState(() => localStorage.getItem('mw_ts_martingale') || '2');
     const [duration, setDuration] = useState(() => localStorage.getItem('mw_ts_duration') || '1');
+    const [currentStake, setCurrentStake] = useState(() => normalizeTradeSignalStake(localStorage.getItem('mw_ts_stake'), 1));
     const [signal, setSignal] = useState<SignalResult | null>(null);
     const [bestSymbol, setBestSymbol] = useState<string>('');
     const [symbolStates, setSymbolStates] = useState<Map<string, SymbolState>>(new Map());
@@ -28,6 +31,11 @@ export const TradeSignal: React.FC = () => {
     const isRunningRef = useRef(false);
     isRunningRef.current = isRunning;
     const openCountRef = useRef(0);
+    const baseStakeRef = useRef(normalizeTradeSignalStake(stake, 1));
+    const martingaleRef = useRef(normalizeTradeSignalMartingale(martingale));
+    const currentStakeRef = useRef(normalizeTradeSignalStake(stake, 1));
+    baseStakeRef.current = normalizeTradeSignalStake(stake, 1);
+    martingaleRef.current = normalizeTradeSignalMartingale(martingale);
 
     const addLog = useCallback((msg: string, type: TradeLog['type'] = 'info') => {
         const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -129,7 +137,7 @@ export const TradeSignal: React.FC = () => {
 
         openCountRef.current = 1;
         setOpenCount(1);
-        const tradeStake = parseFloat(stake) || 1;
+        const tradeStake = currentStakeRef.current;
         const tradeDuration = parseInt(duration) || 1;
 
         const params: any = {
@@ -163,7 +171,7 @@ export const TradeSignal: React.FC = () => {
             openCountRef.current = 0;
             setOpenCount(0);
         }
-    }, [stake, duration, addLog]);
+    }, [duration, addLog]);
 
     // Listen for contract settlement — free up for next trade
     useEffect(() => {
@@ -180,8 +188,18 @@ export const TradeSignal: React.FC = () => {
                         const info = contractMapRef.current.get(key);
                         contractMapRef.current.delete(key);
                         const profit = Number(poc.profit ?? 0);
-                        if (profit > 0) addLog(`WIN +$${profit.toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier})`, 'win');
-                        else addLog(`LOSS -$${Math.abs(profit).toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier})`, 'loss');
+                        currentStakeRef.current = getNextTradeSignalStake(
+                            profit,
+                            info.stake,
+                            baseStakeRef.current,
+                            martingaleRef.current
+                        );
+                        setCurrentStake(currentStakeRef.current);
+                        if (profit > 0) {
+                            addLog(`WIN +$${profit.toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier}) · next stake $${currentStakeRef.current.toFixed(2)}`, 'win');
+                        } else {
+                            addLog(`LOSS -$${Math.abs(profit).toFixed(2)} (${SYMBOL_LABELS[info.symbol] || info.symbol} ${info.contractType} ${info.barrier}) · next stake $${currentStakeRef.current.toFixed(2)}`, 'loss');
+                        }
                         // Free up for next trade
                         openCountRef.current = 0;
                         setOpenCount(0);
@@ -204,9 +222,26 @@ export const TradeSignal: React.FC = () => {
         addLog('Stopped', 'info');
     }, [addLog]);
 
-    // Persist
-    useEffect(() => { localStorage.setItem('mw_ts_stake', stake); }, [stake]);
-    useEffect(() => { localStorage.setItem('mw_ts_duration', duration); }, [duration]);
+    const handleStart = useCallback(() => {
+        const baseStake = normalizeTradeSignalStake(stake, 1);
+        baseStakeRef.current = baseStake;
+        currentStakeRef.current = baseStake;
+        setCurrentStake(baseStake);
+        setIsRunning(true);
+    }, [stake]);
+
+    // Persist settings and keep the idle display synchronized with the base stake.
+    useEffect(() => {
+        localStorage.setItem('mw_ts_stake', stake);
+        localStorage.setItem('mw_ts_martingale', martingale);
+        localStorage.setItem('mw_ts_duration', duration);
+        if (!isRunning && openCountRef.current === 0) {
+            const baseStake = normalizeTradeSignalStake(stake, 1);
+            baseStakeRef.current = baseStake;
+            currentStakeRef.current = baseStake;
+            setCurrentStake(baseStake);
+        }
+    }, [duration, isRunning, martingale, stake]);
 
     const confidence = signal?.confidence ?? 0;
     const isBuy = signal?.action === 'BUY';
@@ -221,20 +256,25 @@ export const TradeSignal: React.FC = () => {
                 <div className='ts-row'>
                     <div className='ts-field'>
                         <label>Stake $</label>
-                        <input type='number' value={stake} onChange={e => setStake(e.target.value)} min={0.01} step={0.01} />
+                        <input type='number' value={stake} onChange={e => setStake(e.target.value)} min={0.01} step={0.01} disabled={isRunning} />
+                    </div>
+                    <div className='ts-field'>
+                        <label>Martingale x</label>
+                        <input type='number' value={martingale} onChange={e => setMartingale(e.target.value)} min={1} max={100} step={0.1} disabled={isRunning} />
                     </div>
                     <div className='ts-field'>
                         <label>Ticks</label>
-                        <input type='number' value={duration} onChange={e => setDuration(e.target.value)} min={1} max={10} step={1} />
+                        <input type='number' value={duration} onChange={e => setDuration(e.target.value)} min={1} max={10} step={1} disabled={isRunning} />
                     </div>
                     <div className='ts-field ts-field--btn'>
                         {!isRunning ? (
-                            <button className='ts-btn-start' onClick={() => setIsRunning(true)}>START</button>
+                            <button className='ts-btn-start' onClick={handleStart}>START</button>
                         ) : (
                             <button className='ts-btn-stop' onClick={handleStop}>STOP</button>
                         )}
                     </div>
                 </div>
+                <div className='ts-next-stake'>Next stake: <strong>${currentStake.toFixed(2)}</strong></div>
             </div>
 
             {/* Signal Card */}

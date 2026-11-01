@@ -23,6 +23,7 @@ $ts-loss:    #ef4444;
         background: $ts-bg3; border: 1px solid $ts-border; border-radius: 5px;
         color: $ts-text; padding: 4px 6px; font-size: 11px; outline: none; width: 100%; box-sizing: border-box;
         &:focus { border-color: $ts-accent; }
+        &:disabled { opacity: 0.65; cursor: not-allowed; }
     }
     input[type='number'] {
         -moz-appearance: textfield;
@@ -30,6 +31,7 @@ $ts-loss:    #ef4444;
     }
 }
 .ts-field--btn { justify-content: flex-end; }
+.ts-next-stake { font-size: 9px; color: $ts-muted; text-align: right; strong { color: $ts-accent; font-size: 10px; } }
 .ts-btn-start, .ts-btn-stop {
     width: 100%; border: none; border-radius: 6px; font-weight: 800;
     font-size: 12px; padding: 7px; cursor: pointer; letter-spacing: 1px; color: #fff;
